@@ -13,15 +13,20 @@ from __future__ import annotations
 
 import re
 from collections import OrderedDict, deque
+from copy import deepcopy
+import json
 from dataclasses import dataclass
 from typing import Any, Callable, Deque, Mapping, Optional, Protocol, Sequence, Union
 
-from .intents import (MELODIC_TRACKS, WAKE_WORDS, AcceptCandidate, CancelSearch, Command, Ignored, Interpretation,
+from .intents import (BOUNDARY, MELODIC_TRACKS, WAKE_WORDS, AcceptCandidate, CancelSearch, Command, Ignored, Interpretation,
                       NotUnderstood, SoundSearch, interpret, tokenize, validate_operation)
 from .speech import ChunkError, StreamTracker, decode_chunk
 from .speech_pipeline import EnergySegmenter, SpeechJob, SpeechWorker
 from .speech_pipeline import Transcript
 from .speech_alignment import locate_command
+
+from .language import LanguageJob
+from .contracts import ContractError, validate
 
 Interpreter = Callable[..., Interpretation]  # (text, session, during_recording, take_armed=False)
 
@@ -110,7 +115,10 @@ def _error(request_id: str, message: str) -> dict:
 
 class Connection:
     def __init__(self, interpreter: Interpreter = interpret, ack_timeout_s: float = DEFAULT_ACK_TIMEOUT_S,
-                 research: Optional[ResearchPort] = None, speech: Optional[SpeechWorker] = None) -> None:
+                 research: Optional[ResearchPort] = None, speech: Optional[SpeechWorker] = None, language=None) -> None:
+        self._language = language
+        self._language_pending: dict[str, tuple] = {}
+        self._language_epoch = 0
         self._speech = speech
         self._speech_state: "OrderedDict[str, _SpeechStream]" = OrderedDict()
         self._segment_count = 0
@@ -137,8 +145,11 @@ class Connection:
             self.revision = self.session["revision"]
             return self._drain(now)
         if kind == "transport":
+            before = self._capture_signature()
             self._observe_windows(message["transport"])
             self.transport = dict(message["transport"])
+            if self._capture_signature() != before:
+                self._language_epoch += 1
             return []
         if kind == "ack":
             return self._on_ack(message, now)
@@ -363,6 +374,7 @@ class Connection:
         if self._research is None:
             return failed("sound research is not available in this build")
         self._searches[job_id] = _Search(job_id, track_id, description)
+        self._language_epoch += 1
         while len(self._searches) > 16:
             self._searches.popitem(last=False)
         self._research.start(job_id, description, seeds)
@@ -374,6 +386,7 @@ class Connection:
             if (running is None or running.status != "running" or self._research is None
                     or not self._research.cancel(running.job_id)):
                 return [_error(utterance_id, "no sound search is running")]
+            self._language_epoch += 1
             return []
         latest = self._latest_search(with_candidates=True)
         if isinstance(result, AcceptCandidate):
@@ -421,13 +434,72 @@ class Connection:
         if during_recording and emit_span:
             out.append({"type": "command-span", "utteranceId": utterance_id, "clockId": message["clockId"],
                         "startFrame": message["startFrame"], "endFrame": message["endFrame"]})
-        if isinstance(result, NotUnderstood):
-            return out + [_error(utterance_id, result.reason)]
         if obsolete:
             # Recognized after its take or count-in ended (or a newer one began): never act on the
             # current transport or a newer take with it. Its span was still excluded above.
             return out + [_error(utterance_id, "spoken during a take or count-in that has already ended; not applied")]
+        if isinstance(result, NotUnderstood):
+            # Familiar commands and explicit parser refusals never wait on a provider. Only
+            # unknown addressed speech takes the optional bounded async interpretation path.
+            if self._language is not None and result.reason == "command not recognized":
+                if len(self._language_pending) >= 5:
+                    return out + [_error(utterance_id, "language queue is full; try again shortly")]
+                latest = self._latest_search(with_candidates=True)
+                research = ({"jobId": latest.job_id, "trackId": latest.track_id, "description": latest.description,
+                             "status": latest.status, "candidates": [
+                                 {"index": i + 1, "id": item["id"], "provenance": item.get("provenance", "")}
+                                 for i, item in enumerate(latest.candidates[:5])]} if latest else {})
+                job = LanguageJob(utterance_id, message["text"], deepcopy(self.session), during_recording, armed, research)
+                self._language_pending[utterance_id] = (job, self._language_token())
+                if not self._language.submit(job):
+                    del self._language_pending[utterance_id]
+                    return out + [_error(utterance_id, "language queue is full; try again shortly")]
+                return out  # wake span is already excluded; coverage need not wait for inference
+            return out + [_error(utterance_id, result.reason)]
+        return out + self._apply_interpretation(utterance_id, result, now)
+
+    def _capture_signature(self) -> tuple:
+        transport = self.transport or {}
+        return (transport.get("clockId"), transport.get("recordingState", "recording" if transport.get("recording") else "idle"),
+                transport.get("recordingStartFrame"), transport.get("recordingEpoch"), transport.get("captureStartFrame"),
+                transport.get("playing"), tuple(sorted((transport.get("recordingTarget") or {}).items())),
+                tuple(sorted((transport.get("armedTarget") or {}).items())))
+
+    def _language_token(self) -> tuple:
+        latest = self._latest_search(with_candidates=True)
+        candidates = tuple((item["id"], json.dumps(item["patch"], sort_keys=True)) for item in latest.candidates) if latest else ()
+        return (self._language_epoch, self.revision, self._capture_signature(),
+                latest.job_id if latest else None, candidates)
+
+    def language_result(self, job: LanguageJob, result: Optional[Interpretation], error: Optional[str], now: float) -> list[dict]:
+        pending = self._language_pending.pop(job.request_id, None)
+        if pending is None or pending[0] is not job:
+            return []
+        if pending[1] != self._language_token():
+            return [_error(job.request_id, "session or take changed while interpreting; no change applied")]
+        if error is not None:
+            return [_error(job.request_id, error)]
+        if result is None or isinstance(result, (Ignored, NotUnderstood)):
+            return [_error(job.request_id, "language agent could not resolve the request; no change applied")]
+        if not isinstance(result, (Command, SoundSearch, AcceptCandidate, CancelSearch)):
+            return [_error(job.request_id, "invalid language proposal; no change applied")]
+        if isinstance(result, AcceptCandidate) and (type(result.index) is not int or not 1 <= result.index <= 5):
+            return [_error(job.request_id, "invalid candidate index; no change applied")]
+        if isinstance(result, SoundSearch) and (not isinstance(result.description, str)
+                                               or not 0 < len(result.description.strip()) <= 500):
+            return [_error(job.request_id, "invalid sound request; no change applied")]
+        return self._apply_interpretation(job.request_id, result, now)
+
+    def _apply_interpretation(self, utterance_id: str, result: Interpretation, now: float) -> list[dict]:
+        out: list[dict] = []
         if isinstance(result, Command):
+            try:
+                validate("SessionCommand", {"id": utterance_id, "expectedRevision": self.revision,
+                                             "boundary": result.boundary, "operation": result.operation})
+            except ContractError:
+                return [_error(utterance_id, "invalid command proposal; no change applied")]
+            if result.boundary != BOUNDARY.get(result.operation["type"]):
+                return [_error(utterance_id, "invalid command scheduling boundary; no change applied")]
             problem = validate_operation(result.operation)
             if problem is not None:
                 return out + [_error(utterance_id, problem)]
@@ -471,6 +543,7 @@ class Connection:
         return any(flight.proposal.boundary in ("next-loop", "next-beat") for flight in self._in_flight.values())
 
     def _issue(self, proposal: _Proposal, now: float) -> dict:
+        self._language_epoch += 1  # even discard-only Undo can invalidate a late interpretation
         # Derived from the utterance so a repeated delivery maps to the same command ID,
         # which the browser answers with its previous acknowledgment instead of applying twice.
         command_id = f"{proposal.utterance_id}:cmd"

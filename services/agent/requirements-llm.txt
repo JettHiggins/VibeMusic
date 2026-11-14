@@ -1,0 +1,5 @@
+# Optional backend-only language orchestration. No provider call during install/tests.
+deepagents==0.7.38
+langchain-openrouter==0.2.9
+openrouter==0.11.46
+python-dotenv==1.2.2
