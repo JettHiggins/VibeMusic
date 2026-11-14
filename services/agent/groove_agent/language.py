@@ -91,6 +91,11 @@ def create_graph(model):
                                             wrap_model_call, wrap_tool_call)
     from langchain_core.tools import StructuredTool, tool
 
+    # The audio-only tool allowlist never exposes filesystem/video reads. The
+    # optional video probe otherwise prints a spurious traceback when STT's PyAV
+    # is installed without Pillow, even though no video capability is used.
+    logging.getLogger("deepagents.middleware._video").setLevel(logging.ERROR)
+
     operation = json.loads((contracts_dir() / "SessionCommand.schema.json").read_text(encoding="utf-8"))["properties"]["operation"]
     operation["oneOf"] = [schema for schema in operation["oneOf"]
                           if schema["properties"]["type"]["const"] != "apply-patch"]
@@ -102,25 +107,26 @@ def create_graph(model):
 
     command_tool = StructuredTool.from_function(
         propose_command, name="propose_command", description="Propose one musical operation, validated against the shared contract.",
+        return_direct=True,
         args_schema={"type": "object", "properties": {"operation": operation},
                      "required": ["operation"], "additionalProperties": False})
 
-    @tool
+    @tool(return_direct=True)
     def search_sound(description: Annotated[str, Field(min_length=1, max_length=500)], refine: bool = False) -> str:
         """Retrieve a sound, or refine the latest candidates. Preserves existing musical notes."""
         return json.dumps({"kind": "search", "description": description, "refine": refine})
 
-    @tool
+    @tool(return_direct=True)
     def accept_candidate(index: Annotated[int, Field(ge=1, le=5)]) -> str:
         """Accept a numbered candidate from the latest known research list, 1-based."""
         return json.dumps({"kind": "accept", "index": index})
 
-    @tool
+    @tool(return_direct=True)
     def cancel_search() -> str:
         """Cancel the latest running sound search."""
         return json.dumps({"kind": "cancel"})
 
-    @tool
+    @tool(return_direct=True)
     def refuse_request() -> str:
         """Refuse ambiguous or unsupported requests, including requests requiring new interfaces."""
         return json.dumps({"kind": "refuse"})
