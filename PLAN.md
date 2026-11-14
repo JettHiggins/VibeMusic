@@ -27,6 +27,8 @@ The latest real-device session found an infinite apparent count-in when Record p
 
 Defaults selected by Jett: empty stopped project on fresh launch (explicit load only); metronome during playback AND recording with mute; mouse AND precise voice erasure; aggressive noisy-room cleanup, accepting some artifacts. WS1 owns count-in/audio deadlines/metronome/erase contracts and engine/empty startup/integration. WS2 owns processing-profile-aware input, calibration, editing and feedback. WS3 owns noisy-room classification/coverage/target continuity and deterministic commands. Preserve/defer sound-search feature branches until the repair gate; no new feature expansion. Human microphone/fun acceptance on a frozen commit is required. The full milestones below remain the product roadmap, not claims of completion.
 
+The reviewed repair build is frozen at tag `playtest-repair-1`; see [docs/FROZEN-PLAYTEST.md](docs/FROZEN-PLAYTEST.md). WS1 pauses for Jett's real microphone/fun test. Software checks passed; human repair acceptance and the full roadmap below remain open.
+
 ## Milestones and acceptance
 
 ### 0. Foundation and contracts — integrator owns this first

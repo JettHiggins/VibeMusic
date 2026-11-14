@@ -16,4 +16,4 @@ Use a fresh owner-specific repair branch from reviewed engine-integration; prese
 
 ## Current checkpoints
 
-Plan/goals publication: 0cd088e. Shared metronome/erase/countdown interfaces: 5560129. Ready for peer review: ws1/transport-playtest-repair d856621 and ws1/targeted-erasure ab9342b. Next: review incoming WS2/WS3 repairs, obtain review on WS1 capabilities, integrate/check them and publish the frozen test commit. Do not mark the full repair or human fun gate complete.
+Peer-reviewed #38/#39 and consumer repairs are integrated. Frozen test tag: `playtest-repair-1`. Follow FROZEN-PLAYTEST.md and STATUS.md; pause for Jett's microphone/fun test as requested. Preserve all current work and deferred research. Resume with the filled result sheet before changing the frozen session or claiming completion.

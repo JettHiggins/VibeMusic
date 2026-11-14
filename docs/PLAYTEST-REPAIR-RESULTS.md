@@ -1,13 +1,13 @@
 # Frozen repair playtest results
 
-**Not run. No frozen build has been published yet.** WS1 will enter its exact commit here after required reviews, consumer repairs and combined checks. Do not test a moving branch and describe the result as acceptance.
+**Not run. Frozen build: `playtest-repair-1`.** Record its exact SHA with `git rev-parse HEAD` and follow FROZEN-PLAYTEST.md. Do not test a moving branch and describe the result as acceptance.
 
 Use headphones and the same microphone/gain for quiet and conversational-noise trials. Startup audio activation/microphone permission is allowed; check voice and mouse correction separately. Keep raw recordings off. Copy the app's microphone report for numeric evidence.
 
 ## Build and environment
 
-- Frozen application commit: pending WS1 publication
-- Matching rebuilt WASM revision/export verified: pending
+- Frozen application tag: `playtest-repair-1`; exact SHA: record from `git rev-parse HEAD`
+- Matching rebuilt WASM revision/export: WS1 build verified; verify matching assets on the test laptop
 - Tester / date / laptop / OS / Chrome version: pending
 - Microphone / selected processing profile / actual granted processing: pending
 - Measured noise floor / normal-volume reference / latency / trim: pending

@@ -1,5 +1,7 @@
 # Workstream 3 — playtest repair
 
+**Freeze checkpoint:** `playtest-repair-1` is ready for the physical test. Your repair PRs are integrated. Preserve work, follow FROZEN-PLAYTEST.md/STATUS.md and help record results; do not add features or change code during the frozen session. The goal below remains the repair scope if human testing reveals failures.
+
 Owner: Lenny. Ownership: Backend, speech recognition/classification, command orchestration and sound research (currently deferred).
 
 Current scope and acceptance: [PLAYTEST-REPAIR.md](PLAYTEST-REPAIR.md). Read [STATUS.md](STATUS.md) for the latest contract publication/dependencies. Supersedes older feature assignments. No producer/consumer may invent shared interfaces; WS1 publishes them first. Finish independent reproduction while a contract is pending.
