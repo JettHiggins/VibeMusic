@@ -1,0 +1,50 @@
+name: Publish team coordination update
+
+on:
+  push:
+    branches: [engine-integration]
+    paths: [docs/TEAM-UPDATE.md]
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: team-coordination-update
+  cancel-in-progress: false
+
+jobs:
+  notify-team:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Publish update and notify workstream owners
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        with:
+          script: |
+            const fs = require('node:fs');
+            const {owner, repo} = context.repo;
+            const title = 'Team restart: recording usability and real-device fixes';
+            const marker = `<!-- team-update:${context.sha} -->`;
+            const base = `https://github.com/${owner}/${repo}`;
+            const content = fs.readFileSync('docs/TEAM-UPDATE.md', 'utf8');
+            const body = `${marker}\n${content}\n\nPublished from [${context.sha.slice(0, 7)}](${base}/commit/${context.sha}). Current assignments: [docs/STATUS.md](${base}/blob/engine-integration/docs/STATUS.md).`;
+            const issues = await github.paginate(github.rest.issues.listForRepo, {owner, repo, state: 'open', per_page: 100});
+            let issue = issues.find(item => !item.pull_request && item.title === title && item.user.login === 'github-actions[bot]');
+            if (!issue) {
+              issue = (await github.rest.issues.create({owner, repo, title, body})).data;
+            } else if (!issue.body.includes(marker)) {
+              await github.rest.issues.update({owner, repo, issue_number: issue.number, body});
+              await github.rest.issues.createComment({owner, repo, issue_number: issue.number,
+                body: `${marker}\n@leoAndrade2332 @lennyyanza — Jett published updated priorities and assignments at ${base}/commit/${context.sha}. Please read the updated issue body and docs/STATUS.md at your next work checkpoint.`});
+            }
+            const comments = await github.paginate(github.rest.issues.listComments, {owner, repo, issue_number: 3, per_page: 100});
+            if (!comments.some(comment => comment.user.login === 'github-actions[bot]' && comment.body.includes(marker))) {
+              await github.rest.issues.createComment({owner, repo, issue_number: 3,
+                body: `${marker}\n@leoAndrade2332 @lennyyanza — this report has stale blockers. Candidate UI, recording integration and original CLAP music inference are delivered. Jett has approved new recording/usability priorities after real-device testing. Read ${issue.html_url} and [docs/STATUS.md](${base}/blob/engine-integration/docs/STATUS.md) before the next capability/PR. Please acknowledge branch/base SHA and next owned task there. API access remains deferred.`});
+            }
+            core.notice(`Team update published: ${issue.html_url}`);
+            await core.summary.addHeading('Team coordination published').addLink('Read team update', issue.html_url).write();
