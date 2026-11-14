@@ -12,7 +12,7 @@ class VoiceSynthProcessor extends AudioWorkletProcessor {
  private framesSinceReport=0;
  constructor(options:{processorOptions:{module:WebAssembly.Module;metadata:FirmwareMetadata;session:SessionState;clockId:string}}){
   super(options);const p=options.processorOptions;
-  try{this.core=new EngineCore(new FirmwareAudio(p.module),p.metadata,p.session,p.clockId,m=>this.port.postMessage(m));}
+  try{this.core=new EngineCore(new FirmwareAudio(p.module),p.metadata,p.session,p.clockId,m=>this.port.postMessage(m),currentFrame);}
   catch(error){this.port.postMessage({type:'engine-error',message:String(error)});return;}
   this.port.onmessage=({data})=>{try{if(data.type==='audition')this.core.audition(data.event);else this.core.dispatch(data);}catch(e){this.port.postMessage({type:'engine-error',message:String(e)});}};
   this.port.postMessage({type:'session',session:this.core.getSession()});
