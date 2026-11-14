@@ -27,7 +27,7 @@ test('research candidates from real engine audio are accepted and undone by the 
   const corpus = mkdtempSync(join(tmpdir(), 'groove-corpus-'));
   const child = spawn(process.env.VOICESYNTH_PYTHON ?? 'python3',
     ['-m', 'uvicorn', 'groove_agent.app:app', '--app-dir', 'services/agent', '--host', '127.0.0.1', '--port', String(port)],
-    {stdio: ['ignore', 'ignore', 'pipe'], env: {...process.env, GROOVE_LLM: '', OPENROUTER_API_KEY: '', GROOVE_STT: '', GROOVE_RESEARCH: 'sloop', GROOVE_EMBEDDER: 'mock',
+    {stdio: ['ignore', 'ignore', 'pipe'], env: {...process.env, GROOVE_LLM: '', OPENROUTER_API_KEY: '', GROOVE_STT: '', GROOVE_VOICE_RESEARCH: '0', GROOVE_RESEARCH: 'sloop', GROOVE_EMBEDDER: 'mock',
       GROOVE_CORPUS_DIR: corpus, GROOVE_PUBLIC_URL: `http://127.0.0.1:${port}`}});
   let logs = '';
   let coordinator: SessionCoordinator | undefined;

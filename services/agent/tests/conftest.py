@@ -7,3 +7,4 @@ import os
 
 for name in ('GROOVE_LLM', 'OPENROUTER_API_KEY', 'GROOVE_STT', 'GROOVE_RESEARCH'):
     os.environ[name] = ''
+os.environ["GROOVE_VOICE_RESEARCH"] = "0"

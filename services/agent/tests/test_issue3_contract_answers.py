@@ -43,7 +43,7 @@ def test_b_audition_is_preview_only_accept_applies_and_undo_restores():
     conn.handle(utter("u1", "make it sound like a glassy bell"), 0)
     # Candidates arrive and are auditioned through previewUrl: nothing is proposed.
     assert conn.observe_research({"type": "research", "jobId": "u1:job", "status": "complete", "progress": 1,
-                                  "candidates": candidates("u1:job")}) is None
+                                  "candidates": candidates("u1:job")}) == []
     assert conn.pending_command_ids == []
     accept = conn.handle(utter("u2", "use number two"), 0)[0]["command"]
     assert accept["operation"]["type"] == "apply-patch" and accept["boundary"] == "next-loop"

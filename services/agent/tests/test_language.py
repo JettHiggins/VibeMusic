@@ -213,11 +213,13 @@ def test_actual_router_object_is_pinned_to_free_only_and_no_retry(monkeypatch):
 
 
 
-def test_model_loop_and_timeout_are_bounded():
-    # Actual graph refuses an endlessly repeated proposal before anything is applied.
-    calls = [[{"name": "propose_command", "args": {"operation": {"type": "undo"}}, "id": f"t{i}"}] for i in range(5)]
-    with pytest.raises(Exception, match="limit"):
-        infer(calls)
+def test_proposal_returns_directly_without_an_extra_model_round_trip():
+    from groove_agent.language import DeepLanguage
+    model = scripted_model([[{"name": "propose_command", "args": {"operation": {"type": "undo"}}, "id": "one"}]])
+    language = DeepLanguage(LanguageConfig(api_key="offline"), model=model)
+    result = asyncio.run(language.infer(LanguageJob("u", "Groove reverse that edit", load_fixture("SessionState"), True, False)))
+    assert result == Command({"type": "undo"}, "immediate")
+    assert model._position == 1
 
 
 def test_inference_wall_timeout_is_enforced():
@@ -368,4 +370,4 @@ def test_actual_deepagent_and_openrouter_sdk_round_trip_with_mock_http(monkeypat
             result = await language.infer(LanguageJob("u", "Groove shift the pulse to 135", load_fixture("SessionState"), True, False))
             assert result == Command({"type": "tempo", "bpm": 135}, "next-loop")
     asyncio.run(scenario())
-    assert len(requests) == 2
+    assert len(requests) == 1
