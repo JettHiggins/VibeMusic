@@ -1,5 +1,8 @@
 @leoAndrade2332 @lennyyanza — updated ownership and decisions from Jett. Read docs/STATUS.md; this supersedes older blockers in issue #3.
 
+**Speech streaming unblocked:** WS1 reviewed/integrated #14 at 49ca90b and #13 at 0465dd7. Use the approved committed speech-audio/status/coverage contract. WS1 temporarily owns the browser speech-streaming consumer while Leo is unavailable; do not duplicate that browser work. @lennyyanza: continue #15 pipeline fixes/review and selected local faster-whisper, with no LLM key dependency. #15's c8f4ed4 revision is received but not yet approved. Deep Agents remains required after the provider decision; no API calls/key setup are authorized. Read the latest STATUS.md; the old #13/#14 review-blocker paragraphs below are history.
+
+
 **Current WS1 review target: [ws1/integration-preview at 0b95ca1](https://github.com/JettHiggins/VoiceSynthesizer/compare/engine-integration...ws1/integration-preview?expand=1).** Jett resumed WS1 and combined both ready WS1 branches with current integration in an isolated preview. @lennyyanza: open/review this single PR to engine-integration; retain recording-consumer/dev-worklet-sync as parent history. Shared checks, full Node suite, service/WASM integration/build and actual browser next-beat/live-edit/held-note reset checks pass locally with the current-source dev worklet active. Shared engine-integration is unchanged by this preview; real voice/device and full hands-free acceptance remain open. WS3 can continue transport/retrieval fixes and local faster-whisper without waiting for an LLM decision or this PR; Leo's last known usage limit has no reported resolution.
 
 
