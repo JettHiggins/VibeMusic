@@ -83,3 +83,12 @@ test('clearing another lane preserves the active capture window; tempo undo keep
  const cutoff=t.core.transport().captureStartFrame!;t.render(256);t.batch('after-tempo-undo',cutoff+100);t.render(SR*9);
  assert.ok(t.core.getSession().tracks[3].hits.some(h=>h.id==='after-tempo-undo'));
 });
+
+test('unrelated edits during count-in preserve the armed record deadline and target', {skip:!ready},async()=>{
+ const s=await setup();s.dispatch({type:'record',target:s.target},'next-beat');s.render(SR/2);
+ s.dispatch({type:'mute',trackId:'synth-1',muted:true});s.dispatch({type:'select',target:{trackId:'synth-3'}});
+ s.render(SR*1.5);assert.equal(s.core.transport().recordingState,'armed');s.render(1);
+ assert.equal(s.core.transport().recordingStartFrame,SR*2);
+ assert.deepEqual(s.core.transport().recordingTarget,s.target);
+ assert.equal(s.core.getSession().tracks[0].muted,true);assert.deepEqual(s.core.getSession().selected,s.target);
+});

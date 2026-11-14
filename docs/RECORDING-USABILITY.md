@@ -7,7 +7,7 @@ This capability is prepared on `ws1/recording-usability` for review into `engine
 - `SessionCommand.boundary` adds `next-beat`, supported for `record` only. During playback it arms the next integer firmware beat; from stopped it starts playback and arms after four count-in beats. `next-loop` recording preserves the legacy four-bar wait for explicit callers. `immediate` recording remains invalid.
 - Clear and Undo now permit `immediate` while playing/recording. They do not stop either transport or capture. Existing `next-loop` requests remain supported. Other boundary requirements are unchanged.
 - Immediate Undo discards a still-queued performance batch before touching history. For provisional worker/recorder input not yet queued, WS2 sends `{type:'undo', discardCaptureOnly:true}`. Discard-only Undo does not change session revision or consume musical undo history. Normal Undo restores the last musical edit and increments revision.
-- All commands still check expectedRevision; unrelated session mutations can make queued absolute commands stale. This capability does not silently rebase commands. Capture-discard/epoch/window rejections are terminal for old events, not revision retries.
+- Every command checks expectedRevision on receipt. An armed Record pins its target/deadline and survives later unrelated session changes; its application selects that explicit target against the current state. Consumers must not re-issue an already armed Record when revision changes, which could alter its count-in. Other queued musical edits still recheck revision at application; this is a documented transport-intent exception, not generic musical-edit rebasing. Capture-discard/epoch/window rejections are terminal for old events, not revision retries.
 
 ## Authoritative capture reset
 
@@ -40,3 +40,5 @@ Wire examples: `packages/contracts/fixtures/RecordingUsability.json`, validated 
 Patch-output smoothing is a separate preceding commit (`735f122`), blending the prior stereo output sample into the new output over five milliseconds without delaying the firmware clock. Human listening has not validated that change.
 
 Review does not establish calibrated microphone performance on Lenny's laptop or the complete hands-free acceptance scenario. Those remain explicit human/device gates in STATUS.md.
+
+PR publication limitation: this repository currently disallows GitHub Actions from creating PRs. The published review link is https://github.com/JettHiggins/VoiceSynthesizer/compare/engine-integration...ws1/recording-usability and coordination issue #9 contains the notification. A collaborator with authenticated PR access must open the PR, or repository settings must explicitly permit that action. No review or merge is claimed.

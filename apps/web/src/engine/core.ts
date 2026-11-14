@@ -116,7 +116,9 @@ export class EngineCore {
   if(op.type!=='stop-recording')state.revision++;firmwareSnapshot(state,this.metadata);return state;
  }
  private apply(c:SessionCommand){
-  const state=this.propose(c);
+  // Record is a transport intent with a pinned target/deadline. Its revision was
+  // validated when armed; unrelated musical edits must not cancel the count-in.
+  const state=this.propose(c.operation.type==='record'?{...c,expectedRevision:this.session.revision}:c);
   const old=this.session;
   firmwareSnapshot(state,this.metadata);
   if(c.operation.type==='undo'){if(!c.operation.discardCaptureOnly)this.history.pop();}
