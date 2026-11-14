@@ -119,5 +119,17 @@
     "headSha": "941b293b2e4f0d24ffb5b15bfd9026ffe81aadaa",
     "retargetBase": "engine-integration",
     "body": "WS1 reviewed the actual-worker insufficient-quiet result, timeout cleanup, quiet-but-pitched foreground exclusion and rolling normal-volume margin/advice. Combined Node 193 passed/one optional skip and shared checks pass; real service/WASM integration passes. Integrated #36 as the reviewed UI/input foundation. Its engine-dependent controls remain gated until WS1 engine integration; WS1 will enable the erasure seam and re-run the actual UI checks with matching rebuilt assets. Conversation suppression, every-synth real voice and usability/fun remain human gates, not established by requested browser noise suppression or these synthetic regressions."
+  },
+  {
+    "pullRequest": 29,
+    "headSha": "5278e62dd52c5074e7854db228cee4dcabeac1a5",
+    "retargetBase": "engine-integration",
+    "body": "WS1 reviewed and integrated #29 with peer-inspected browser consumer #31 in a current-baseline integration branch. Merge resolutions preserve capture-time recordingTarget, metronome/erase language guidance, captureErasure stale-model guard and offline provider/key/voice-flag isolation. Combined backend 386 passed/six optional skips; Node 207 passed/one optional skip; shared checks/build and service/WASM passed. Real-renderer/MOCK-embedder acceptance/Undo passed. A separate actual cached-CLAP/SLOOP service plus actual Chromium app passed typed describe -> real candidates -> actual audio preview -> warmer refinement -> cancel optimization -> preview -> accept exact patch -> Undo with music preserved. This is not acoustic STT, LLM, human hearing or quality acceptance. Cold matching corpus first candidates 143.546 s/full 128-variation completion 235.649 s; repeated warm in-process prompt first candidates 120 ms, not general p95. Details: docs/reviews/REAL-CLAP-INTEGRATION.md. Both sides remain explicitly enabled by GROOVE_VOICE_RESEARCH=1 in the coordinated real-backend deployment; current backend config must include real CLAP/SLOOP. New endpointing/stop/key/browser-action work remains tracked separately."
+  },
+  {
+    "pullRequest": 31,
+    "headSha": "7ec9b9d1b1a313b98897e29d1072dd7a9d1a89a0",
+    "retargetBase": "engine-integration",
+    "body": "WS1 integrated #31 with #29 after the WS3 peer source inspection recorded in this PR and current-baseline validation. Node 207 passed/one optional skip; backend 386 passed/six optional skips; checks/build/service-WASM plus real-renderer/MOCK-embedder regression passed. Actual Chromium/Python/real cached CLAP and SLOOP ran describe/refine/preview/cancel/accept/Undo with two actual HTMLAudioElement started/ended pairs and continuing unchanged musical tracks after Undo. Only the test browser socket destination was redirected to the isolated :8001 service; no fake response/audio/model/candidate was supplied. Full evidence/limits in docs/reviews/REAL-CLAP-INTEGRATION.md. Typed transcripts only: acoustic endpointing, live LLM, human sound quality and next full hands-free test remain open. Legacy next-loop acceptance remains until the separate immediate-patch adoption lands."
   }
 ]
