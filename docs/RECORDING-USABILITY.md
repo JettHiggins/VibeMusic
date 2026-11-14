@@ -65,7 +65,7 @@ use the monochrome palette. `tests/browser/recording-consumer.js` exercises the 
 synthetic silent input and an injected provisional event; `tests/browser/input-pipeline.js` exercises
 synthetic audio through the actual worklet/worker. Neither establishes physical-microphone acceptance.
 
-`tests/browser/melody-pipeline.js` additionally feeds three generated harmonic/vibrato tones through
+`tests/browser/next-beat-melody.js` additionally feeds three generated harmonic/vibrato tones through
 the actual browser capture worklet and YIN worker after next-beat Record. It requires C4/E4/G4 at
 composition steps 20/24/28 (durations 3/3/4), three committed notes, no input error and continuing
 playback. This passed on the WS1 Linux Chromium setup (~8.1 ms p95 analysis). It narrows the software
