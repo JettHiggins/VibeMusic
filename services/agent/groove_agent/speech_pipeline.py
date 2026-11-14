@@ -93,6 +93,10 @@ class EnergySegmenter:
     stationary_s: float = 1.0
     stationary_db: float = 6.0
     pad_s: float = 0.2  # recognition-only context before/after each segment
+    # Only speech (a continuous run of min_speech_s) holds the hangover open; short bursts after
+    # it (beatboxing straight after "Groove, clear") neither extend it nor join the span, except
+    # a final consonant within `tail_s` of the last speech run ("sto-p").
+    tail_s: float = 0.15
     min_speech_s: float = 0.15  # one continuous loud run this long makes a segment speech
     burst_gap_s: float = 0.10  # quiet that ends a candidate with only short bursts (beatboxed hits)
     hangover_s: float = 0.60  # keeps "Groove, <pause> stop" in one segment (measured pause ~0.5 s)
@@ -104,6 +108,7 @@ class EnergySegmenter:
     _open: Optional[list] = None  # [current loud run, longest loud run, quiet windows since last loud]
     _history_s: list = field(default_factory=list)
     _history_f: list = field(default_factory=list)
+    _history_loud: list = field(default_factory=list)
     _levels: deque = field(default_factory=deque)
     _quiet: deque = field(default_factory=deque)  # recent windows before a segment opens
     _pre: list = field(default_factory=list)
@@ -157,11 +162,13 @@ class EnergySegmenter:
                 while len(self._quiet) > windows(self.pad_s):
                     self._quiet.popleft()
                 return None
-            self._open = [0, 0, 0, [], -120.0]  # + levels of the current loud run, loudest window
-            self._history_s, self._history_f = [], []
+            # [current loud run, longest run, quiet since last loud, run levels, loudest, last speech index]
+            self._open = [0, 0, 0, [], -120.0, -1]
+            self._history_s, self._history_f, self._history_loud = [], [], []
             self._pre, self._quiet = list(self._quiet), deque()
         self._history_s.append(win)
         self._history_f.append(win_frames)
+        self._history_loud.append(loud)
         state = self._open
         if loud:
             state[0] += 1
@@ -169,40 +176,65 @@ class EnergySegmenter:
             state[2] = 0
             state[3].append(level)
             state[4] = max(state[4], level)
+            here = len(self._history_s) - 1
+            # Part of the speech: a long run, or a short bit within the tail of the last speech
+            # (word endings after a dip). Later bursts are not speech and do not extend it.
+            if state[0] >= windows(self.min_speech_s) or (state[5] >= 0 and here - state[5] <= windows(self.tail_s)):
+                state[5] = here
         else:
             state[0] = 0
             state[2] += 1
             state[3] = []
         recent = state[3][-windows(self.stationary_s):]
         if state[0] >= windows(self.stationary_s) and max(recent) - min(recent) < self.stationary_db:
-            self._open, self._history_s, self._history_f = None, [], []
+            self._open, self._history_s, self._history_f, self._history_loud = None, [], [], []
             self._decided_through = int(win_frames[-1])
             return None  # steady noise (or a long held note): never transcribed
         if state[2] and state[4] <= self.threshold:
             # The floor has risen since this candidate opened: nothing in it is loud any more,
             # so it was noise from before the floor adapted. Drop it now, not after the hangover.
-            self._open, self._history_s, self._history_f = None, [], []
+            self._open, self._history_s, self._history_f, self._history_loud = None, [], [], []
             self._decided_through = int(win_frames[-1])
             return None
         speech = state[1] >= windows(self.min_speech_s)
-        # Short bursts close after a brief gap, so beatboxing never holds the watermark for the
-        # speech hangover; speech keeps the longer hangover that spans "Groove, <pause> stop".
-        wait = windows(self.hangover_s) if speech else windows(self.burst_gap_s)
-        if state[2] < wait and len(self._history_s) < windows(self.max_segment_s):
-            return None
-        # Close: drop trailing quiet windows from the segment; they are decided as quiet.
-        keep = len(self._history_s) - state[2]
+        full = len(self._history_s) >= windows(self.max_segment_s)
+        if speech:
+            # The hangover runs from the last speech, not the last burst; close between bursts.
+            since_speech = len(self._history_s) - 1 - state[5]
+            # Close only in a real gap (burst_gap of quiet): a word onset like the "st" of "stop"
+            # is followed by its vowel within ~40 ms, while beatboxed hits leave ~0.2 s gaps.
+            if not full and (loud or since_speech < windows(self.hangover_s) or state[2] < windows(self.burst_gap_s)):
+                return None
+            keep = self._speech_end(state[5], windows(self.tail_s)) + 1
+        else:
+            # Short bursts close after a brief gap, so beatboxing never holds the watermark.
+            if not full and state[2] < windows(self.burst_gap_s):
+                return None
+            keep = len(self._history_s) - state[2]
+        # Windows after `keep` are decided as not speech: quiet, or drum hits after the command.
         samples = np.concatenate(self._history_s[:keep]) if keep else np.zeros(0, np.float32)
         frames = np.concatenate(self._history_f[:keep]) if keep else np.zeros(0, np.int64)
         trailing = self._history_s[keep:keep + windows(self.pad_s)]
         pre = np.concatenate(self._pre) if self._pre else np.zeros(0, np.float32)
         post = np.concatenate(trailing) if trailing else np.zeros(0, np.float32)
         self._quiet = deque(self._history_s[keep:][-windows(self.pad_s):])
-        self._open, self._history_s, self._history_f, self._pre = None, [], [], []
+        self._open, self._history_s, self._history_f, self._history_loud, self._pre = None, [], [], [], []
         self._decided_through = int(win_frames[-1])
         if not speech or not len(frames):
             return None  # only short bursts such as beatboxed hits: not speech
         return Segment(int(frames[0]), int(frames[-1]), samples, self.sample_rate, pre, post)
+
+    def _speech_end(self, last_speech: int, tail: int) -> int:
+        """Last window of the command: its last speech run plus a final consonant that starts
+        within `tail` windows of it (and the rest of that same burst)."""
+        end, index = last_speech, last_speech + 1
+        while index < len(self._history_loud):
+            if self._history_loud[index] and (index - last_speech <= tail or index == end + 1):
+                end = index
+            elif index - last_speech > tail:
+                break
+            index += 1
+        return end
 
     @property
     def decided_through(self) -> int:

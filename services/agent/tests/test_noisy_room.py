@@ -86,3 +86,26 @@ def test_noise_that_starts_mid_take_does_not_stall_after_the_floor_adapts():
     assert worker.transcribed == [] or all(job.segment.last_frame - job.segment.start_frame < 2.5 * CONTEXT_RATE
                                            for job in worker.transcribed)
     assert max_lag_outside_speech(log, (99, 99), after=4.0) < 0.5  # two seconds after the noise began
+
+
+# -- spans must not swallow music right after a command ---------------------------------
+
+@pytest.mark.parametrize("spacing", [0.25, 0.5])
+def test_beatboxing_right_after_a_command_is_neither_erased_nor_stalls_coverage(spacing):
+    hits = tuple(2.9 + spacing * i for i in range(int(2.4 / spacing)))  # starts 0.2 s after the command ends
+    worker = ScriptedWorker(["Groove, clear"])
+    log = stream(connect(worker), worker, chunks(room_take(-60.0, speech=(2.0, 2.7), hits=hits, seconds=6.0)))
+    replies = flat(log)
+    spans = [r for r in replies if r["type"] == "command-span"]
+    assert len(spans) == 1
+    assert spans[0]["endFrame"] < frame_at(2.9) + 0.03 * CONTEXT_RATE, "span swallowed the hits after the command"
+    assert max_lag_outside_speech(log, (2.0, 2.7)) < 0.6, "beatboxing kept the speech segment open"
+
+
+def test_the_final_consonant_of_a_command_stays_inside_its_span():
+    # "stop" ends with a short release ~0.1 s after the vowel: still part of the command.
+    pcm = room_take(-60.0, speech=(2.0, 2.5), hits=(2.6,), seconds=4.0)
+    worker = ScriptedWorker(["Groove, stop"])
+    replies = flat(stream(connect(worker), worker, chunks(pcm)))
+    span = next(r for r in replies if r["type"] == "command-span")
+    assert span["endFrame"] >= frame_at(2.6) + 0.03 * CONTEXT_RATE
