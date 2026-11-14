@@ -52,3 +52,7 @@ Additional browser race coverage is committed as tests/browser/live-capture-edit
 ## Fourth teammate: WS4 evaluation support
 
 Three concrete WS4 issues are published from docs/WS4-TICKETS.json, with priority, owned paths and acceptance criteria. Start with the command acceptance corpus. WS4 owns only evals/, tools/evaluation/ and docs/WS4-HANDOFF.md; no production UI/service/engine/contract edits and no provider access needed. Startup prompt: docs/WS4-START.md. WS3 should consume the resulting cases/summaries rather than duplicate them; core speech/Deep Agents ownership stays with WS3.
+
+## Pipeline review: asynchronous recording context
+
+@lennyyanza: #15 c8f4ed4 has one reproduced blocker; see its latest WS1 review and docs/reviews/SPEECH-PIPELINE-C8F4ED4.md. A Groove stop captured during a take but transcribed after Stop becomes stop playback, with no exclusion span, then verifies the audio. Preserve capture-time context through stop/new-take transitions and late segment closure; add regressions. The isolated base suite passes 133/two optional skips but misses this transition. #14 is integrated and does not block browser streaming. WS1 still owns that browser consumer while Leo's availability is unresolved; a new ws2/recording-consumer branch was observed with the existing consumer code plus coordination merges, not new speech capture. Please use issue #9 to acknowledge ownership before overlapping browser edits.
