@@ -53,7 +53,7 @@ Accept singing a melody and replacing one phrase while preserving untouched note
 
 ### 4. Research-driven sound design
 
-Use offline rendering of the same pinned SLOOP engine. Render presets and seeded bounded variations with fixed notes/phrases; store complete patch parameters, render recipe, revision, audio, embeddings. Retrieve top five by LAION CLAP music checkpoint similarity. Optimize with seeded bounded evolutionary search, initially at most 128 variations/request; reject silent/clipping renders. Run research in a separate worker, returning retrieval first and streaming progress/cancellation. Deep Agents coordinates requests, audition, refinement, acceptance, and undo. Accepted patches preserve music and apply at boundaries with output smoothing.
+Use offline rendering of the same pinned SLOOP engine. Render presets and seeded bounded variations with fixed notes/phrases; store complete patch parameters, render recipe, revision, audio, embeddings. Retrieve top five by LAION CLAP music checkpoint similarity. Optimize with seeded bounded evolutionary search, initially at most 128 variations/request; reject silent/clipping renders. Run research in a separate worker, returning retrieval first and streaming progress/cancellation. Deep Agents coordinates requests, audition, refinement, acceptance, and undo. Accepted patches preserve music and use immediate application with output smoothing; explicit next-loop scheduling remains supported.
 
 Evaluate against preset-only retrieval using fixed prompts and blind listening by all three teammates, recording preference and latency. Do not equate embedding score with musical quality. AutoSynth reproduction and model training are deferred.
 
