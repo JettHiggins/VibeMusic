@@ -49,3 +49,7 @@ PRs #7/#10/#11 are integrated together, including reviewed lifecycle/diagnostic 
 ## WS3 retrieval review checkpoint
 
 WS1 reviewed PR #13 at ed57bff and ran the isolated base backend suite (113 passed, five opt-in/asset cases skipped). A focused reproduction showed key_dir=out/'answer-key' writes the supposedly separate answer key under the listening folder. Requested resolved-path descendant rejection and a regression before merge. Default sibling keys/fingerprints and the disclosed family-name-prior caveats are useful. Model parity and benchmark measurements are currently WS3's reported evidence; human listening remains open.
+
+## Speech proposal review (not approved)
+
+PR #14 proposes audio transport and #15 a provider-independent pipeline. WS1 reproduced acceptance of a six-second 8 kHz chunk and a mid-stream payload-rate change. Requested one-second bounds, fixed per-stream rate/initial sequence, streamId-scoped status and streamId/fromFrame coverage on new watermarks. Same-clock gap recovery must not verify old pending audio or silently enable manual commits. Requested recognized wake-span exclusion even when the command fails interpretation. WS2 must wait for the approved revised contract; real STT/Deep Agents remain absent.
