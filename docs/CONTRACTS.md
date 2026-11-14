@@ -2,7 +2,7 @@
 
 Source of truth: `packages/contracts/src/index.ts`. Exported JSON Schemas are committed for Python consumers. Change the Zod source, run `npm run contracts:export`, and commit generated changes together. TypeScript consumers import from `@voicesynth/contracts`; Python consumers use JSON Schema Draft 2020-12. Fixtures are examples, not real recorded audio or researched patches.
 
-The implemented baseline below still schedules recording and Clear/Undo at loop boundaries. The approved usability direction in PLAN.md and STATUS.md changes those behaviors; WS1 must publish the schema/engine capability before consumers rely on it. Do not invent competing scheduling or capture-reset fields. Product decisions are not evidence that the corresponding protocol is already implemented.
+Recording-usability capability: see RECORDING-USABILITY.md for next-beat record scheduling, immediate Clear/Undo, capture cutoff/epoch feedback and consumer integration. These additions are integrated through PR #12; older next-loop callers remain supported. Shared schemas are the wire source of truth.
 
 ## Session and clock
 

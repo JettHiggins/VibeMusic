@@ -1,78 +1,43 @@
-# Current team status and restart instructions
+# Current team status
 
-WS1 maintains this file. PLAN.md defines the product; AGENTS.md defines ownership; CONTRACTS.md and shared schemas define implemented interfaces. This file records current assignments and evidence. HANDOFF.md is chronological history. New product decisions below supersede conflicting older issue/handoff text, but are not implemented contracts until explicitly marked delivered.
+WS1 maintains this current ledger. PLAN.md defines product intent, AGENTS.md ownership, and shared schemas/CONTRACTS.md the implemented wire interfaces. HANDOFF.md is history. Coordination: https://github.com/JettHiggins/VoiceSynthesizer/issues/9. Read this file/issue at startup, new-capability and pre-PR checkpoints; preserve local work and do not dependency-poll.
 
-Coordination issue: **Team restart: recording usability and real-device fixes**. The team-update workflow creates/updates it from docs/TEAM-UPDATE.md and links it from issue #3. Read the issue at normal work checkpoints; no repeated polling.
+## Shared integration baseline
 
-## Shared baseline and evidence
+Use origin/engine-integration, not main or old workstream tips. Main is still the documentation baseline. Milestone 0, pinned SLOOP WASM/audio clock, standalone editing/persistence, manual drum/melody capture, service transcript commands, real renderer/research pipeline and candidate preview/acceptance UI are integrated. API access remains deferred. Real speech recognition, classified watermarks and Deep Agents are not delivered.
 
-- Restart baseline: engine-integration at 0c1c996 or its reviewed successors. Main is the older documentation baseline. Preserve local work and create fresh capability branches from origin/engine-integration.
-- CI passed at 0c1c996, including software checks on Linux/macOS/Windows. This is not physical microphone or audible-glitch signoff.
-- WS1 / Jett / @JettHiggins: real pinned SLOOP WASM, four-bar clock, engine commands/recording windows, renderer, contracts, integration and CI delivered. Five-millisecond patch-transition smoothing is published in 735f122; human listening remains open.
-- WS2 / Leo / @leoAndrade2332: UI, editing/persistence, calibration, drum onset capture, YIN melody capture/correction and buffering integrated. Synthetic browser input tests pass; real-device acceptance is open.
-- WS3 / Lenny / @lennyyanza: local transcript service, sound jobs/previews/acceptance and research framework integrated. Original CLAP music inference is working locally; 153 presets and 128 variations were exercised. Search quality and blind listening are open.
-- Candidate preview/acceptance UI already exists. Recording/count-in and the original music checkpoint are no longer blocked as described in old issue #3.
-- Real microphone speech recognition, measured speech classification/watermarks, Deep Agents and the complete hands-free acceptance session are not delivered. API access remains deferred. No speech provider has been selected.
+PR #12 recording-usability engine/contracts are integrated from ece7d80 after Leo's consumer review of bd1428b (clean merge with WS2 stack; 141 tests passed, one skipped). The implementation had passed WS1 local checks, full Node tests, live Python/WebSocket/WASM integration, base backend tests and build; CI at bd1428b passed. This does not prove real microphone/performer usability.
 
-## User feedback and accepted product changes
+Delivered engine capability (consumer/UI adoption still pending):
+- Record accepts next-beat: next beat during playback, four count-in beats from stopped. Explicit next-loop callers keep legacy behavior.
+- Armed Record pins its target/deadline through unrelated musical edits; do not re-issue it on revision changes. Other queued musical edits still recheck revision.
+- Clear/Undo permit immediate during recording/playback. Undo discards queued input first; discardCaptureOnly handles unsent provisional input without consuming history.
+- Reset transport precedes cancelled capture acks. recordingEpoch/captureStartFrame and optional epoch-tagged batches prevent pre-edit audio returning. recordingLoopStartFrame anchors mid-loop provisional placement. See RECORDING-USABILITY.md for exact WS2/WS3 checklists.
+- Patch output has a five-millisecond transition (735f122); software tests pass, human listening is open.
 
-The user tested on Lenny's device. Microphone input worked for drums. Recorded hits were late with wired headphones. Calibration was abrupt, four-bar recording waits were frustrating, Clear was disabled during recording, and Undo felt unavailable because it waited for the loop. Melody produced no notes; the user recalls a TypeScript/failed-to-load/chord error, without exact wording. Do not assume missing samples or treat a synthetic test as resolution.
+PR #8 speech-capture requirements are reviewed and merged. They do not approve a transport/provider. Effective latency includes manual trim, applied exactly once.
 
-Accepted changes, not yet implemented:
+## Active owners and next tasks
 
-1. Record on the next beat during playback; from stopped, one-bar count-in. Keep the four-bar composition and sixteenth grid.
-2. Immediate Clear/Undo while playback and recording continue. Discard conflicting pre-edit buffered input so delayed analysis cannot restore deleted music. Undo discards current provisional input first, otherwise restores the last applied musical edit.
-3. Calibration: instructions, visible three-second countdown, four practice timing clicks plus eight measured clicks, progress and Cancel. Preserve prior valid calibration on failure/cancellation. Show offset/consistency/matched taps and persist manual recording-offset adjustment per device.
-4. Dark monochrome DAW workspace: persistent transport at top, track controls left, selected editor center, compact sound/input inspector right. Remove workspace tabs. Keep drums as step lanes; synths use a piano roll with keyboard/pitch axis, four-bar timeline, sixteenth grid, playhead, note creation/deletion, move/resize. Empty rolls center on C4; existing rolls center on notes. Session operations live in a compact menu.
-5. Reproduce melody/loading failure on the tested device. Add live detected pitch and provisional-note feedback, distinguish absent input/confidence/queued/rejected states, and show actionable asset/worker/engine errors. Validate singing/humming separately from ordinary speech.
+**WS1 / Jett / @JettHiggins:** integrate reviewed capability-sized PRs, own schemas/engine/root config and final signoff. Review the current WS2 stack and WS3 retrieval PR. Separate ws1/dev-worklet-sync at 248585a is ready for PR/review: current-source dev worklets, compile-error recovery, no stale public artifact. Local checks and actual browser enable/play pass. Repository settings block Actions from creating PRs; a collaborator must open that review. Do not rewrite the UI concurrently with WS2.
 
-## Active assignments and dependency order
+**WS2 / Leo / @leoAndrade2332:** PR #7 microphone-test support, #10 guided calibration/fixes, #11 monochrome workspace/piano roll are the owned stack. Integrate the approved PR #12 merge now: next-beat Record, immediate Clear/Undo, exact epoch/cutoff reset in recorder/worker, discard-only provisional Undo and epoch-tagged batches. Remove automatic Record re-issue. Send final combined tests/limitations and main.tsx wiring notes in the PR. WS1 reviews before merging. Preserve input picker, granted-processing diagnostics and measurements-only reporting.
 
-### WS1 — engine, contracts and integration
+**WS3 / Lenny / @lennyyanza:** PR #13 adds native-parity preprocessing, retrieval ranking and reproducible listening kits; WS1 review pending. Adopt PR #12 in backend proposals (Record next-beat, Clear/Undo immediate) with tests. Coordinate speech-transport proposal with WS2; no provider has been selected. Keep real-time audio independent of inference. Do not substitute the parser for completion of Deep Agents.
 
-Own the next-beat scheduler, one-bar stopped count-in, immediate Clear/Undo, and atomic capture invalidation. Publish the contract/examples/schemas and regression tests first. Keep provisional placement aligned to the composition loop origin even when recording begins mid-loop. Coordinate WS2's capture-buffer reset with exact authoritative audio-frame feedback. Existing speech-transport proposals must remain separate from these recording changes. Keep the full hands-free objective; do not mark complete at a manual demo.
+## Real-device findings and accepted UI direction
 
-### WS2 — input and workspace
+The user tested on Lenny's device. Drum mic capture worked, but hits landed late with wired headphones. Leo separately measured ~120 ms round trip versus a ~62 ms browser estimate, explaining a plausible late-placement cause. This is not yet a calibrated performer pass on Lenny's laptop. Melody produced no notes with a recalled TypeScript/failed-to-load/chord error; exact cause remains unconfirmed.
 
-Start independent calibration UX, dark persistent workspace/piano roll and Lenny-device failure reproduction now. Own input capture, calibration, pitch/onset diagnostics, buffering and UI. Do not change shared scheduling semantics independently; integrate WS1's published contract commit before wiring next-beat/live-edit behavior. Coordinate entrypoint wiring with WS1; WS1 will not concurrently rewrite the UI. Diagnose late capture/compensation/quantization using a repeatable tap test, then add regression tests for reproduced causes. Do not broadly lower thresholds without evidence.
+Required UX: dark monochrome persistent DAW transport/tracks/editor/inspector, no workspace tabs; drum lanes plus editable synth piano roll (create/delete/move/resize, four-bar grid, keyboard and playhead). Guided calibration: visible three-second preparation, four practice/eight measured clicks for timing, progress/Cancel and offset trim; silence measurement has preparation/cancellation without clicks. Preserve old calibration on interruption. Show live pitch and pending/committed/rejected states with actionable engine errors.
 
-### WS3 — local service and research
+WS1 requested fixes on exact original heads of PRs #7/#10. Leo reports fixes in #10 at 10113cf and #11: diagnostic expiry uses processedThrough rather than the held watermark; TimedRun settles on lifecycle cancellation; reports include trim/effective latency; silence measurement is guided. WS1 is verifying these current changes before merging.
 
-Help capture/reproduce the synth error on Lenny's device. Keep work inside services/agent and owned handoff notes. Adopt WS1's merged scheduling/edit contracts in the parser/proposal queue and tests. Propose speech transport with WS2 capture requirements before relying on new message types. No API/key setup or provider assumption. Deep Agents remains required; the deterministic parser is an interim implementation. Independently evaluate search quality on fixed prompts using one reproducible shared blind-listening kit; preserve the integrated original music loader and preview UI.
+## Remaining acceptance gates
 
-### Integration order
-
-1. This priority/status publication and GitHub coordination notice.
-2. WS1 contract/engine capability PR; WS2 independent UX/reproduction and WS3 independent diagnosis/research in parallel.
-3. WS2/WS3 integrate the exact approved contract commit and open capability-sized PRs to engine-integration. Include base SHA, behavior, tests, limitations, dependency and next owner.
-4. WS1 reviews/merges; all owners test the combined recording workflow on Lenny's device and their own laptops.
-5. Complete speech/Deep Agents only after the necessary provider decision/contracts, then run the full PLAN.md acceptance session. Do not push implementation to main before integrated review/signoff.
-
-## Evidence required for this usability pass
-
-- Calibration is predictable, cancellable, and leaves prior settings intact on failure.
-- Measured wired-headphone tap patterns land on intended cells after calibration/offset adjustment.
-- Record starts within one beat during playback and after four count-in beats from stopped.
-- Clear/Undo work immediately during capture without stopping playback or resurrecting old events.
-- Hummed/sung notes appear with diagnosis visible; correcting a phrase preserves other notes.
-- Presets audition or report a specific loading failure. The main workflow requires no tabs.
-- Human results include commit, OS/browser, input/output devices, calibration values, observed failures and exact errors. Raw microphone recordings remain opt-in and uncommitted.
-- Ten-minute audible playback, speech acknowledgments, blind listening and full hands-free cross-platform acceptance remain separate outstanding gates.
-
-## Recording contract ready for review (not merged)
-
-WS1 capability is on `ws1/recording-usability` at `bd1428b`. Review: https://github.com/JettHiggins/VoiceSynthesizer/compare/engine-integration...ws1/recording-usability. Read docs/RECORDING-USABILITY.md on that branch. It includes next-beat starts, four-beat stopped count-in, immediate Clear/Undo, reset-before-ack recordingEpoch/captureStartFrame feedback, optional epoch-tagged batches and a fixed composition grid origin for mid-loop capture. Armed Record checks revision on receipt, then pins its target/deadline through unrelated edits. Other queued musical commands retain application-time revision checks.
-
-Local shared checks, complete Node suite, real Python/WebSocket/WASM integration, 99 base backend tests and production build pass. Human/device acceptance and consumer UI wiring remain open. Repository settings prohibit Actions from creating PRs; the workflow posted the review link in issue #9. A collaborator must open the PR or explicitly enable authenticated PR creation. No PR review/merge is claimed.
-
-WS2 PR #7 has real-device evidence (browser estimate ~62 ms versus ~120 ms measured), diagnostics and device-selection work worth preserving. On integration remove its automatic re-issue of an already armed Record; the new engine preserves that original count-in. Update calibration from 2 warm-up/10 measured clicks to the approved preparation + 4 practice/8 measured flow. Integrate epoch/cutoff reset and provisional Undo per the capability handoff. WS2 PR #8 documents speech capture requirements; speech transport is still a separate proposal.
-
-WS2 acknowledged issue #9: PR #10 stacks guided calibration, cancellation, offset trim and live pitch diagnostics on #7; its next owned task is the monochrome workspace/piano roll. WS1 requested that Leo open/review the published WS1 capability PR using existing collaborator access, since Actions PR creation is prohibited. No merge is claimed.
-
-## WS2 PR review checkpoint
-
-WS1 reviewed PR #8's speech-capture requirements and merged the documentation, clarifying that compensation includes manual trim and that no audio transport/provider is approved. PRs #7/#10 have targeted review requests in docs/PR-REVIEWS.json: diagnostic expiry must use processed audio time rather than the held analysis watermark; calibration must settle/cancel on stop/disconnect/device change/dispose; copied reports need manual/effective offset; silence measurement needs preparation/cancellation. WS2 owns those fixes and the workspace. No merge or real-performer signoff is claimed for #7/#10.
-
-## Development worklet synchronization capability
-
-WS1 prepared `ws1/dev-worklet-sync` at 248585a for review. Vite now serves freshly compiled engine worklets, watches engine/contract imports and reloads after success/recovery; stale generated public files are ignored in dev. Production bundling is unchanged. Shared checks, full Node suite, build, actual browser enable/play and a stale-artifact browser diagnostic pass. This is separate from the recording contract and remains unmerged. Review https://github.com/JettHiggins/VoiceSynthesizer/compare/engine-integration...ws1/dev-worklet-sync and docs/DEV-WORKLET.md on that branch. It addresses a verified development mismatch hazard, not a proven explanation for the user's recalled chord error.
+- Human calibrated drum takes, melody and phrase correction on Lenny's device and each development laptop; retain exact OS/browser/device/commit/error evidence. No raw mic recordings by default.
+- Combined next-beat/live-edit workflow with no stale input returning; no tab switching required.
+- Preset audition works or provides a precise actionable failure. The recalled chord error is not declared fixed by synthetic tests.
+- Three-person blind sound comparison using one shared kit/fingerprint; ranking gains and preset-name benchmarks do not establish perceptual quality.
+- Real speech recognition/classification and Deep Agents after the necessary decisions/contracts; full hands-free scenario in PLAN.md.
+- Ten-minute audible browser playback and timing/command targets on real macOS/Windows/WSL2 setups. CI and offline clock renders support but do not replace physical acceptance.

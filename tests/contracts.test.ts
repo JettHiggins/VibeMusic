@@ -30,3 +30,9 @@ test('performance-batch fixture and extended transport validate with shared sche
  SessionCommand.parse(JSON.parse(readFileSync('packages/contracts/fixtures/PerformanceBatch.json','utf8')));
  ClientMessage.parse({type:'transport',transport:{clockId:'clock',sampleRate:44100,currentFrame:400000,loopStartFrame:352800,playing:true,recording:true,recordingState:'recording',recordingStartFrame:352800,recordingTarget:{trackId:'drums',lane:'kick'},pendingCommandIds:[]}});
 });
+
+test('recording-usability wire examples validate for both owners',()=>{
+ for(const message of JSON.parse(readFileSync('packages/contracts/fixtures/RecordingUsability.json','utf8'))){
+  (message.type==='transport'?ClientMessage:ServerMessage).parse(message);
+ }
+});
