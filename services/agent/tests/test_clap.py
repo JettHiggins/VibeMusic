@@ -33,5 +33,5 @@ def test_text_embeddings_are_not_degenerate_and_broken_checkpoints_are_refused(c
     from groove_agent.research.clap import ClapEmbedder, DegenerateModel
     organ, noise, organ_again = (unit(clap.embed_text(t)) for t in ("a church organ", "wind and rain noise", "a pipe organ in a church"))
     assert float(organ @ organ_again) > float(organ @ noise) + 0.2
-    with pytest.raises(DegenerateModel):
-        ClapEmbedder("laion/larger_clap_music")
+    # Do not assert that another remote checkpoint remains broken forever.
+    # Check rejection deterministically in test_clap_validation instead.

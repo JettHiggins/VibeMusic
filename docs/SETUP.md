@@ -58,3 +58,9 @@ In the browser enable audio, connect the agent, then submit a command transcript
 After building the WASM engine, `npm run test:integration` starts an isolated local service, connects via the production WebSocket adapter/coordinator, and verifies proposals, queueing, application, and revision feedback against real WASM. Activate the virtualenv first so `python3` resolves the backend dependencies; alternatively set `VOICESYNTH_PYTHON` to its Python executable. The integration command is POSIX shell syntax, supported on macOS and WSL2.
 
 After pulling new contracts, restart uvicorn so it reloads the schemas. For engine recording tests, submit `record snare` while stopped: count-in plays, recording arms on the next four-bar downbeat, then `Groove stop` ends the window while playback continues. This tests scheduling only; it is not microphone recording.
+
+### Platform and optional model checks
+
+The workflow now includes macOS and Windows artifact-consumer jobs: they use the Linux-built WASM, run contracts/engine/backend tests and live service integration, and build the browser app. These jobs do not establish physical-microphone latency, browser audio quality, or the WSL2 installation process. Pending or failed remote checks must not be reported as passed.
+
+Optional model experiments use a separate `.venv-research` environment, ignored by git. The CLAP adapter records an immutable Hub snapshot and library versions, rejects incomplete/degenerate model features, and uses restricted weights-only loading for the official PyTorch checkpoints. Model tests require GROOVE_TEST_CLAP=1; ordinary CI does not download weights. General CLAP has passed a local CPU feature-space probe; music compatibility and blind-listening quality are separate acceptance gates.

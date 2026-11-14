@@ -29,6 +29,10 @@ SEED = 20261114
 
 
 def run(backend: ResearchBackend, out: Path, prompts=PROMPTS, seed: int = SEED) -> list[dict]:
+    if out.exists() and any(out.iterdir()):
+        raise ValueError('choose an empty evaluation directory; existing listening results are preserved')
+    if not prompts:
+        raise ValueError('evaluation needs at least one prompt')
     out.mkdir(parents=True, exist_ok=True)
     started = time.perf_counter()
     if backend.corpus is None:
@@ -40,6 +44,11 @@ def run(backend: ResearchBackend, out: Path, prompts=PROMPTS, seed: int = SEED) 
         t0 = time.perf_counter()
         query = unit(backend.embedder.embed_text(prompt))
         top = [Scored(e.patch, s, e.label, e.audio) for e, s in backend.corpus.top(query, 5)]
+        # Cached corpora contain embeddings/patches, not audio. Count preview restoration
+        # before reporting retrieval-ready latency, just as the live service does.
+        for item in top:
+            if item.audio is None:
+                item.audio = backend.renderer.render(item.patch, backend.recipe)
         retrieval_seconds = time.perf_counter() - t0
         result = evolve(top, backend.space, backend.renderer, backend.embedder, query, backend.recipe,
                         seed=seed + number, budget=backend.budget)

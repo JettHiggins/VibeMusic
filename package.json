@@ -12,7 +12,7 @@
   "scripts": {
     "dev": "npm run dev -w @voicesynth/web",
     "build": "npm run build -w @voicesynth/web",
-    "check": "tsc --noEmit && node --import tsx scripts/export-contracts.ts && python3 scripts/check_contracts.py",
+    "check": "node --import tsx scripts/check.ts",
     "test": "node --import tsx --test tests/*.test.ts",
     "contracts:export": "node --import tsx scripts/export-contracts.ts",
     "worklet:build": "node --import tsx scripts/build-worklet.ts",

@@ -19,3 +19,12 @@ def test_blind_kit_has_both_methods_per_prompt_and_a_hidden_answer_key(tmp_path)
     latency = list(csv.DictReader(open(tmp_path / "latency.csv", encoding="utf-8")))
     assert all(float(r["seconds_to_complete"]) >= float(r["seconds_to_retrieval"]) for r in latency)
     assert all(int(r["renders"]) == 16 for r in latency)
+
+
+def test_listening_results_are_not_overwritten(tmp_path):
+    import pytest
+    saved = tmp_path / 'sheet.csv'
+    saved.write_text('listener preferences to keep', encoding='utf8')
+    with pytest.raises(ValueError, match='empty evaluation directory'):
+        run(backend(budget=0), tmp_path, prompts=('piano',))
+    assert saved.read_text(encoding='utf8') == 'listener preferences to keep'
