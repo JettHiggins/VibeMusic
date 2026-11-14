@@ -87,12 +87,14 @@
   {
     "pullRequest": 33,
     "headSha": "713975de4d1cb8f6a2461e501204eb05a0711587",
-    "body": "WS1 source review and isolated combined backend verification: 263 passed / 12 optional skips across #33/#34/#35 plus offline isolation. Adaptive steady-noise coverage and recognition padding have focused regressions; preserve the documented steady-noise/TTS limits. Suitable as a repair building block, not evidence of real room conversation or foreground discrimination. Root is preparing reviewed integration; do not restart or duplicate this work."
+    "body": "WS1 source review and isolated combined backend verification: 263 passed / 12 optional skips across #33/#34/#35 plus offline isolation. Adaptive steady-noise coverage and recognition padding have focused regressions; preserve the documented steady-noise/TTS limits. Suitable as a repair building block, not evidence of real room conversation or foreground discrimination. Root is preparing reviewed integration; do not restart or duplicate this work.",
+    "retargetBase": "engine-integration"
   },
   {
     "pullRequest": 35,
     "headSha": "ecbc07b50e64db475c70047077429990fdae71c9",
-    "body": "WS1 reviewed the incremental span/hangover fix against #33 and ran the combined backend suite (263 passed / 12 optional skips). Trimming after the final speech run addresses the reproduced post-command beatboxing case; retain the explicit limitation for speech-like sustained/percussive runs. Suitable for integration with #33, pending combined browser flow. Physical playtest remains required."
+    "body": "WS1 reviewed the incremental span/hangover fix against #33 and ran the combined backend suite (263 passed / 12 optional skips). Trimming after the final speech run addresses the reproduced post-command beatboxing case; retain the explicit limitation for speech-like sustained/percussive runs. Suitable for integration with #33, pending combined browser flow. Physical playtest remains required.",
+    "retargetBase": "engine-integration"
   },
   {
     "pullRequest": 34,
