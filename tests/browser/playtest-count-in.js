@@ -1,5 +1,5 @@
 async page=>{
- await page.goto('http://127.0.0.1:5173');
+ await page.goto(page.url().startsWith('http://127.0.0.1:') ? page.url().split('/').slice(0,3).join('/') : 'http://127.0.0.1:5173');
  const initial=await page.evaluate(()=>globalThis.__voicesynth.engine.getSession());
  if(initial.tracks.some(t=>t.notes.length||t.hits.length))throw new Error('Fresh launch seeded a song');
  await page.getByRole('button',{name:'Enable audio',exact:true}).click();
@@ -23,7 +23,8 @@ async page=>{
  await page.waitForFunction(()=>globalThis.__recordTransport?.recording===true,{},{timeout:5000});
  const restarted=await page.evaluate(()=>({...globalThis.__recordTransport}));
  if(!restarted.metronomeEnabled)throw new Error('Playback/recording metronome did not default on');
- const revision=await page.evaluate(()=>{const engine=globalThis.__voicesynth.engine,revision=engine.getSession().revision;engine.dispatch({id:crypto.randomUUID(),expectedRevision:revision,boundary:'immediate',operation:{type:'metronome',enabled:false}});return revision;});
+ const revision=await page.evaluate(()=>globalThis.__voicesynth.engine.getSession().revision);
+ await page.getByRole('button',{name:'Metronome',exact:true}).click();
  await page.waitForFunction(()=>globalThis.__recordTransport?.metronomeEnabled===false);
  if(await page.evaluate(()=>globalThis.__voicesynth.engine.getSession().revision)!==revision)throw new Error('Metronome toggle changed musical revision');
  const data=await page.evaluate(()=>{globalThis.__recordOff();return {session:globalThis.__voicesynth.engine.getSession(),sampleRate:globalThis.__voicesynth.engine.getAudioContext().sampleRate};});

@@ -5,6 +5,7 @@ import {pathToFileURL} from 'node:url';
 import {resolve} from 'node:path';
 import {createSession,type ClientMessage,type PerformanceEvent,type SessionCommand,type SessionState} from '../packages/contracts/src/index.ts';
 import {EngineCore} from '../apps/web/src/engine/core.ts';
+import {PerformanceRecorder} from '../apps/web/src/input/recorder.ts';
 const dir='apps/web/public/engine',ready=existsSync(`${dir}/voicesynth.wasm`),SR=44100,STEP=SR/8,LOOP=SR*8;
 async function setup(seed=true,release=true){
  const {FirmwareAudio}=await import(pathToFileURL(resolve(`${dir}/preview-worklet.js`)).href);
@@ -18,7 +19,8 @@ async function setup(seed=true,release=true){
  const w={...native.w};
  if(release){assert.equal(typeof native.w.vs_erase_note,'function','Build current engine assets before erasure tests');w.vs_erase_note=(track:number,note:number)=>{calls.push([track,note]);native.w.vs_erase_note(track,note);};}
  else delete w.vs_erase_note;
- const core=new EngineCore({w,sync:state=>native.sync(state)},JSON.parse(readFileSync(`${dir}/metadata.json`,'utf8')),session,'clock',m=>messages.push(m));
+ const listeners:((message:ClientMessage)=>void)[]=[];
+ const core=new EngineCore({w,sync:state=>native.sync(state)},JSON.parse(readFileSync(`${dir}/metadata.json`,'utf8')),session,'clock',m=>{messages.push(m);listeners.forEach(listener=>listener(m));});
  let frame=0,id=0;
  const render=(count:number)=>{const left=new Float32Array(count);core.render(left,new Float32Array(count),frame);frame+=count;return left;};
  const send=(operation:SessionCommand['operation'],boundary:SessionCommand['boundary']='immediate')=>core.dispatch({id:`request-${++id}`,expectedRevision:core.getSession().revision,boundary,operation});
@@ -26,9 +28,27 @@ async function setup(seed=true,release=true){
  const batch=(events:PerformanceEvent[])=>send({type:'commit-performance',events,excludedSpans:[],verifiedThroughFrame:core.transport().currentFrame,recordingEpoch:core.transport().recordingEpoch},'next-loop');
  const hit=(id:string,step:number,loop=0):PerformanceEvent=>({kind:'onset',id,target:{trackId:'drums',lane:'kick'},captureFrame:Math.round((step+loop*64)*STEP),clockId:'clock',velocity:.8,confidence:1});
  const note=(id:string,step:number,duration:number,loop=0):PerformanceEvent=>({kind:'note',id,target:{trackId:'synth-1'},captureFrame:Math.round((step+loop*64)*STEP),endFrame:Math.round((step+duration+loop*64)*STEP),clockId:'clock',midi:60,velocity:.8,confidence:1});
- return {core,messages,calls,render,send,record,batch,hit,note,native};
+ return {core,messages,calls,render,send,record,batch,hit,note,native,listeners};
 }
 const kick={trackId:'drums' as const,lane:'kick' as const};
+test('real recorder consumes the engine fence while the surviving batch keeps its command ID', {skip:!ready},async()=>{
+ const s=await setup();let id=0;
+ const recorder=new PerformanceRecorder({dispatch:c=>s.core.dispatch(c),newId:()=>`capture-${++id}`},'manual',{batchLeadSeconds:Infinity});
+ s.listeners.push(m=>recorder.handle(m));recorder.handle({type:'session',session:s.core.getSession()});
+ s.record(kick);s.render(SR);recorder.handle({type:'transport',transport:s.core.transport()});
+ const onset=(step:number)=>({frame:Math.round(step*STEP),velocity:.8,confidence:1,levelDb:-12});
+ recorder.addOnsets([onset(18),onset(20)],0,'clock',s.core.transport().currentFrame);
+ const original=recorder.status().inFlight;assert.ok(original);
+ s.send({type:'erase-event',target:kick,step:18});
+ assert.equal(recorder.status().inFlight,original);
+ assert.deepEqual(recorder.status().provisional.map(p=>p.step),[20]);
+ recorder.addOnsets([onset(18)],0,'clock',s.core.transport().currentFrame);
+ assert.deepEqual(recorder.status().provisional.map(p=>p.step),[20],'late worker input stays fenced');
+ s.render(LOOP);recorder.handle({type:'transport',transport:s.core.transport()});
+ assert.equal(recorder.status().inFlight,null);assert.equal(recorder.status().committed,1);
+ assert.ok(s.messages.some(m=>m.type==='ack'&&m.commandId===original&&m.status==='applied'));
+ assert.deepEqual(s.core.getSession().tracks[3].hits.filter(h=>h.lane==='kick').map(h=>h.step).sort((a,b)=>a-b),[20,24]);
+});
 test('erase removes one committed hit immediately, retains unrelated queued input and fences late copies', {skip:!ready},async()=>{
  const s=await setup();s.record(kick);s.render(SR);
  const epoch=s.core.transport().recordingEpoch!,revision=s.core.getSession().revision;
@@ -90,7 +110,7 @@ test('erase does not rebase an already-stale capture batch or replay queued whol
  assert.ok(s.messages.some(m=>m.type==='ack'&&pattern.type==='ack'&&m.commandId===pattern.commandId&&m.status==='rejected'&&m.reason?.includes('targeted erase')));
 });
 test('sounding melody releases only the erased current note, not another track or a future same-pitch note', {skip:!ready},async()=>{
- const s=await setup();const loaded=s.core.getSession();
+ const s=await setup();s.send({type:'metronome',enabled:false});const loaded=s.core.getSession();
  loaded.tracks[0].notes=[{id:'sounding',step:0,duration:8,midi:60,velocity:.8},{id:'future',step:16,duration:4,midi:60,velocity:.8}];
  s.send({type:'load-session',session:loaded},'next-loop');s.send({type:'play',playing:true});s.render(4410);
  s.send({type:'erase-event',target:{trackId:'synth-1'},step:16});assert.equal(s.calls.length,0);
