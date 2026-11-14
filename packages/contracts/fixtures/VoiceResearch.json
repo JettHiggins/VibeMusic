@@ -1,0 +1,58 @@
+[
+  {
+    "type": "research-context",
+    "requestId": "voice-42",
+    "jobId": "voice-42:job",
+    "trackId": "synth-1",
+    "description": "warmer 80s electric piano",
+    "origin": "voice"
+  },
+  {
+    "type": "research",
+    "jobId": "voice-42:job",
+    "status": "complete",
+    "progress": 1,
+    "candidates": [
+      {
+        "id": "patch-1",
+        "patch": {
+          "engine": 0,
+          "preset": 0,
+          "parameters": {},
+          "engineRevision": "bac9c05ea7627449405aa10e48da21d75b6c8c56"
+        },
+        "provenance": "fixture only; not a researched patch",
+        "previewUrl": "http://127.0.0.1:8000/previews/fixture.wav",
+        "score": 0
+      }
+    ]
+  },
+  {
+    "type": "candidate-preview",
+    "id": "voice-43:preview",
+    "jobId": "voice-42:job",
+    "candidateId": "patch-1"
+  },
+  {
+    "type": "preview-ack",
+    "id": "voice-43:preview",
+    "jobId": "voice-42:job",
+    "candidateId": "patch-1",
+    "status": "started"
+  },
+  {
+    "type": "preview-ack",
+    "id": "voice-43:preview",
+    "jobId": "voice-42:job",
+    "candidateId": "patch-1",
+    "status": "ended"
+  },
+  {
+    "type": "preview-ack",
+    "id": "stale-preview",
+    "jobId": "older:job",
+    "candidateId": "old-patch",
+    "status": "rejected",
+    "reason": "Candidate is no longer displayed"
+  }
+]

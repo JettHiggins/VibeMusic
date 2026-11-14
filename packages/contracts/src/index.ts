@@ -40,6 +40,10 @@ export const Transport = z.strictObject({ clockId: id, sampleRate: z.number().in
 const base64 = z.string().min(4).max(128000).regex(/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/);
 export const SpeechAudio = z.strictObject({ type: z.literal('speech-audio'), streamId: id, seq: frame, clockId: id, startFrame: frame, endFrame: frame, sampleRate: z.number().int().min(8000).max(48000), encoding: z.literal('pcm-s16le'), data: base64 });
 export const SpeechStatus = z.strictObject({ type: z.literal('speech-status'), streamId: id, available: z.boolean(), provider: id, reason: z.string().optional() });
+// Voice research/preview v1 extension. These are UI orchestration, never musical edits.
+export const ResearchContext = z.strictObject({ type: z.literal('research-context'), requestId: id, jobId: id, trackId: z.enum(['synth-1','synth-2','synth-3']), description: id, origin: z.literal('voice') });
+export const CandidatePreview = z.strictObject({ type: z.literal('candidate-preview'), id, jobId: id, candidateId: id });
+export const PreviewAck = z.strictObject({ type: z.literal('preview-ack'), id, jobId: id, candidateId: id, status: z.enum(['started','ended','rejected']), reason: id.optional() });
 export const ClientMessage = z.discriminatedUnion('type', [
  z.strictObject({ type: z.literal('session'), session: SessionState }),
  z.strictObject({ type: z.literal('transport'), transport: Transport }),
@@ -47,6 +51,7 @@ export const ClientMessage = z.discriminatedUnion('type', [
  z.strictObject({ type: z.literal('utterance'), id, text: id, clockId: id, startFrame: frame, endFrame: frame, duringRecording: z.boolean() }),
  z.strictObject({ type: z.literal('sound-request'), id, trackId: TrackId, description: id }),
  z.strictObject({ type: z.literal('cancel-job'), jobId: id }),
+ PreviewAck,
  SpeechAudio
 ]);
 export const ServerMessage = z.discriminatedUnion('type', [
@@ -57,6 +62,8 @@ export const ServerMessage = z.discriminatedUnion('type', [
  z.strictObject({ type: z.literal('command-span'), utteranceId: id, clockId: id, startFrame: frame, endFrame: frame }),
  z.strictObject({ type: z.literal('research'), jobId: id, status: z.enum(['running','complete','cancelled','failed']), progress: unit, candidates: z.array(PatchCandidate), error: z.string().optional() }),
  z.strictObject({ type: z.literal('error'), requestId: id, message: id }),
+ ResearchContext,
+ CandidatePreview,
  SpeechStatus
 ]);
 export type SessionState = z.infer<typeof SessionState>;
@@ -68,6 +75,9 @@ export type ServerMessage = z.infer<typeof ServerMessage>;
 export type PatchCandidate = z.infer<typeof PatchCandidate>;
 export type SpeechAudio = z.infer<typeof SpeechAudio>;
 export type SpeechStatus = z.infer<typeof SpeechStatus>;
+export type ResearchContext = z.infer<typeof ResearchContext>;
+export type CandidatePreview = z.infer<typeof CandidatePreview>;
+export type PreviewAck = z.infer<typeof PreviewAck>;
 export const AuditionEvent = z.discriminatedUnion('kind',[
  z.strictObject({kind:z.literal('note'),trackId:z.enum(['synth-1','synth-2','synth-3']),midi:z.number().int().min(0).max(127),velocity:unit,on:z.boolean()}),
  z.strictObject({kind:z.literal('drum'),lane:Lane,velocity:unit})

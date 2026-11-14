@@ -1,6 +1,6 @@
 # Proposal: voice research context and non-mutating candidate audition
 
-Status: proposed, not an implemented wire interface. WS1 owns approval/shared schemas; WS2 owns the browser consumer (or WS1 by explicit temporary assignment); WS3 owns producers and typed language tools. No production code may send these messages until the agreed schemas and examples are published. This follows issue #3(a/b), PLAN.md milestone 4 and the final hands-free scenario.
+Status: WS1 approved the shared interface; see docs/VOICE-RESEARCH.md and generated schemas for the final rollout/lifecycle decisions. Producers and consumers are not yet implemented. WS1 owns approval/shared schemas; WS2 owns the browser consumer (or WS1 by explicit temporary assignment); WS3 owns producers and typed language tools. No production code may send these messages until the agreed schemas and examples are published. This follows issue #3(a/b), PLAN.md milestone 4 and the final hands-free scenario.
 
 ## Reproduced code gap
 

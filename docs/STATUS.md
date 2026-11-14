@@ -13,9 +13,9 @@ WS1 owns this ledger. Read PLAN.md, this file and [coordination issue #9](https:
 
 | Owner | Delivered | Next action |
 | --- | --- | --- |
-| WS1 — Jett / @JettHiggins | Engine/contracts/build/integration, recording usability, temporary browser speech wiring; #24–#27 reviewed and combined. | Review/publish voice research visibility and non-mutating audition contracts, coordinate consumers/producers, then full hands-free acceptance. Prune only old integrated branch tips; preserve current work. |
+| WS1 — Jett / @JettHiggins | Engine/contracts/build/integration, recording usability, temporary browser speech wiring; #24–#27 reviewed and combined. | Approved/published voice research and non-mutating preview schemas from #28; implement browser adoption/playback, coordinate WS3 producers, then full hands-free acceptance. Prune only old integrated branch tips; preserve current work. |
 | WS2 — Leo / @leoAndrade2332 | Dark workspace/piano roll, calibration/diagnostics, live recording consumer and worker-load diagnostics. | Physical late-hit/melody-loading reproduction and near-grid pitch timing. Do not duplicate integrated speech wiring. Availability is not assumed from prior usage limits. |
-| WS3 — Lenny / @lennyyanza | Local speech, alignment/compound commands, free-only Deep Agents, renderer/CLAP research. | Voice research proposal awaits WS1 contract work; then implement approved producers/tools. Continue live provider/corpus evaluation after WS4 corpus delivery. |
+| WS3 — Lenny / @lennyyanza | Local speech, alignment/compound commands, free-only Deep Agents, renderer/CLAP research. | Voice research contract is approved in docs/VOICE-RESEARCH.md; implement default-off producers/tools against the published schemas. Continue live provider/corpus evaluation after WS4 corpus delivery. |
 | WS4 — fourth teammate | #17–#19 evaluation tickets published; no delivered PR observed at this checkpoint. | #17 frozen command corpus, then #18 listening summarizer, then #19 held-out sound/refinement rubric. Own evals/, tools/evaluation/, docs/WS4-HANDOFF.md. |
 
 ## Reviewed integration and validation
@@ -34,7 +34,7 @@ WS3 independently reported the same old-backend failure/new-backend preservation
 
 ## Remaining product gaps / completion gates
 
-1. **Voice research visibility and audition:** WS3's ws3/voice-research-proposal identifies that voice-started jobs do not populate the current browser panel and voice audition has no non-mutating operation. WS1 must approve/publish shared schemas, then browser adoption/preview and backend producers/tools must land together. Model/provider availability alone does not close milestone 4. Manual candidate preview remains available.
+1. **Voice research visibility and audition:** WS3's ws3/voice-research-proposal identifies that voice-started jobs do not populate the current browser panel and voice audition has no non-mutating operation. Shared schemas are approved/published through proposal #28 and docs/VOICE-RESEARCH.md. Browser adoption/preview and backend producers/tools must now land together; keep production emission disabled until the matching browser consumer is integrated. Model/provider availability alone does not close milestone 4. Manual candidate preview remains available.
 2. **Human performance:** calibrated kick/snare/hats, sung melody and phrase correction. User's drum mic worked on Lenny's device but hits were late. Leo measured ~120 ms round trip versus ~62 ms browser estimate on his setup; not a performer pass on Lenny's device.
 3. **Original loading failure:** exact TypeScript/chord/module error remains unconfirmed; diagnostics now preserve worker URL/line. Reproduce with OS/browser/device/commit, audition/pitch status and exact error. See docs/MIC-TESTING.md.
 4. **Model evaluation:** frozen WS4 corpus, actual free-provider correctness/refusal/latency comparison. One correct 4.55 s smoke test does not establish the two-second ordinary-command target; parser path is independent.
@@ -43,6 +43,10 @@ WS3 independently reported the same old-backend failure/new-backend preservation
 
 ## Issue #3 answers remain in force
 
-(a) Existing research wire shape stays until the focused voice research proposal is approved. (b) Audition is non-mutating; accept changes the patch, Undo restores it. (c) Armed Record keeps its deadline through unrelated edits; no replay of discarded capture/Clear. (d) Recognized Groove speech is excluded even on interpretation failure, before coverage. (e) Stop-recording cancels armed/count-in Record and keeps playback without consuming a musical revision.
+(a) The additive voice research/preview proposal #28 is now approved with coordinated rollout; existing progress and musical-command shapes stay unchanged. (b) Audition is non-mutating; accept changes the patch, Undo restores it. (c) Armed Record keeps its deadline through unrelated edits; no replay of discarded capture/Clear. (d) Recognized Groove speech is excluded even on interpretation failure, before coverage. (e) Stop-recording cancels armed/count-in Record and keeps playback without consuming a musical revision.
 
 Handoffs include commit/PR, behavior, validation, limitations and next step. Never commit secrets, raw microphone recordings, model downloads or generated corpora.
+
+## Voice research contract publication
+
+WS1 approved #28 with explicit coordinated rollout and lifecycle rules in docs/VOICE-RESEARCH.md. New ServerMessage research-context/candidate-preview and ClientMessage preview-ack are exported in TypeScript and generated Python JSON Schemas; fixtures/VoiceResearch.json has compatible examples. Node 166 passed/one optional skip, shared checks including Python valid/invalid/wrong-direction cases, explicit live-service/WASM integration and production build pass. This is interface publication, not working voice audition. Runtime stale/duplicate/blocked-play/async cancellation and combined recognized-voice acceptance remain required in the consumer/producer PRs. WS1 owns the browser research integration for this capability so WS2 can focus on input/device diagnosis.

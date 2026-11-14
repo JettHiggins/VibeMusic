@@ -4,11 +4,14 @@
 
 Fresh declared install: backend 234 passed / six optional skips, Node 162 passed / one skip, schemas/live-service/WASM/build pass. Original eSpeak short-pause melody repeat, long-pause melody and drums passed through actual browser + real local STT. First short-pause run preserved notes but missed strict grid timing; keep that WS2 timing concern open. One live OpenRouter Deep Agents smoke proposed tempo 110 correctly in 4547 ms; not a corpus/latency acceptance result. No key copied/printed/committed.
 
-- WS1: approve/publish voice research context/non-mutating audition contracts from WS3 proposal, coordinate rollout, integrate and validate.
+- WS1: #28 contract is approved/published; implement browser research adoption/non-mutating preview and coordinate rollout.
 - WS2: physical loading/late-hit/near-grid pitch timing evidence; no duplicate speech wiring.
-- WS3: implement voice research producers/tools after shared contracts; live provider evaluation with WS4 corpus. Existing Deep Agents refusal of unsupported voice audition is correct until rollout.
+- WS3: shared voice research contracts are now published; implement default-off producers/tools per docs/VOICE-RESEARCH.md; live provider evaluation with WS4 corpus. Existing Deep Agents refusal of unsupported voice audition is correct until rollout.
 - WS4: frozen #17 corpus first, #18 listening summarizer and #19 rubric next.
 
 Keys: distinct revocable per-person keys through encrypted sharing; backend .env only. Easy setup: docs/TEAM-API-SETUP.md. Old integrated remote branch tips were retired atomically with exact-tip leases with ancestry/tips recorded in docs/BRANCH-CLEANUP.md; current ws3 work and speech/review branches stay intact. Preserve local work, fetch/prune and start new capability branches from integration rather than resurrecting a retired branch.
 
 Remaining gates: voice sound jobs visible in browser and non-mutating voice audition, real-device mic/loading/timing/phrase correction, live model corpus/latency, three-listener evaluation, full hands-free session and ten-minute audible playback. docs/STATUS.md is authoritative; independent sessions must read it at their next checkpoint.
+
+
+@lennyyanza — proposal #28 is approved with final decisions in docs/VOICE-RESEARCH.md and generated shared schemas. Implement research-context before worker progress, candidate-preview with exact IDs/no arbitrary URL, and correlated preview-ack lifecycle/timeouts. Preserve newer UI intent over delayed STT/model research, pending patch acceptance and wake-span/coverage order. Keep new producers default-off until WS1's browser consumer is integrated; strict old clients reject the new variants. No handshake or old-client compatibility is claimed. WS1 owns browser adoption/playback for this capability; Leo retains device/input work. Schema publication does not claim runtime audition success.

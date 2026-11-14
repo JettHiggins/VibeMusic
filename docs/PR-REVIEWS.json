@@ -78,5 +78,10 @@
     "pullRequest": 27,
     "headSha": "bdb4ffceb91c390908a92917751596ec2ee75d20",
     "body": "WS1 reviewed and integrated this exact source with #24/#25/#26/#27. Resolved overlap preserves timed wake capture context, compound command ordering and asynchronous stale-language guards. Fresh declared dev+speech+LLM install: 234 backend passed/6 optional skips; Node 162 passed/1 skip; schema/live-service/WASM/build pass. Original eSpeak short-pause repeat, long-pause melody and drums pass; initial near-grid melody mismatch retained in STATUS.md as an open timing concern. One live OpenRouter smoke proposed tempo 110 correctly in 4547 ms, not model-corpus or human acceptance. See current STATUS.md for remaining voice research/audition contracts, physical mic/loading/timing and listening gates."
+  },
+  {
+    "pullRequest": 28,
+    "headSha": "56f67492733595cb5de8b8c7e7d377529a4b9200",
+    "body": "WS1 approved and integrated this proposal as the basis for the published shared schemas/examples. Final normative decisions: docs/VOICE-RESEARCH.md. Coordinated rollout, producers default-off until browser adoption/preview lands; strict old clients are not compatible with new variants. Preserve newer UI intent over delayed STT/model results, exact candidate binding, pending patch acceptance, async play cancellation, correlated preview acknowledgments and unchanged musical state. Node 166 passed/one optional skip; TypeScript/Python positive/negative/direction checks, live-service/WASM and build passed. Interface publication only; WS1 browser consumer and WS3 producers/tools still required."
   }
 ]

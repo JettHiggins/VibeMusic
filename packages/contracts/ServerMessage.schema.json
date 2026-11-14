@@ -1099,6 +1099,76 @@
       "properties": {
         "type": {
           "type": "string",
+          "const": "research-context"
+        },
+        "requestId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "jobId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "trackId": {
+          "type": "string",
+          "enum": [
+            "synth-1",
+            "synth-2",
+            "synth-3"
+          ]
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "origin": {
+          "type": "string",
+          "const": "voice"
+        }
+      },
+      "required": [
+        "type",
+        "requestId",
+        "jobId",
+        "trackId",
+        "description",
+        "origin"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "candidate-preview"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "jobId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "candidateId": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "type",
+        "id",
+        "jobId",
+        "candidateId"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
           "const": "speech-status"
         },
         "streamId": {
