@@ -4,11 +4,11 @@ Optional: needs `requirements-research.txt` (torch, transformers, scipy) and
 downloads the model weights from the Hugging Face hub into the user's cache on
 first use. Weights are never stored in the repository.
 
-Model choice: the general checkpoint is an experimental comparison backend.
-The planned music checkpoint remains under compatibility investigation; the
-teammate observed degenerate embeddings in its Hugging Face port. Invalid
-feature spaces are rejected instead of being used to rank patches. Model
-revision and inference-library versions are part of the corpus identity.
+Model choice: the original LAION music checkpoint is the default. The public
+converted music weights failed the text-space check, so the original weights
+are mapped to the Transformers architecture with strict coverage checks. The
+general checkpoint is an explicit experimental comparison. Source/config
+revisions, conversion and inference-library versions identify each corpus.
 """
 from __future__ import annotations
 
@@ -20,7 +20,10 @@ import re
 
 import numpy as np
 
-DEFAULT_MODEL = "laion/clap-htsat-unfused"
+from .clap_checkpoint import (MUSIC_MODEL, MUSIC_CONFIG_REVISION, MUSIC_SOURCE, MUSIC_SOURCE_REVISION,
+                              MUSIC_FILENAME, CONVERSION_VERSION, load_music_model)
+
+DEFAULT_MODEL = MUSIC_MODEL
 CLAP_RATE = 48000
 
 
@@ -37,8 +40,8 @@ class ClapEmbedder:
         self._torch = torch
         model_id = model_id or os.environ.get("GROOVE_CLAP_MODEL", DEFAULT_MODEL)
         torch.set_num_threads(int(os.environ.get("GROOVE_CLAP_THREADS", "2")))
-        # Resolve one cached Hub snapshot, then pin tokenizer and weights to that same commit.
-        config_path = hf_hub_download(model_id, 'config.json', revision=os.environ.get("GROOVE_CLAP_REVISION", "main"))
+        # Pin config/tokenizer together; original music weights have their own immutable source.
+        config_path = hf_hub_download(model_id, 'config.json', revision=os.environ.get("GROOVE_CLAP_REVISION", MUSIC_CONFIG_REVISION if model_id == MUSIC_MODEL else "main"))
         revision = Path(config_path).parent.name
         if not re.fullmatch(r'[0-9a-f]{40}', revision):
             raise RuntimeError('cannot identify the immutable Hugging Face model snapshot')
@@ -46,12 +49,16 @@ class ClapEmbedder:
         self.name = (f"LAION CLAP ({model_id}@{revision or 'unversioned'}; "
                      f"transformers {version('transformers')}; torch {torch.__version__}; scipy {version('scipy')})")
         self._processor = ClapProcessor.from_pretrained(model_id, revision=revision)
-        # Official repositories publish .bin weights. Explicit restricted tensor loading
-        # avoids automatic conversion/PR creation and does not allow arbitrary object loading.
-        self._model, info = ClapModel.from_pretrained(model_id, config=config, revision=revision,
-            use_safetensors=False, weights_only=True, output_loading_info=True)
-        if any(info.get(key) for key in ("missing_keys", "mismatched_keys", "error_msgs")):
-            raise DegenerateModel(f"{model_id} did not load a complete compatible checkpoint: {info}")
+        if model_id == MUSIC_MODEL:
+            self._model = load_music_model(torch, config, ClapModel)
+            self.name += (f"; original {MUSIC_SOURCE}@{MUSIC_SOURCE_REVISION}/{MUSIC_FILENAME}; "
+                          f"conversion {CONVERSION_VERSION}")
+        else:
+            # Explicit restricted tensor loading avoids automatic conversion/PR creation.
+            self._model, info = ClapModel.from_pretrained(model_id, config=config, revision=revision,
+                use_safetensors=False, weights_only=True, output_loading_info=True)
+            if any(info.get(key) for key in ("missing_keys", "mismatched_keys", "error_msgs")):
+                raise DegenerateModel(f"{model_id} did not load a complete compatible checkpoint: {info}")
         self._model.eval()
         a, b = (self.embed_text(text) for text in ("a church organ", "wind and rain noise"))
         self._check_text_space(a, b, model_id)

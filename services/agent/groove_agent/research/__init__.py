@@ -1,6 +1,6 @@
 """Research-driven patch search (PLAN.md milestone 4).
 
-The renderer and the embedder are injected. The real ones (offline render of the
-pinned SLOOP engine, LAION CLAP) are not part of this package yet; `mock.py`
-exists for tests and wiring only and labels everything it produces.
+Production adapters use pinned SLOOP WASM rendering and optional local LAION
+CLAP music weights. Both are explicitly configured; mocks are for labeled
+wiring tests. Semantic quality still requires the blind-listening gate.
 """

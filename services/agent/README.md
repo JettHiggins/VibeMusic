@@ -98,7 +98,7 @@ For protocol tests with actual engine audio but deliberately meaningless ranking
 GROOVE_RESEARCH=sloop GROOVE_EMBEDDER=mock python -m uvicorn groove_agent.app:app --app-dir services/agent --host 127.0.0.1 --port 8000
 ```
 
-Every candidate still carries MOCK embedder provenance. This is not semantic sound search. CLAP mode is not ready; do not substitute mock rankings for it. Default research remains unconfigured.
+Every candidate still carries MOCK embedder provenance. This is not semantic sound search. Local CLAP mode is opt-in (see below); do not substitute mock rankings for it. Default research remains unconfigured.
 
 Factory corpora cache under `artifacts/corpus/<embedder>` (override `GROOVE_CORPUS_DIR`). Cache reuse checks engine revision, renderer identity, embedder, and recipe. Renderer identity includes actual WASM, metadata, renderer source, and browser snapshot source hashes; changed sound behavior invalidates the cache. Cached retrieval candidates re-render their audio before preview publication. Rebuilding all presets is slower than retrieval from an existing compatible corpus.
 
@@ -114,7 +114,7 @@ Activate the virtualenv so the subprocess's python3 resolves dependencies, or se
 
 The local CLAP adapter and blind-listening generator are integrated. Install `requirements-research.txt` in a separate research virtualenv, together with the base requirements. They download model weights on first use and do not use an API key. Do not commit model caches.
 
-The teammate-tested general checkpoint (`laion/clap-htsat-unfused`) is an experimental comparison path. The planned music checkpoint (`laion/larger_clap_music`) is still under compatibility investigation: the teammate observed degenerate text embeddings with transformers 5.23. The adapter refuses degenerate text spaces instead of returning arbitrary rankings. This is not evidence that the music checkpoint itself is broken. Default service research remains unconfigured.
+CLAP mode now defaults to LAION's original music checkpoint, `music_audioset_epoch_15_esc_90.14.pt`, at pinned source revision `b3708341862f581175dba5c356a4ebf74a9b6651`. It uses the pinned `laion/larger_clap_music` architecture/processor, maps the original tensor names with strict coverage checks, and loads with restricted tensor deserialization plus memory mapping. First use downloads about 2.35 GB into the model cache. The public converted music weights produced nearly identical unrelated text embeddings in our probe; the original weights pass distinct-text, paraphrase, audio/text-space and deterministic-audio checks. This establishes working inference, not sound quality. The general checkpoint remains an explicit experimental comparison via `GROOVE_CLAP_MODEL=laion/clap-htsat-unfused`. Default service research remains unconfigured until enabled by the commands below.
 
 Opt-in commands (from repository root, using the research virtualenv):
 
