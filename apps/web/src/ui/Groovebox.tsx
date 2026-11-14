@@ -34,7 +34,7 @@ export interface GrooveboxProps {
  * inspector on the right. No workspace tabs; session operations live in the transport's menu.
  */
 export function Groovebox({ engine, voice, session, transport, enabled, busy, message, onEnable, agent }: GrooveboxProps) {
- const client = useMemo(() => new CommandClient(engine), [engine]);
+ const client = useMemo(() => new CommandClient({ getSession: () => engine.getSession(), dispatch: c => engine.dispatch(voice.prepareCommand(c)) }), [engine, voice]);
  const patterns = useMemo(() => new PatternEditQueue({ dispatch: c => engine.dispatch(c), newId: () => crypto.randomUUID() }), [engine]);
  const [result, setResult] = useState<CommandResult | null>(null);
  const [input, setInput] = useState<VoiceInputState>(voice.getState());
@@ -45,13 +45,19 @@ export function Groovebox({ engine, voice, session, transport, enabled, busy, me
   patterns.handle({ type: 'session', session: engine.getSession() });
   return engine.subscribe(m => { client.handle(m); patterns.handle(m); });
  }, [engine, client, patterns]);
- useEffect(() => { voice.onChange = setInput; return () => { voice.onChange = () => {}; }; }, [voice]);
+ useEffect(() => {
+  voice.onChange = setInput;
+  voice.onBeforeLiveEdit = op => patterns.cancelPending(op.type === 'clear' ? op.target.trackId : undefined);
+  return () => { voice.onChange = () => {}; voice.onBeforeLiveEdit = () => {}; };
+ }, [voice, patterns]);
  // main.tsx echoes every ack into `message` ("applied", "rejected: …"); the command client already
  // reports those in plain language. Other messages (engine/asset errors, readiness) replace older results.
  const engineMessage = /^(queued|applied|rejected)(:|$)/.test(message) ? null : message;
  useEffect(() => { if (engineMessage) setResult(null); }, [engineMessage]);
 
- const send = (operation: SessionCommand['operation'], boundary: SessionCommand['boundary'] = 'immediate') => { client.send(operation, boundary); };
+ const send = (operation: SessionCommand['operation'], boundary: SessionCommand['boundary'] = 'immediate') => {
+  client.send(operation, boundary);
+ };
  const rec = transport?.recordingState ?? 'idle';
  const target = displayedTarget(session, transport);
  const trackId: TrackId = target.trackId;
@@ -84,7 +90,7 @@ export function Groovebox({ engine, voice, session, transport, enabled, busy, me
      : <PianoRoll key={trackId} label={TRACK_LABEL[trackId]} notes={view.notes} playhead={playhead} disabled={!enabled} onEdit={edit}
        provisional={provisional.flatMap(p => p.event.kind === 'note' ? [{ step: p.step, duration: p.duration, midi: p.event.midi }] : [])}
        onAudition={engine.audition ? (midi, on) => engine.audition!({ kind: 'note', trackId: trackId as Exclude<TrackId, 'drums'>, midi, velocity: on ? 0.8 : 0, on }) : undefined} />}
-    {rec !== 'idle' && <p style={{ color: C.rec, marginTop: 8 }} role="status">{rec === 'armed' ? 'Count-in: recording starts at the next downbeat' : `Recording ${TRACK_LABEL[trackId]}: ${trackId === 'drums' ? 'beatbox now' : 'sing now; sing over a phrase to replace it'}`}</p>}
+    {rec !== 'idle' && <p style={{ color: C.rec, marginTop: 8 }} role="status">{rec === 'armed' ? 'Armed: next beat during playback; four count-in beats from stopped' : `Recording ${TRACK_LABEL[trackId]}: ${trackId === 'drums' ? 'beatbox now' : 'sing now; sing over a phrase to replace it'}`}</p>}
    </main>
    <aside className="vs-right" style={{ ...pane, display: 'grid', gap: 10, alignContent: 'start' }} aria-label="Inspector">
     <details open>
