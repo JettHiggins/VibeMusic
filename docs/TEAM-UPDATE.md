@@ -1,65 +1,14 @@
-@leoAndrade2332 @lennyyanza — updated ownership and decisions from Jett. Read docs/STATUS.md; this supersedes older blockers in issue #3.
+# Team restart: recording usability and real-device fixes
 
-**PR #20 is integrated:** browser next-beat Record, immediate Clear/Undo, held-note/pending capture discard, epoch/cutoff handling and sticky monochrome transport now live on engine-integration alongside #13/#14. Shared schema checks, full Node suite, service/WASM integration and build passed. @leoAndrade2332: your handoff PR was received; no duplicate recording-consumer work is needed. WS1 still owns ws1/speech-capture while availability is unresolved. @lennyyanza: #21 local-STT and #22 tests are received; #15 still needs the delayed capture-context fix before its stacked provider can be integrated. ws1/integration-preview now contributes the remaining dev-worklet update; speech-capture remains unmerged. Older pending-consumer instructions below are superseded.
+Current authoritative assignments: [docs/STATUS.md](https://github.com/JettHiggins/VoiceSynthesizer/blob/engine-integration/docs/STATUS.md). This replaces the older pending-blocker summary. Independent agent sessions must fetch/read it at their next checkpoint; mentions do not update their conversations automatically.
 
+@leoAndrade2332 @lennyyanza — Jett selected **OpenRouter, free models only**. Local faster-whisper stays selected for speech. The LLM-provider decision and issue #3 answers no longer block work. Never paste keys into GitHub or agent chat; transfer distinct per-person keys through encrypted secret sharing and keep them backend-local. Current runtime has no OpenRouter/.env adapter yet, so installing a key alone does not enable Deep Agents.
 
-**Speech streaming unblocked:** WS1 reviewed/integrated #14 at 49ca90b and #13 at 0465dd7. Use the approved committed speech-audio/status/coverage contract. WS1 temporarily owns the browser speech-streaming consumer while Leo is unavailable; do not duplicate that browser work. @lennyyanza: continue #15 pipeline fixes/review and selected local faster-whisper, with no LLM key dependency. #15's c8f4ed4 revision is received but not yet approved. Deep Agents remains required after the provider decision; no API calls/key setup are authorized. Read the latest STATUS.md; the old #13/#14 review-blocker paragraphs below are history.
+Reviewed #15 c62613d, #21 d637213, #22 75f4181 and #23 d34f10e are now integrated. Delayed capture context and declared SciPy blockers are fixed. Combined schema/Node/live-service/WASM/build checks passed; fresh speech install: 167 backend passed / 5 skipped, plus one opt-in real-model synthetic test. Optional mic-check script syntax passed. No human mic or live API acceptance is claimed.
 
+- **Lenny / WS3:** implement backend OpenRouter + LangChain Deep Agents with validated typed tools in a small PR to engine-integration. Start from current integration. Evaluate inclusionai/ling-3.2-flash:free as an initial tool-capable candidate; no model winner is established. Keep configurable free-only selection, no paid fallback, bounded agent calls and quota/timeout errors. Coordinate configuration/docs and use WS4's corpus. Speech and sample timing remain independent of LLM latency.
+- **Leo / WS2:** review/open PR for WS1's browser speech branch 75ad0ba if available. Do not duplicate browser speech wiring. Continue real-device melody-loading reproduction and input tuning using docs/MIC-TESTING.md; #23 improves diagnostics but does not prove the original failure fixed.
+- **WS1:** integrates reviewed capabilities, owns speech browser branch temporarily and final end-to-end acceptance. ws1/speech-capture includes dev-worklet refresh; old integration-preview is parent history, consumer is already shared via #20.
+- **WS4:** #17 command corpus first, then #18 listening summarizer and #19 sound rubric. No production overlap or credentials needed.
 
-**Current WS1 review target: [ws1/integration-preview at 0b95ca1](https://github.com/JettHiggins/VoiceSynthesizer/compare/engine-integration...ws1/integration-preview?expand=1).** Jett resumed WS1 and combined both ready WS1 branches with current integration in an isolated preview. @lennyyanza: open/review this single PR to engine-integration; retain recording-consumer/dev-worklet-sync as parent history. Shared checks, full Node suite, service/WASM integration/build and actual browser next-beat/live-edit/held-note reset checks pass locally with the current-source dev worklet active. Shared engine-integration is unchanged by this preview; real voice/device and full hands-free acceptance remain open. WS3 can continue transport/retrieval fixes and local faster-whisper without waiting for an LLM decision or this PR; Leo's last known usage limit has no reported resolution.
-
-
-## Decisions and immediate ownership
-
-- Jett selected **local faster-whisper** for speech recognition. Start with the small model as a configurable baseline; measure CPU latency on development laptops. Model downloads stay outside Git. No cloud credentials/API calls are authorized.
-- The language-model provider remains deferred while Jett researches possible existing access. Keep the parser as the interim command path; Deep Agents is still a product requirement, not complete. Provider research must not block STT, speech-transport review fixes, or retrieval fixes.
-- Leo is out of usage. **WS1 now owns the recording-consumer UI/input wiring** on ws1/recording-consumer. Leo: do not independently implement that capability when resuming; review the landed handoff first. WS1 is implementing next-beat Record, immediate Clear/Undo, epoch/cutoff worker resets, provisional Undo and loop-origin placement, sticky transport and monochrome recording state.
-- Lenny: PR #16 is integrated. Next address the exact review comments on #14/#15 (stream-scoped coverage, duration/rate bounds, gap recovery, unavailable behavior, wake-span exclusion on failed interpretation), and #13 (answer keys must not be inside the blind kit). Then implement the local faster-whisper adapter off the event loop. Provider selection is no longer an STT blocker. Return precise runtime limitations, not the old issue #3 dependency table.
-
-## Issue #3 contract answers (WS1)
-
-(a) Research trackId/description: current messages remain unchanged for now. ResearchController tracks browser-initiated requests; if voice-started concurrent jobs need explicit metadata, propose additive fields and fixtures in a focused contract PR. Do not invent an incompatible message shape or block the other work on this extension.
-
-(b) Audition is non-mutating previewUrl playback through the integrated candidate UI. Accept uses apply-patch; Undo restores accepted musical state. Do not use apply-patch+undo just to preview.
-
-(c) Armed Record survives unrelated edits with its original target/deadline (merged #12). Other queued musical mutations retain strict revision checks; report rejection or deliberately re-propose a still-valid absolute intent. Never retry discarded performance/clear intentions after a live edit.
-
-(d) Yes: recognized Groove wake speech during capture must emit its measured command-span even if interpretation fails, followed by error/no mutation and only then appropriate classified coverage. See #15 review.
-
-(e) Yes: stop-recording cancels count-in/armed Record, keeps playback running and does not consume a musical revision. Implemented/tested, including backend #16.
-
-## Evidence and remaining gates
-
-Engine and backend timing support, guided calibration, dark workspace/piano roll and candidate UI are integrated. UI recording adoption is underway, not done. Real local recognition, human calibrated takes (especially Lenny's late drums and melody-loading failure), blind listening and full hands-free acceptance remain open. Synthetic tests are not real-device signoff. Main remains the documentation baseline; start capabilities from reviewed origin/engine-integration.
-
-## Recording consumer ready for review
-
-WS1 pushed [ws1/recording-consumer at f3987e3](https://github.com/JettHiggins/VoiceSynthesizer/compare/engine-integration...ws1/recording-consumer). The full consumer wiring is implemented and software/browser checks pass; docs/RECORDING-USABILITY.md on that branch gives behavior and evidence. Leo must not duplicate it. @lennyyanza: since Leo is out of usage, please use the combined integration-preview review target above with your authenticated account and review the backend-proposal seam/ID preservation. Repository settings prohibit Actions PR creation; WS1 cannot create it with the available authentication. This review dependency does not block your local STT or #13/#14/#15 fixes. The demo on Jett's laptop runs the capability branch, but it is not yet part of shared engine-integration. Human timing/voice acceptance remains open.
-
-## Setup/status clarification
-
-WS1 consolidated docs/STATUS.md so current decisions/owners come first and corrected stale docs/SETUP.md instructions that pointed teammates at the foundation/main. Start capabilities from reviewed engine-integration and open PRs to engine-integration. @lennyyanza: the combined integration-preview target above includes ws1/dev-worklet-sync at 248585a; its existing tests/handoff are ready. It fixes stale dev worklets, not missing WASM assets.
-
-Additional consumer-branch evidence: synthetic C4/E4/G4 passed through the actual browser capture/YIN worker/recorder/WASM into steps 20/24/28, durations 3/3/4, with playback continuing (~8.1 ms p95 analysis here). This does not close Lenny's physical-device loading error or real-performer gates.
-
-## Consumer review head and CI correction
-
-Review ws1/recording-consumer at **4d6c90c** (browser regression/docs only since the green edd6044 implementation) (same functional wiring plus current steering and additional browser evidence). The original full-phrase browser correction test is preserved and passed; a separate next-beat-melody.js checks mid-loop placement. CI on f3987e3 found a stale research test still waiting for queued Undo after #16 changed it to immediate. WS1 reproduced the failure, required immediate application/preserved notes/continuing nonzero output, and the full real-renderer/MOCK-embedder scenario passed locally (~78 s). The fix is on the consumer branch; [CI run 43609794188](https://github.com/JettHiggins/VoiceSynthesizer/actions/runs/43609794188) completed successfully for edd6044: contracts/web, Linux firmware/research and macOS/Windows software integration all passed. This result is for the review branch; merge is still pending. Latest MIC-TESTING.md on integration has the actual three-second/four-practice/eight-measured calibration and a device-results table. The branch still needs a collaborator-created PR/review before integration; no human voice/timing signoff is claimed.
-
-## Old service PR cleanup
-
-WS1 verified with git ancestry that #1 at 3a62724 and #2 at 8fae6aa are already included in engine-integration. Their original main/stack bases make them misleading. The coordination workflow will retarget/close them with exact integration evidence; this does not merge the product into main or close the still-unmerged #13/#14/#15 work. Review/open the ready WS1 consumer and dev-worklet PRs instead.
-
-Additional browser race coverage is committed as tests/browser/live-capture-edits.js on the consumer branch: continuous synthetic tones traverse the real worklet/worker; Undo discards an internally held note without consuming history, then Clear removes completed and held pre-edit input. Only fresh post-cutoff/new-epoch notes reach the engine, with capture/playback continuing and no input rejection error. This passed locally (~8.6 ms p95); no human timing/voice signoff is implied.
-
-## Fourth teammate: WS4 evaluation support
-
-Three concrete WS4 issues are published from docs/WS4-TICKETS.json, with priority, owned paths and acceptance criteria. Start with the command acceptance corpus. WS4 owns only evals/, tools/evaluation/ and docs/WS4-HANDOFF.md; no production UI/service/engine/contract edits and no provider access needed. Startup prompt: docs/WS4-START.md. WS3 should consume the resulting cases/summaries rather than duplicate them; core speech/Deep Agents ownership stays with WS3.
-
-## Pipeline review: asynchronous recording context
-
-@lennyyanza: #15 c8f4ed4 has one reproduced blocker; see its latest WS1 review and docs/reviews/SPEECH-PIPELINE-C8F4ED4.md. A Groove stop captured during a take but transcribed after Stop becomes stop playback, with no exclusion span, then verifies the audio. Preserve capture-time context through stop/new-take transitions and late segment closure; add regressions. The isolated base suite passes 133/two optional skips but misses this transition. #14 is integrated and does not block browser streaming. WS1 still owns that browser consumer while Leo's availability is unresolved; a new ws2/recording-consumer branch was observed with the existing consumer code plus coordination merges, not new speech capture. Please use issue #9 to acknowledge ownership before overlapping browser edits.
-
-WS1 browser consumer progress: ws1/speech-capture at 8659c98 has the independent speech tap and worker PCM encoder tested against the merged contract. The payload remains at the approved 44.1 kHz context rate; local STT adapter must perform any model-rate conversion. No wire change is needed. Socket/mode/coverage/recovery wiring is still in progress and no hands-free availability is claimed. Detailed handoff: docs/BROWSER-SPEECH.md on the branch. WS2 must not duplicate this temporary WS1-owned capability.
-
-WS1 speech consumer at 63422ff now connects the actual microphone tap/PCM worker to the local socket, with explicit hands-free selection, scoped coverage and unavailable/gap recovery. Chromium with synthetic silence reached the real unavailable service (4410 context frames/8820 PCM bytes); unavailable held recording in speech mode, kept playback and required explicit opt-out for manual mode. Full Node/schema checks/build and transition tests pass locally. This branch is not merged and no real recognition is claimed. Next WS1: positive SCRIPTED classified-flow browser test. WS3: continue local faster-whisper and the #15 delayed capture-context fix; input may arrive at 44.1 kHz as approved, so adapter owns model-rate conversion. Detailed source handoff: docs/BROWSER-SPEECH.md on ws1/speech-capture.
+Main remains documentation-only; reviewed product is engine-integration. Remaining gates: browser speech review/merge, actual Deep Agents, calibrated human drums/melody/phrase correction, blind listening, ten-minute audible playback and full hands-free scenario. See STATUS.md for exact evidence and issue #3 answers.

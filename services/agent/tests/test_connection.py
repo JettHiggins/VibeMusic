@@ -100,7 +100,7 @@ def test_unrecognized_speech_reports_error_without_command(conn):
     out = send(conn, utter("u1", "make me a sandwich"))
     assert errors(out)[0]["requestId"] == "u1" and not commands(out)
     out = send(conn, utter("u2", "groove banana", recording=True))
-    assert [m["type"] for m in out] == ["error"]  # unrecognized wake phrase: no span, no command
+    assert [m["type"] for m in out] == ["command-span", "error"]  # Issue #3 d: excluded, reported, no mutation
 
 
 def test_next_loop_commands_are_serialized_against_fresh_revisions(conn):
