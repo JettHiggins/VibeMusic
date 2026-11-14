@@ -433,3 +433,22 @@ def test_default_service_has_no_research_backend():
         ws.send_text(json.dumps({"type": "sound-request", "id": "j1", "trackId": "synth-1", "description": "pad"}))
         reply = json.loads(ws.receive_text())
         assert reply["status"] == "failed" and reply["candidates"] == [] and "not configured" in reply["error"]
+
+
+def test_cached_corpus_candidates_have_real_previews_after_restart(tmp_path):
+    b = backend(budget=0)
+    original = Corpus.build(b.space, b.renderer, b.embedder, DEFAULT_RECIPE)
+    original.save(tmp_path)
+    b.corpus = Corpus.load(tmp_path)
+    assert all(entry.audio is None for entry in b.corpus.entries)
+    service = ResearchService(b)
+    messages = []
+    port = service.port(messages.append)
+    port.start('cached', 'electric piano')
+    port.join(5)
+    assert messages[-1]['status'] == 'complete', messages[-1].get('error')
+    assert len(messages[-1]['candidates']) == 5
+    for candidate in messages[-1]['candidates']:
+        assert candidate['previewUrl']
+        token = candidate['previewUrl'].rsplit('/', 1)[1][:-4]
+        assert service.preview(token)[:4] == b'RIFF'

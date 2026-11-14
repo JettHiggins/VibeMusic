@@ -25,7 +25,7 @@ print(renderer.name)
 PY
 ```
 
-`SloopRenderer` accepts optional assets Path, node executable, and timeout (30 seconds per render by default). A failed/invalid render raises an error; it never falls back to a mock. Its name records the pinned upstream revision and SHA256 of the actual WASM+metadata bytes. Keep corpus artifacts out of git.
+`SloopRenderer` accepts optional assets Path, node executable, and timeout (30 seconds per render by default). A failed/invalid render raises an error; it never falls back to a mock. Its name records the pinned upstream revision and SHA256 of the actual WASM, metadata, renderer source, and browser snapshot source. Keep corpus artifacts out of git.
 
 The renderer supports the existing three-second c-major-phrase-v1 recipe. Inputs must have 0.1–12 seconds and 1–64 note tuples `(startSeconds, durationSeconds, midi, velocity)` within the render duration. This is the offline performance recipe, not grid quantization of a user's singing. It shares DSP and patch state with browser playback, including session-owned mixer settings; it does not claim to equal a live take with different timing, previous notes/effect tails, or mix levels.
 
@@ -35,7 +35,7 @@ The renderer supports the existing three-second c-major-phrase-v1 recipe. Inputs
 
 ## Research integration and verification
 
-Supply SloopRenderer to ResearchBackend with a real joint audio/text embedder. There is no default real research backend yet; service requests remain unavailable unless explicitly configured. Hash embeddings are mock rankings and must not be used as evidence for sound-design quality.
+Supply SloopRenderer to ResearchBackend with a real joint audio/text embedder. The backend is now wired through research.sloop.SloopRenderer. Default research remains unconfigured. GROOVE_RESEARCH=sloop with GROOVE_EMBEDDER=mock tests real audio plumbing with explicitly meaningless ranking; real CLAP is still pending. Hash embeddings are mock rankings and must not be used as evidence for sound-design quality.
 
 ```sh
 npm test
@@ -44,3 +44,5 @@ python -m pytest services/agent
 ```
 
 Tests exercise real generated WASM, deterministic rendering, velocity response, rejection of incompatible patches/recipes, Python protocol compatibility, and every complete factory patch's preservation of browser timing/mixer state. These tests establish rendering functionality, not CLAP relevance or blind-listening preference.
+
+The research integration test is also exposed as `npm run test:research-integration` and runs in firmware CI. A cold local run with the MOCK embedder took about 73 seconds including factory-corpus construction, bounded refinement, preview fetch, accept, and undo. This is a measured plumbing baseline, not a CLAP performance or sound-quality result.

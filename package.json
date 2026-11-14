@@ -18,7 +18,8 @@
     "worklet:build": "node --import tsx scripts/build-worklet.ts",
     "predev": "npm run worklet:build",
     "prebuild": "npm run worklet:build",
-    "test:integration": "VOICESYNTH_INTEGRATION=1 node --import tsx --test tests/service-integration.test.ts"
+    "test:integration": "VOICESYNTH_INTEGRATION=1 node --import tsx --test tests/service-integration.test.ts",
+    "test:research-integration": "VOICESYNTH_INTEGRATION=1 node --import tsx --test services/agent/tests/integration/research-engine.test.ts"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

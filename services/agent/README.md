@@ -58,8 +58,7 @@ Commands are answered while a search runs.
   request; silent, clipping or non-finite renders are rejected.
 - Candidate previews are WAV files at `GET /previews/<token>.wav`.
 
-By default no research backend is configured and every request answers `failed` with the reason. The only
-backend that exists is a mock, enabled explicitly:
+By default no research backend is configured and every request answers `failed` with the reason. Mock rendering/ranking is available only when enabled explicitly:
 
 ```sh
 GROOVE_RESEARCH=mock python -m uvicorn groove_agent.app:app --app-dir services/agent --host 127.0.0.1 --port 8000
@@ -75,11 +74,9 @@ Mock mode was exercised here only with synthetic metadata from the test fixtures
 - Speech-to-text. The service consumes `utterance` transcripts; an audio/provider protocol needs a contract
   proposal and a credential decision first.
 - Deep Agents orchestration. `intents.interpret` is the seam a model-backed interpreter replaces; it needs API access.
-- Real sound research. It needs an offline renderer for the pinned SLOOP engine (Workstream 1) implementing
-  `research.audio.Renderer`, and a LAION CLAP embedder implementing `research.audio.Embedder` (model download and
-  a dependency decision). Until both exist, nothing here has been evaluated for musical quality.
+- Meaningful text-to-sound ranking. The real SLOOP renderer is integrated, but the LAION CLAP embedder is not implemented/configured yet. Sound relevance and musical quality remain unverified.
 - Research evaluation against preset-only retrieval with blind listening.
-- Integration with a real browser client. Tested only against the shared fixtures and a scripted WebSocket client.
+- Full microphone and candidate UI integration. The production adapter/coordinator and real WASM core have transcript/research integration tests; actual speech recognition and candidate UI are still pending.
 
 ## Layout
 
@@ -90,3 +87,25 @@ Mock mode was exercised here only with synthetic metadata from the test fixtures
 - `groove_agent/research/space.py` reads engine metadata and produces bounded variations.
 - `groove_agent/research/corpus.py`, `search.py` hold retrieval and evolutionary refinement.
 - `groove_agent/research/service.py` runs cancellable jobs; `mock.py` is the labeled mock backend.
+
+## Real engine integration
+
+Run from the repository root after `npm ci`, engine build, and installing Python dependencies. `research.sloop.SloopRenderer.from_directory` delegates to Workstream 1's canonical `tools.sloop_renderer`, sharing the browser's TypeScript patch validator and exact note/velocity recipe handling. No wasmtime dependency or duplicate parameter mapper is used. See `docs/RENDERER.md`.
+
+For protocol tests with actual engine audio but deliberately meaningless ranking:
+
+```sh
+GROOVE_RESEARCH=sloop GROOVE_EMBEDDER=mock python -m uvicorn groove_agent.app:app --app-dir services/agent --host 127.0.0.1 --port 8000
+```
+
+Every candidate still carries MOCK embedder provenance. This is not semantic sound search. CLAP mode is not ready; do not substitute mock rankings for it. Default research remains unconfigured.
+
+Factory corpora cache under `artifacts/corpus/<embedder>` (override `GROOVE_CORPUS_DIR`). Cache reuse checks engine revision, renderer identity, embedder, and recipe. Renderer identity includes actual WASM, metadata, renderer source, and browser snapshot source hashes; changed sound behavior invalidates the cache. Cached retrieval candidates re-render their audio before preview publication. Rebuilding all presets is slower than retrieval from an existing compatible corpus.
+
+Opt-in real-service research test:
+
+```sh
+VOICESYNTH_INTEGRATION=1 node --import tsx --test services/agent/tests/integration/research-engine.test.ts
+```
+
+Activate the virtualenv so the subprocess's python3 resolves dependencies, or set VOICESYNTH_PYTHON. This test builds a temporary corpus, tests WAV retrieval and candidate acceptance/undo against real WASM, then removes it. Its embedder is explicitly MOCK, so it cannot establish ranking quality.

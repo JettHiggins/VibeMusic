@@ -32,8 +32,8 @@ class SloopRenderer:
         wasm = self.assets / 'voicesynth.wasm'
         if not wasm.is_file():
             raise FileNotFoundError('Build SLOOP assets: python3 scripts/build-engine.py --docker --test')
-        digest = hashlib.sha256(wasm.read_bytes() + (self.assets / 'metadata.json').read_bytes()).hexdigest()
-        self.name = f'SLOOP WASM {self.engine_revision}; artifact sha256:{digest}'
+        digest = hashlib.sha256(b''.join(path.read_bytes() for path in (wasm, self.assets / 'metadata.json', ROOT / 'tools/offline-renderer.ts', ROOT / 'apps/web/src/engine/snapshot.ts'))).hexdigest()
+        self.name = f'SLOOP WASM offline {self.engine_revision}; artifact sha256:{digest}'
 
     def render(self, patch: dict, recipe: RenderRecipe) -> np.ndarray:
         request = json.dumps({'patch': patch, 'recipe': recipe.to_json()}, allow_nan=False).encode('utf8')

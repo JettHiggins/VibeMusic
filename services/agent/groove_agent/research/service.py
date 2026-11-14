@@ -168,8 +168,16 @@ class ResearchPort:
                         score = float(unit(backend.embedder.embed_audio(audio, backend.renderer.sample_rate)) @ query)
                         item = Scored(patch, score, "carried over from the previous search", audio)
                         carried.setdefault(item.key(), item)
-                pool = list(carried.values()) or [Scored(entry.patch, score, f"retrieved: {entry.label}", entry.audio)
-                                                  for entry, score in backend.corpus.top(query, 5)]
+                pool = list(carried.values())
+                if not pool:
+                    for entry, score in backend.corpus.top(query, 5):
+                        if job.cancel.is_set():
+                            raise Cancelled()
+                        # Disk corpora keep embeddings/patches, not float audio in RAM.
+                        # Re-render selected hits so cached candidates still have real previews.
+                        audio = entry.audio if entry.audio is not None else backend.renderer.render(entry.patch, backend.recipe)
+                        if render_problem(audio) is None:
+                            pool.append(Scored(entry.patch, score, f"retrieved: {entry.label}", audio))
                 if not pool:
                     self._message(job, "failed", 0.0, [], "no usable patches: every render was silent or clipping")
                     return
