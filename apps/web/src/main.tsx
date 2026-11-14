@@ -8,15 +8,10 @@ import {VoiceInput} from './input/voice-input.ts';
 import {ResearchController} from './integration/research.ts';
 import {ResearchPanel} from './integration/ResearchPanel.tsx';
 import {Groovebox} from './ui/Groovebox.tsx';
-const demo=createSession();
-demo.tracks[0].patch.engine=1;
-for(let bar=0;bar<4;bar++){
- for(const step of [0,8])demo.tracks[3].hits.push({id:`kick-${bar}-${step}`,step:bar*16+step,lane:'kick',velocity:0.9});
- for(const step of [4,12])demo.tracks[3].hits.push({id:`snare-${bar}-${step}`,step:bar*16+step,lane:'snare',velocity:0.8});
- for(let step=0;step<16;step+=2)demo.tracks[3].hits.push({id:`hat-${bar}-${step}`,step:bar*16+step,lane:'closed-hat',velocity:0.5});
- demo.tracks[0].notes.push({id:`note-${bar}`,step:bar*16,duration:8,midi:[60,64,67,64][bar],velocity:0.7});
-}
-const engine=new BrowserEngine(demo);
+const initialSession=createSession();
+// Keep the existing first synth's default voice, but never seed a song on launch.
+initialSession.tracks[0].patch.engine=1;
+const engine=new BrowserEngine(initialSession);
 const agent=new WebSocketAgent();
 const coordinator=new SessionCoordinator(engine,agent,()=>agent.connected);
 const voice=new VoiceInput(engine);
@@ -27,7 +22,7 @@ const research=new ResearchController(engine,agent,()=>agent.connected);
 if(import.meta.env.DEV)Object.assign(globalThis,{__voicesynth:{engine,voice,coordinator}});
 function App(){
  const [session,setSession]=useState(engine.getSession());
- const [enabled,setEnabled]=useState(false),[busy,setBusy]=useState(false),[message,setMessage]=useState('Enable audio to load the four-bar demo.');
+ const [enabled,setEnabled]=useState(false),[busy,setBusy]=useState(false),[message,setMessage]=useState('Enable audio to start an empty four-bar project.');
  const [connected,setConnected]=useState(false),[text,setText]=useState('select snare');
  const [transport,setTransport]=useState<Transport|null>(null);
  useEffect(()=>{

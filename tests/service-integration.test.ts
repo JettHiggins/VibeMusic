@@ -68,6 +68,20 @@ test('live Python WebSocket proposals apply to real WASM and return authoritativ
   assert.equal(core.transport().recording,true);assert.equal(core.transport().playing,true);assert.equal(core.transport().recordingEpoch,epoch+1);
   await transcript('Groove undo',m=>m.type==='session'&&m.session.tracks[3].hits.some(h=>h.id==='snare-from-capture'));
   assert.equal(core.transport().recording,true);assert.equal(core.transport().playing,true);
+  // Repair commands traverse the real Python parser, WebSocket, coordinator and WASM engine.
+  // These are typed transcripts, not acoustic/STT evidence.
+  const beforeClick=core.getSession().revision;
+  await transcript('Groove metronome off',m=>m.type==='ack'&&m.status==='applied'&&m.revision===beforeClick);
+  assert.equal(core.transport().metronomeEnabled,false);assert.equal(core.getSession().revision,beforeClick);
+  assert.equal(core.transport().recording,true);assert.equal(core.transport().playing,true);
+  await transcript('Groove select synth three',m=>m.type==='session'&&m.session.selected.trackId==='synth-3');
+  const hit=core.getSession().tracks[3].hits.find(h=>h.id==='snare-from-capture')!;
+  const eraseEpoch=core.transport().recordingEpoch;
+  const bar=Math.floor(hit.step/16)+1,beat=Math.floor(hit.step%16/4)+1,sixteenth=hit.step%4+1;
+  await transcript(`Groove erase bar ${bar} beat ${beat} sixteenth ${sixteenth}`,m=>m.type==='session'&&!m.session.tracks[3].hits.some(h=>h.id==='snare-from-capture'));
+  assert.equal(core.transport().recordingEpoch,eraseEpoch,'precise voice erase preserves the active take');
+  assert.deepEqual(core.transport().captureErasure?.target,{trackId:'drums',lane:'snare'},'active take wins over the changed selection');
+  assert.equal(core.transport().recording,true);assert.equal(core.transport().playing,true);
   await transcript('Groove stop',m=>m.type==='session'&&!core.transport().recording);
   render(128);assert.equal(core.transport().playing,true);assert.equal(core.transport().recording,false);
   assert.deepEqual(errors,[]);

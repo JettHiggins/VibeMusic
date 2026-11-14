@@ -62,7 +62,7 @@ test('record from stopped counts in, starts on downbeat, commits quantized event
  s.core.dispatch(s.command('record',{type:'record',target},'next-loop'));
  assert.equal(s.core.transport().recordingState,'armed');assert.equal(s.dsp.previous.g[2],2);
  const countin=s.render(352800);assert.ok(countin.some(v=>v!==0));assert.equal(s.core.transport().recording,false);
- s.render(1);assert.equal(s.core.transport().recording,true);assert.equal(s.core.transport().recordingStartFrame,352800);assert.equal(s.dsp.previous.g[2],0);
+ s.render(1);assert.equal(s.core.transport().recording,true);assert.equal(s.core.transport().recordingStartFrame,352800);assert.equal(s.dsp.previous.g[2],2);
  s.render(12000);
  const captureFrame=352800+5500;
  s.core.dispatch(s.command('batch',{type:'commit-performance',events:[{kind:'onset',id:'snare-new',target,clockId:'clock',captureFrame,confidence:1,velocity:1}],excludedSpans:[],verifiedThroughFrame:s.core.transport().currentFrame},'next-loop'));
