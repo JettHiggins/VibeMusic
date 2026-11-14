@@ -97,18 +97,24 @@
     "retargetBase": "engine-integration"
   },
   {
-    "pullRequest": 34,
-    "headSha": "e19b72fdd19f16867160d1d020f51e07aa734f92",
-    "body": "WS1 reproduced remaining unsafe fallback at this exact head using interpret + SessionState selected synth-1: \"record synth four\" records synth-1; \"clear synth 4\" clears synth-1; \"mute synth 9\" mutes synth-1. \"record synth two and synth three\" chooses synth-2. find_target returns the generic synth fallback before _target_or_selected can reject unresolved tokens. Please refuse explicit invalid or conflicting track specifications before generic fallback, with regressions for record/clear/mute across all selections. Keep bare record/clear and genuinely unnumbered synth behavior deliberate. Please also implement deterministic metronome/precise erase plus captureErasure.commandId stale-intent invalidation in a separate focused repair PR; the contracts have been published since 5560129 (see issue #9)."
-  },
-  {
     "pullRequest": 36,
     "headSha": "5295c5f1629df110000ad1968527c2a4ac88f588",
     "body": "WS1 isolated combined review with both engine capabilities: Node 186 passed / one optional skip; shared checks passed with Python jsonschema available. The profile and same-ID in-flight fence integration are useful; no human acceptance claimed. Follow-up before frozen test: when measure-noise filters sustained pitched input, collected frames may never reach the target, but microphone.ts times out with \"No microphone audio arrived\" although real audio is flowing. Report insufficient quiet/background speech rather than a missing device and test the actual worker/lifecycle path. The approved normal-volume foreground reference/guidance is also still missing; document remaining scope and implement it in a focused WS2 PR. WS1 will exercise mouse erasure with real AudioWorklet and surviving queued input. Do not duplicate engine work."
   },
   {
+    "pullRequest": 32,
+    "headSha": "c4d11c532407c5d4100ec88af17fbfb0dfa208c1",
+    "retargetBase": "engine-integration",
+    "body": "WS1 reviewed the grid-origin/latency-compensated boundary math, bounded 32-event diagnostics and numbers-only export, then integrated #32. Three focused tests passed with real YIN/segmenter boundary fixtures and shared checks passed. In isolated combined repair integration, Node 190 passed / one optional skip and shared checks passed; the merge preserves erase-fence rejection before recording timing entries and retains both processing-profile and grid diagnostics. This provides diagnostic evidence only, without changing quantization, latency compensation or physical timing acceptance."
+  },
+  {
+    "pullRequest": 34,
+    "headSha": "666b6fddc70ee3c9685f2f26ecb9b99805794a7f",
+    "body": "WS1 re-review: the original invalid synth, two-synth/two-lane and leftover-position reproductions are now refused correctly; focused #34/#37 tests pass. One remaining shared-resolver defect blocks integration: `clear kick and synth two` clears kick, `record kick and synth three` records kick, and `erase snare and synth two bar one beat two` erases snare. In resolve_target, the lane-present filter keeps only targets containing lane, dropping explicitly numbered synth targets before the conflict check. Discard only the redundant generic drums target for phrases like \"the snare on the drums\"; retain explicit synth targets so mixed drum+synth requests refuse. Also cover a bare synth mention alongside a lane according to the documented unnumbered-synth behavior. Add mixed-family parser/Connection regressions for clear/record/erase across selections. This is the remaining concrete source fix; prior requested cases have passed and need no rework. WS1 can merge after this follow-up passes; no provider or contract decision is pending."
+  },
+  {
     "pullRequest": 37,
-    "headSha": "fcfcbb39c82499d07e17d631e08a69e3e539148c",
-    "body": "WS1 reviewed and reproduced remaining ambiguous erase mutations at fcfcbb39: with synth-1 selected, \"erase synth four bar one beat two\" erases synth-1 step 4; \"erase kick and snare bar one beat two\" picks kick; \"erase kick bar one beat two and three\" picks beat two; \"erase synth two and synth three bar one beat two\" picks synth-2. Please reject conflicting/invalid targets and leftover ambiguous positional numbers before any mutation or LLM fallback. Share target resolution with the requested #34 fix and add parser + Connection no-command regressions. The published contract requires ambiguous requests to have no mutation. Positive operation shape/boundaries, captured target context and captureErasure.commandId invalidation are aligned; root is testing compatibility in an isolated integration branch. Keep the PR focused on repair."
+    "headSha": "3b8e262e5edf57d15442613c65d17b0eb2926aa6",
+    "body": "WS1 re-review: the original invalid synth, two-synth/two-lane and leftover-position reproductions are now refused correctly; focused #34/#37 tests pass. One remaining shared-resolver defect blocks integration: `clear kick and synth two` clears kick, `record kick and synth three` records kick, and `erase snare and synth two bar one beat two` erases snare. In resolve_target, the lane-present filter keeps only targets containing lane, dropping explicitly numbered synth targets before the conflict check. Discard only the redundant generic drums target for phrases like \"the snare on the drums\"; retain explicit synth targets so mixed drum+synth requests refuse. Also cover a bare synth mention alongside a lane according to the documented unnumbered-synth behavior. Add mixed-family parser/Connection regressions for clear/record/erase across selections. This is the remaining concrete source fix; prior requested cases have passed and need no rework. WS1 can merge after this follow-up passes; no provider or contract decision is pending."
   }
 ]

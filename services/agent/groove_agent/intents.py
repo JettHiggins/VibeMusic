@@ -170,7 +170,9 @@ def resolve_target(tokens: Sequence[str], session: Mapping[str, Any], ignore: fr
             used.add(i)
             found.append({"trackId": "drums"})
     if any("lane" in target for target in found):
-        found = [target for target in found if "lane" in target]  # "the snare on the drums" is one target
+        # "the snare on the drums" is one target: drop only the redundant generic drums target,
+        # never an explicit synth ("clear kick and synth two" must refuse, not clear the kick).
+        found = [target for target in found if target != {"trackId": "drums"}]
     distinct = list({tuple(sorted(t.items())): t for t in found}.values())
     if len(distinct) > 1:
         return TargetResolution(None, _SEVERAL_TARGETS, frozenset(used))
@@ -178,6 +180,10 @@ def resolve_target(tokens: Sequence[str], session: Mapping[str, Any], ignore: fr
     if any(_number(token) is not None for token in leftover):
         return TargetResolution(None, _UNRESOLVED_TARGET, frozenset(used))  # "record synth two three"
     if distinct:
+        if "melody" in leftover or "synth" in leftover:
+            # A bare "synth" means the current synth, so beside another target it is a second
+            # target ("clear kick and synth"): refuse rather than drop either one.
+            return TargetResolution(None, _SEVERAL_TARGETS, frozenset(used))
         return TargetResolution(dict(distinct[0]), None, frozenset(used))
     if any(token in _SYNTH_MISHEARINGS for token in leftover):
         return TargetResolution(None, _UNRESOLVED_TARGET, frozenset(used))  # "record sent"
