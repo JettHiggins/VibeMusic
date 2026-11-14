@@ -95,3 +95,7 @@ Checks: `patch-edit` tests (controls and ranges from real metadata; three rapid 
 The melody branch is integrated with the existing replacement-batch protocol, latency calibration, explicit speech watermark routing and full-window RMS onset fix. The 0.4-second submission window now allows later verified notes/hits to replace its queued batch before the same boundary. Stop remains transport-only and does not invalidate a pending batch. The earlier stop-revision limitation above describes the pre-integration branch. The record panel uses armedTarget during count-in.
 
 Integrated validation: schema/type checks, complete Node suite, live service integration and build pass. The browser melody diagnostic committed eight exact notes and a one-note correction through the real workers/WASM by their following loops, preserving the other seven notes and playback, with analysis p95 around 6.2 ms. Synthetic singing only. Pattern and sound queues remain subscribed when switching workspace tabs so pending changes are not lost.
+
+## Asynchronous recording acknowledgments
+
+Integrated f1e0434: a replaced batch that already applied is counted once and excluded from retries. Starting a new take drops and reports an unacknowledged old batch that the engine no longer lists as pending. Regression tests defer audio-thread acknowledgments across replacement and take changes. The integration branch retains its optional boundary submission window plus replacement support.
