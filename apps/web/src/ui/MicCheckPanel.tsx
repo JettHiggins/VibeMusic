@@ -38,6 +38,7 @@ export function MicCheckPanel({ state, onReport }: { state: VoiceInputState; onR
   </div>
   {check && <div role="status" style={{ marginTop: 4 }}>{check.advice}</div>}
   {check && <div style={{ marginTop: 4 }} aria-label="Pitch check"><b style={{ color: check.pitch?.state === 'pitch' ? C.ok : check.pitch?.state === 'quiet' || check.pitch?.state === 'unclear' ? C.warn : C.muted }}>Pitch:</b> {check.pitchAdvice}</div>}
+  {check && <div style={{ marginTop: 4 }} aria-label="Normal-volume voice reference"><b>Normal-volume reference:</b> {check.foregroundDb === null ? check.foregroundAdvice : `${check.foregroundDb.toFixed(0)} dBFS, ${check.foregroundMarginDb!.toFixed(0)} dB above room. ${check.foregroundAdvice}`}</div>}
   {capture && <div style={{ marginTop: 4, opacity: 0.8 }}>
    Browser granted: echo cancellation {setting(capture.echoCancellation)}, noise suppression {setting(capture.noiseSuppression)}, auto gain {setting(capture.autoGainControl)}{capture.sampleRate ? `, ${capture.sampleRate} Hz` : ''}
    {processingMismatch && <span style={{ color: C.warn }}> ⚠ browser processing differs from the selected profile</span>}

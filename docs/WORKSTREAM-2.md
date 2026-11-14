@@ -195,3 +195,12 @@ Verified:
 - The 1440 px layout shows transport / tracks / roll / inspector; at narrower widths the inspector moves below. The session menu opens and closes.
 
 Not yet wired: next-beat Record and immediate Clear/Undo. Those buttons still use next-loop until WS1's recording-usability contract is merged.
+
+## Playtest repair PR #36 follow-up
+
+- The default Noisy room profile requests browser noise suppression; Music leaves it off. Calibration remains keyed by device and profile, and confidently pitched foreground frames are excluded from the learned room floor.
+- A room measurement now distinguishes missing capture from active capture with insufficient quiet frames. With active audio but ongoing singing/voices, it stops after up to six seconds and tells the user to retry during a quieter moment; it does not replace the existing calibration. The microphone-device timeout remains reserved for no processed audio.
+- The live mic check keeps a rolling normal-volume singing reference from confident pitch frames and compares its measured dBFS level with the room floor. It explains whether the voice clears the 15 dB pitch gate and suggests moving closer/reducing room noise when it does not. No audio is saved.
+- The engine-integration baseline still does not include WS1's metronome/targeted-erasure implementation. The controls remain disabled until the reviewed capability is integrated; the UI does not report a fake success.
+- Regression evidence: worker path excludes sustained singing from room calibration, returns an insufficient-quiet result for continuous voice, and microphone checks compare low-margin and gate-clearing normal-volume references. Full repo tests/build/contracts pass on this branch.
+- Remaining acceptance: run the real microphone/background-conversation sequence on Lenny's device, in synth orders 1-2-3 and 3-1-2, and confirm the reference/guidance reflects normal performance. Synthetic tests do not close that gate. Next integration step: merge WS1's reviewed engine capabilities, enable the controls against the actual engine, then complete the frozen-commit human playtest.

@@ -14,6 +14,7 @@ export type AnalysisRequest =
 export type AnalysisResult =
  | { type: 'onsets'; onsets: Onset[]; notes: SungNote[]; analysedThrough: number; levelDb: number; analysisMs: number; pitch?: PitchReading | null; processedThrough?: number }
  | { type: 'noise-floor'; db: number }
+ | { type: 'noise-floor-unavailable'; message: string }
  | { type: 'error'; message: string };
 
 // Typed locally: the project compiles with the DOM lib, which lacks DedicatedWorkerGlobalScope.
@@ -27,7 +28,7 @@ let sensitivity: number | undefined;
 /** Raw frame just past the last analysed sample; 0 before audio arrives or after a gap. */
 let lastFrame = 0;
 let captureCutoff = 0;
-let measuring: { frames: number; chunks: Float32Array[]; collected: number } | null = null;
+let measuring: { frames: number; maxFrames: number; processed: number; chunks: Float32Array[]; collected: number } | null = null;
 const post = (message: AnalysisResult) => scope.postMessage(message);
 
 function start() {
@@ -65,12 +66,16 @@ function onAudio(startFrame: number, samples: Float32Array) {
  let peak = 0;
  for (const s of samples) peak = Math.max(peak, Math.abs(s));
  if (measuring) {
+  measuring.processed += samples.length;
   if (isQuietCalibrationFrame(pitch, segmenter.openStart !== null)) { measuring.chunks.push(samples.slice()); measuring.collected += samples.length; }
   if (measuring.collected >= measuring.frames) {
    const all = new Float32Array(measuring.collected); let offset = 0;
    for (const c of measuring.chunks) { all.set(c, offset); offset += c.length; }
    measuring = null;
    try { post({ type: 'noise-floor', db: measureNoiseFloor(all) }); } catch (e) { post({ type: 'error', message: String(e) }); }
+  } else if (measuring.processed >= measuring.maxFrames) {
+   measuring = null;
+   post({ type: 'noise-floor-unavailable', message: 'Not enough quiet audio to measure room noise. Wait for a quieter moment, then try again; the previous floor was kept.' });
   }
  }
  // analysedThrough is held at an open note's start (verification coverage); processedThrough is real elapsed capture.
@@ -96,6 +101,6 @@ scope.onmessage = ({ data }: MessageEvent<AnalysisRequest>) => {
   const notes = segmenter?.flush(data.frame) ?? [];
   post({ type: 'onsets', onsets: [], notes, analysedThrough: lastFrame, levelDb: -120, analysisMs: 0 });
  } else if (data.type === 'measure-noise') {
-  measuring = { frames: data.frames, chunks: [], collected: 0 };
+  measuring = { frames: data.frames, maxFrames: data.frames * 4, processed: 0, chunks: [], collected: 0 };
  }
 };

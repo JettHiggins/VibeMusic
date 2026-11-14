@@ -48,4 +48,16 @@ test('analysis worker honors reset cutoffs and keeps quiet singing out of the me
  const floor=results.find(m=>m.type==='noise-floor');
  assert.ok(floor?.type==='noise-floor', 'calibration completes after enough non-voiced room frames arrive');
  assert.ok(floor.db>-48&&floor.db<-42, `quiet singing must not raise the room floor; got ${floor.db.toFixed(1)} dBFS`);
+
+ // Continuous singing is real capture, but is not a valid room-noise sample. It must fail with
+ // an insufficient-quiet result rather than looking like the microphone stopped producing audio.
+ results.length=0;
+ send({type:'measure-noise',frames:Math.round(1.5*44100)});
+ const singingEnd=cursor+6*44100;
+ while(cursor<singingEnd){
+  const samples=Float32Array.from({length:1024},(_,i)=>10**(-20/20)*Math.SQRT2*Math.sin(2*Math.PI*220*(cursor+i)/44100));
+  port.onmessage!({data:{type:'audio',startFrame:cursor,samples}});cursor+=samples.length;
+ }
+ assert.ok(results.some(m=>m.type==='noise-floor-unavailable'&&/Not enough quiet audio/.test(m.message)), 'continuous foreground voice gets a distinct insufficient-quiet result');
+ assert.ok(!results.some(m=>m.type==='error'&&/No microphone audio arrived/.test(m.message)), 'active capture must not be described as a missing microphone');
 });
