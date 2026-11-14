@@ -26,3 +26,7 @@ test('mock agent explicitly supplies empty research rather than fake audio',()=>
  agent.subscribe(m=>{ServerMessage.parse(m);assert.equal(m.type,'research');received=true;});
  agent.send({type:'sound-request',id:'search',trackId:'synth-1',description:'electric piano'});assert.ok(received);
 });
+test('performance-batch fixture and extended transport validate with shared schema',()=>{
+ SessionCommand.parse(JSON.parse(readFileSync('packages/contracts/fixtures/PerformanceBatch.json','utf8')));
+ ClientMessage.parse({type:'transport',transport:{clockId:'clock',sampleRate:44100,currentFrame:400000,loopStartFrame:352800,playing:true,recording:true,recordingState:'recording',recordingStartFrame:352800,recordingTarget:{trackId:'drums',lane:'kick'},pendingCommandIds:[]}});
+});

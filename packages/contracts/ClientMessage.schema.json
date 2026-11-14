@@ -277,6 +277,45 @@
                 "type": "string",
                 "minLength": 1
               }
+            },
+            "recordingState": {
+              "type": "string",
+              "enum": [
+                "idle",
+                "armed",
+                "recording"
+              ]
+            },
+            "recordingStartFrame": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "recordingTarget": {
+              "type": "object",
+              "properties": {
+                "trackId": {
+                  "type": "string",
+                  "enum": [
+                    "synth-1",
+                    "synth-2",
+                    "synth-3",
+                    "drums"
+                  ]
+                },
+                "lane": {
+                  "type": "string",
+                  "enum": [
+                    "kick",
+                    "snare",
+                    "closed-hat"
+                  ]
+                }
+              },
+              "required": [
+                "trackId"
+              ],
+              "additionalProperties": false
             }
           },
           "required": [

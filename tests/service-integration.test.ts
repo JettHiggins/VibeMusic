@@ -30,7 +30,7 @@ test('live Python WebSocket proposals apply to real WASM and return authoritativ
   const engine:EngineAdapter={initialize:async()=>{},getSession:()=>core.getSession(),dispatch:c=>core.dispatch(c),subscribe:fn=>{listeners.add(fn);return ()=>{listeners.delete(fn);};},dispose:()=>listeners.clear()};
   agent=new WebSocketAgent(`ws://127.0.0.1:${port}/ws`);const socket=agent;
   coordinator=new SessionCoordinator(engine,socket,()=>socket.connected);const bridge=coordinator;
-  socket.onStatus=connected=>{if(connected)bridge.sync();};
+  socket.onStatus=connected=>bridge.connectionChanged(connected);
   const errors:string[]=[];bridge.onError=e=>errors.push(e.message);bridge.onMessage=m=>{if(m.type==='error')errors.push(m.message);};
   await socket.connect();
   let frame=0;
@@ -51,7 +51,20 @@ test('live Python WebSocket proposals apply to real WASM and return authoritativ
   assert.equal(core.getSession().tempo,140);assert.equal(core.getSession().revision,3);
   // Verify the backend receives the updated revision before issuing its next command.
   await transcript('mute drums',m=>m.type==='session'&&m.session.tracks[3].muted);
-  assert.equal(core.getSession().revision,4);assert.deepEqual(errors,[]);
+  assert.equal(core.getSession().revision,4);
+  await transcript('record snare',m=>m.type==='ack'&&m.status==='queued');
+  render(44100*8);assert.equal(core.transport().recording,true);
+  await transcript('Groove stop',m=>m.type==='session'&&!core.transport().recording);
+  render(128);assert.equal(core.transport().playing,true);assert.equal(core.transport().recording,false);
+  assert.deepEqual(errors,[]);
+  await transcript('record snare',m=>m.type==='ack'&&m.status==='queued');render(44100*8);
+  assert.equal(bridge.captureAllowed,true);
+  await new Promise<void>((resolve,reject)=>{
+   const timer=setTimeout(()=>reject(new Error('Disconnect callback did not arrive')),2000);
+   socket.onStatus=connected=>{bridge.connectionChanged(connected);if(!connected){clearTimeout(timer);resolve();}};
+   socket.dispose();assert.equal(bridge.captureAllowed,false);
+  });
+  assert.equal(core.transport().recording,false);assert.equal(core.transport().playing,true);
  }finally{
   coordinator?.dispose();agent?.dispose();child.kill();
   if(child.exitCode===null)await new Promise<void>(resolve=>{child.once('exit',()=>resolve());setTimeout(()=>{child.kill('SIGKILL');resolve();},2000).unref();});

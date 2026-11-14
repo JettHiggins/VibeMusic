@@ -20,6 +20,13 @@ export class SessionCoordinator {
    this.onMessage(m);
   })];
  }
+ connectionChanged(connected:boolean){
+  if(connected){this.sync();return;}
+  if(this.transport?.recording||this.transport?.recordingState==='armed'){
+   this.engine.dispatch({id:crypto.randomUUID(),expectedRevision:this.engine.getSession().revision,boundary:'immediate',operation:{type:'stop-recording'}});
+  }
+ }
+ get captureAllowed(){return this.connected()&&this.transport?.recording===true;}
  sync(){this.send({type:'session',session:this.engine.getSession()});if(this.transport)this.send({type:'transport',transport:this.transport});}
  private send(message:ClientMessage){try{this.agent.send(message);}catch(error){this.onError(new Error(String(error)));}}
  /** Transcript-level seam only. Real speech capture supplies measured span frames. */

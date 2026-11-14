@@ -243,6 +243,208 @@
                   "properties": {
                     "type": {
                       "type": "string",
+                      "const": "commit-performance"
+                    },
+                    "events": {
+                      "minItems": 1,
+                      "maxItems": 256,
+                      "type": "array",
+                      "items": {
+                        "oneOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "const": "onset"
+                              },
+                              "id": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "target": {
+                                "type": "object",
+                                "properties": {
+                                  "trackId": {
+                                    "type": "string",
+                                    "enum": [
+                                      "synth-1",
+                                      "synth-2",
+                                      "synth-3",
+                                      "drums"
+                                    ]
+                                  },
+                                  "lane": {
+                                    "type": "string",
+                                    "enum": [
+                                      "kick",
+                                      "snare",
+                                      "closed-hat"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "trackId"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "captureFrame": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991
+                              },
+                              "clockId": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "confidence": {
+                                "type": "number",
+                                "minimum": 0,
+                                "maximum": 1
+                              },
+                              "velocity": {
+                                "type": "number",
+                                "minimum": 0,
+                                "maximum": 1
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "id",
+                              "target",
+                              "captureFrame",
+                              "clockId",
+                              "confidence",
+                              "velocity"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "const": "note"
+                              },
+                              "id": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "target": {
+                                "type": "object",
+                                "properties": {
+                                  "trackId": {
+                                    "type": "string",
+                                    "enum": [
+                                      "synth-1",
+                                      "synth-2",
+                                      "synth-3",
+                                      "drums"
+                                    ]
+                                  },
+                                  "lane": {
+                                    "type": "string",
+                                    "enum": [
+                                      "kick",
+                                      "snare",
+                                      "closed-hat"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "trackId"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "captureFrame": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991
+                              },
+                              "endFrame": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991
+                              },
+                              "clockId": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "confidence": {
+                                "type": "number",
+                                "minimum": 0,
+                                "maximum": 1
+                              },
+                              "velocity": {
+                                "type": "number",
+                                "minimum": 0,
+                                "maximum": 1
+                              },
+                              "midi": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 127
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "id",
+                              "target",
+                              "captureFrame",
+                              "endFrame",
+                              "clockId",
+                              "confidence",
+                              "velocity",
+                              "midi"
+                            ],
+                            "additionalProperties": false
+                          }
+                        ]
+                      }
+                    },
+                    "excludedSpans": {
+                      "maxItems": 64,
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "startFrame": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "endFrame": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          }
+                        },
+                        "required": [
+                          "startFrame",
+                          "endFrame"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "verifiedThroughFrame": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "events",
+                    "excludedSpans",
+                    "verifiedThroughFrame"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
                       "const": "apply-patch"
                     },
                     "trackId": {

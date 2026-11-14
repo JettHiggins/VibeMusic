@@ -21,7 +21,7 @@ function App(){
  const [connected,setConnected]=useState(false),[text,setText]=useState('select snare');
  const [transport,setTransport]=useState<Transport|null>(null);
  useEffect(()=>{
-  agent.onStatus=connected=>{setConnected(connected);if(connected)coordinator.sync();};
+  agent.onStatus=connected=>{setConnected(connected);coordinator.connectionChanged(connected);};
   agent.onError=e=>setMessage(e.message);
   coordinator.onError=e=>setMessage(e.message);
   coordinator.onMessage=m=>{if(m.type==='error')setMessage(m.message);};
@@ -40,7 +40,7 @@ function App(){
   <button disabled={enabled||busy} onClick={enable}>Enable audio</button>{' '}
   <button disabled={!enabled||busy} onClick={()=>command({type:'play',playing:true})}>Play demo</button>{' '}
   <button disabled={!enabled} onClick={()=>command({type:'play',playing:false})}>Stop playback</button>
-  <p role="status">{message}</p><p>{transport?.playing?'Playing':'Stopped'} · queued edits: {transport?.pendingCommandIds.length??0}</p>
+  <p role="status">{message}</p><p>{transport?.playing?'Playing':'Stopped'} · queued edits: {transport?.pendingCommandIds.length??0} · recording: {transport?.recordingState??'idle'}</p>
   <p>Selected: {session.selected.trackId}</p>
   {session.tracks.map(track=><button disabled={!enabled||busy} key={track.id} onClick={()=>command({type:'select',target:track.id==='drums'?{trackId:'drums',lane:'kick'}:{trackId:track.id}})}>{track.name}</button>)}
   <p><button disabled={!enabled||busy} onClick={()=>command({type:'tempo',bpm:session.tempo===120?137:120},'next-loop')}>Change tempo next loop</button>{' '}

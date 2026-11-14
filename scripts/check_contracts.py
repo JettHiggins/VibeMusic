@@ -8,3 +8,5 @@ for name in ('SessionState', 'SessionCommand', 'PerformanceEvent', 'PatchCandida
     Draft202012Validator.check_schema(schema)
     Draft202012Validator(schema).validate(json.loads((root / 'fixtures' / f'{name}.json').read_text()))
 print('All six contract fixtures pass Python JSON Schema validation.')
+Draft202012Validator(json.loads((root / 'SessionCommand.schema.json').read_text())).validate(json.loads((root / 'fixtures/PerformanceBatch.json').read_text()))
+print('Performance-batch example passes Python command validation.')

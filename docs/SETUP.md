@@ -53,6 +53,8 @@ python -m pytest services/agent
 python -m uvicorn groove_agent.app:app --app-dir services/agent --host 127.0.0.1 --port 8000
 ```
 
-In the browser enable audio, connect the agent, then submit a command transcript such as `select synth two`, `play`, `tempo one forty`, or `stop playback`. This is an integration harness, not speech recognition. No API credentials are read. Recording commands still reject until the input pipeline is connected; sound requests report unavailable rather than invented results.
+In the browser enable audio, connect the agent, then submit a command transcript such as `select synth two`, `play`, `tempo one forty`, or `stop playback`. This is an integration harness, not speech recognition. No API credentials are read. Recording commands now arm/open an engine recording window, but no microphone data is submitted yet; sound requests report unavailable rather than invented results.
 
 After building the WASM engine, `npm run test:integration` starts an isolated local service, connects via the production WebSocket adapter/coordinator, and verifies proposals, queueing, application, and revision feedback against real WASM. Activate the virtualenv first so `python3` resolves the backend dependencies; alternatively set `VOICESYNTH_PYTHON` to its Python executable. The integration command is POSIX shell syntax, supported on macOS and WSL2.
+
+After pulling new contracts, restart uvicorn so it reloads the schemas. For engine recording tests, submit `record snare` while stopped: count-in plays, recording arms on the next four-bar downbeat, then `Groove stop` ends the window while playback continues. This tests scheduling only; it is not microphone recording.

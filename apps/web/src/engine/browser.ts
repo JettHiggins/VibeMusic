@@ -11,6 +11,7 @@ export class BrowserEngine implements EngineAdapter {
  metadata:FirmwareMetadata|null=null;
  onError:(error:Error)=>void=()=>{};
  constructor(session?:SessionState){if(session)this.session=structuredClone(session);}
+ getAudioContext(){return this.context;}
  getSession(){return structuredClone(this.session);}
  subscribe(listener:(m:ClientMessage)=>void){this.listeners.add(listener);return ()=>{this.listeners.delete(listener);};}
  initialize():Promise<void>{

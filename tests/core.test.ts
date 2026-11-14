@@ -57,3 +57,24 @@ test('restart after several loops anchors the new first downbeat without a block
  const start=s.core.transport().currentFrame;s.core.dispatch(s.command('restart',{type:'play',playing:true}));s.render(128);
  assert.equal(s.core.transport().loopStartFrame,start);assert.equal(s.dsp.w.vs_beat(),0);
 });
+test('record from stopped counts in, starts on downbeat, commits quantized events, and stops capture only', {skip:!ready},async()=>{
+ const s=await setup(120);const target={trackId:'drums' as const,lane:'snare' as const};
+ s.core.dispatch(s.command('record',{type:'record',target},'next-loop'));
+ assert.equal(s.core.transport().recordingState,'armed');assert.equal(s.dsp.previous.g[2],2);
+ const countin=s.render(352800);assert.ok(countin.some(v=>v!==0));assert.equal(s.core.transport().recording,false);
+ s.render(1);assert.equal(s.core.transport().recording,true);assert.equal(s.core.transport().recordingStartFrame,352800);assert.equal(s.dsp.previous.g[2],0);
+ s.render(12000);
+ const captureFrame=352800+5500;
+ s.core.dispatch(s.command('batch',{type:'commit-performance',events:[{kind:'onset',id:'snare-new',target,clockId:'clock',captureFrame,confidence:1,velocity:1}],excludedSpans:[],verifiedThroughFrame:s.core.transport().currentFrame},'next-loop'));
+ assert.equal(s.core.getSession().tracks[3].hits.length,1);
+ s.render(352800);assert.ok(s.core.getSession().tracks[3].hits.some(h=>h.id==='snare-new'&&h.step===1));
+ s.core.dispatch(s.command('finish',{type:'stop-recording'}));s.render(128);
+ assert.equal(s.core.transport().recording,false);assert.equal(s.core.transport().playing,true);
+});
+test('stopping an armed recording cancels the take and never enters recording', {skip:!ready},async()=>{
+ const s=await setup(120);
+ s.core.dispatch(s.command('record',{type:'record',target:{trackId:'synth-1'}},'next-loop'));s.render(128);
+ s.core.dispatch(s.command('cancel',{type:'stop-recording'}));s.render(352800);
+ assert.equal(s.core.transport().recordingState,'idle');assert.equal(s.core.transport().recording,false);
+ assert.ok(s.messages.some(m=>m.type==='ack'&&m.commandId==='record'&&m.status==='rejected'));
+});
