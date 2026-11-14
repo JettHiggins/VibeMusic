@@ -26,6 +26,71 @@
           "properties": {
             "type": {
               "type": "string",
+              "const": "set-pitch-snap"
+            },
+            "settings": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "root": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 11
+                    },
+                    "scale": {
+                      "type": "string",
+                      "enum": [
+                        "major",
+                        "minor"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "root",
+                    "scale"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "type",
+            "settings"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "snap-notes"
+            },
+            "trackId": {
+              "type": "string",
+              "enum": [
+                "synth-1",
+                "synth-2",
+                "synth-3"
+              ]
+            }
+          },
+          "required": [
+            "type",
+            "trackId"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
               "const": "metronome"
             },
             "enabled": {
@@ -645,6 +710,35 @@
                     ],
                     "additionalProperties": false
                   }
+                },
+                "pitchSnap": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "root": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 11
+                        },
+                        "scale": {
+                          "type": "string",
+                          "enum": [
+                            "major",
+                            "minor"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "root",
+                        "scale"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 }
               },
               "required": [

@@ -9,13 +9,16 @@ export const Patch = z.strictObject({ engine: z.number().int().nonnegative(), pr
 export const Note = z.strictObject({ id, step: z.number().int().min(0).max(63), duration: z.number().int().min(1).max(64), midi: z.number().int().min(0).max(127), velocity: unit });
 export const Hit = z.strictObject({ id, step: z.number().int().min(0).max(63), lane: Lane, velocity: unit });
 export const Track = z.strictObject({ id: TrackId, name: id, muted: z.boolean(), volume: unit, patch: Patch, notes: z.array(Note).max(64), hits: z.array(Hit).max(192) });
-export const SessionState = z.strictObject({ version: z.literal(1), revision: frame, tempo: z.number().min(40).max(240), bars: z.literal(4), beatsPerBar: z.literal(4), stepsPerBeat: z.literal(4), selected: Target, tracks: z.array(Track).length(4) });
+export const PitchSnap = z.strictObject({ root: z.number().int().min(0).max(11), scale: z.enum(['major','minor']) });
+export const SessionState = z.strictObject({ version: z.literal(1), revision: frame, tempo: z.number().min(40).max(240), bars: z.literal(4), beatsPerBar: z.literal(4), stepsPerBeat: z.literal(4), selected: Target, tracks: z.array(Track).length(4), pitchSnap: PitchSnap.nullable().optional() });
 export const PerformanceEvent = z.discriminatedUnion('kind', [
  z.strictObject({ kind: z.literal('onset'), id, target: Target, captureFrame: frame, clockId: id, confidence: unit, velocity: unit }),
  z.strictObject({ kind: z.literal('note'), id, target: Target, captureFrame: frame, endFrame: frame, clockId: id, confidence: unit, velocity: unit, midi: z.number().int().min(0).max(127) })
 ]);
 export const SpeechSpan = z.strictObject({startFrame: frame, endFrame: frame});
 const Operation = z.discriminatedUnion('type', [
+ z.strictObject({ type: z.literal('set-pitch-snap'), settings: PitchSnap.nullable() }),
+ z.strictObject({ type: z.literal('snap-notes'), trackId: z.enum(['synth-1','synth-2','synth-3']) }),
  z.strictObject({ type: z.literal('metronome'), enabled: z.boolean() }),
  z.strictObject({ type: z.literal('erase-event'), target: Target, step: z.number().int().min(0).max(63) }),
  z.strictObject({ type: z.literal('select'), target: Target }),
@@ -47,7 +50,25 @@ export const SpeechStatus = z.strictObject({ type: z.literal('speech-status'), s
 export const ResearchContext = z.strictObject({ type: z.literal('research-context'), requestId: id, jobId: id, trackId: z.enum(['synth-1','synth-2','synth-3']), description: id, origin: z.literal('voice') });
 export const CandidatePreview = z.strictObject({ type: z.literal('candidate-preview'), id, jobId: id, candidateId: id });
 export const PreviewAck = z.strictObject({ type: z.literal('preview-ack'), id, jobId: id, candidateId: id, status: z.enum(['started','ended','rejected']), reason: id.optional() });
+// Browser-local input actions are not musical edits and never enter the audio engine's queue.
+export const BrowserOperation = z.discriminatedUnion('type', [
+ z.strictObject({type:z.literal('calibrate-input'),mode:z.enum(['noise','timing','check-timing','full'])}),
+ z.strictObject({type:z.literal('cancel-input-action'),actionId:id}),
+ z.strictObject({type:z.literal('set-input-profile'),profile:z.enum(['noisy-room','music'])}),
+ z.strictObject({type:z.literal('set-input-offset'),milliseconds:z.number().int().min(-150).max(150)})
+]);
+export const BrowserAction = z.strictObject({type:z.literal('browser-action'),id,clockId:id,expectedInputRevision:frame,operation:BrowserOperation});
+export const BrowserActionAck = z.strictObject({type:z.literal('browser-action-ack'),id,clockId:id,inputRevision:frame,status:z.enum(['running','complete','cancelled','rejected']),reason:id.optional()});
+export const BrowserStatus = z.strictObject({
+ type:z.literal('browser-status'),clockId:id,inputRevision:frame,available:z.boolean(),
+ microphone:z.enum(['off','starting','on','test-signal']),profile:z.enum(['noisy-room','music']),
+ calibration:z.strictObject({noiseMeasured:z.boolean(),noiseFloorDb:z.number().finite(),latencySource:z.enum(['default','tap-along']),latencyMs:z.number().finite().nonnegative(),offsetAdjustMs:z.number().int().min(-150).max(150)}).nullable(),
+ activeAction:z.strictObject({id,kind:z.enum(['calibrate-input','set-input-profile','set-input-offset']),phase:z.enum(['starting','countdown','practice','measuring','analysing','reconnecting'])}).nullable(),
+ guidance:z.string().max(500).optional()
+});
 export const ClientMessage = z.discriminatedUnion('type', [
+ BrowserStatus,
+ BrowserActionAck,
  z.strictObject({ type: z.literal('session'), session: SessionState }),
  z.strictObject({ type: z.literal('transport'), transport: Transport }),
  z.strictObject({ type: z.literal('ack'), commandId: id, status: z.enum(['queued','applied','rejected']), revision: frame, reason: z.string().optional() }),
@@ -58,6 +79,7 @@ export const ClientMessage = z.discriminatedUnion('type', [
  SpeechAudio
 ]);
 export const ServerMessage = z.discriminatedUnion('type', [
+ BrowserAction,
  z.strictObject({ type: z.literal('command'), command: SessionCommand }),
  // streamId/fromFrame are optional for older producers; every speech-audio pipeline sends both.
  // Coverage is [fromFrame, throughFrame] (inclusive) of one contiguous stream, never across a gap.
@@ -70,6 +92,11 @@ export const ServerMessage = z.discriminatedUnion('type', [
  SpeechStatus
 ]);
 export type SessionState = z.infer<typeof SessionState>;
+export type PitchSnap = z.infer<typeof PitchSnap>;
+export type BrowserOperation = z.infer<typeof BrowserOperation>;
+export type BrowserAction = z.infer<typeof BrowserAction>;
+export type BrowserActionAck = z.infer<typeof BrowserActionAck>;
+export type BrowserStatus = z.infer<typeof BrowserStatus>;
 export type SessionCommand = z.infer<typeof SessionCommand>;
 export type PerformanceEvent = z.infer<typeof PerformanceEvent>;
 export type Transport = z.infer<typeof Transport>;
@@ -101,3 +128,4 @@ export interface AgentAdapter {
  dispose(): void;
 }
 export { MockEngine, MockAgent, createSession } from './mocks.ts';
+export {snapMidiToScale} from './pitch-snap.ts';

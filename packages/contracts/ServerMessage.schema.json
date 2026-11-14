@@ -6,6 +6,121 @@
       "properties": {
         "type": {
           "type": "string",
+          "const": "browser-action"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "clockId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "expectedInputRevision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "operation": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "calibrate-input"
+                },
+                "mode": {
+                  "type": "string",
+                  "enum": [
+                    "noise",
+                    "timing",
+                    "check-timing",
+                    "full"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "mode"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "cancel-input-action"
+                },
+                "actionId": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "type",
+                "actionId"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "set-input-profile"
+                },
+                "profile": {
+                  "type": "string",
+                  "enum": [
+                    "noisy-room",
+                    "music"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "profile"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "set-input-offset"
+                },
+                "milliseconds": {
+                  "type": "integer",
+                  "minimum": -150,
+                  "maximum": 150
+                }
+              },
+              "required": [
+                "type",
+                "milliseconds"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        }
+      },
+      "required": [
+        "type",
+        "id",
+        "clockId",
+        "expectedInputRevision",
+        "operation"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
           "const": "command"
         },
         "command": {
@@ -30,6 +145,71 @@
             },
             "operation": {
               "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "set-pitch-snap"
+                    },
+                    "settings": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "root": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 11
+                            },
+                            "scale": {
+                              "type": "string",
+                              "enum": [
+                                "major",
+                                "minor"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "root",
+                            "scale"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "settings"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "snap-notes"
+                    },
+                    "trackId": {
+                      "type": "string",
+                      "enum": [
+                        "synth-1",
+                        "synth-2",
+                        "synth-3"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "trackId"
+                  ],
+                  "additionalProperties": false
+                },
                 {
                   "type": "object",
                   "properties": {
@@ -654,6 +834,35 @@
                             ],
                             "additionalProperties": false
                           }
+                        },
+                        "pitchSnap": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "root": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 11
+                                },
+                                "scale": {
+                                  "type": "string",
+                                  "enum": [
+                                    "major",
+                                    "minor"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "root",
+                                "scale"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [

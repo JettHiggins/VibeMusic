@@ -208,6 +208,35 @@
         ],
         "additionalProperties": false
       }
+    },
+    "pitchSnap": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "root": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 11
+            },
+            "scale": {
+              "type": "string",
+              "enum": [
+                "major",
+                "minor"
+              ]
+            }
+          },
+          "required": [
+            "root",
+            "scale"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "null"
+        }
+      ]
     }
   },
   "required": [
