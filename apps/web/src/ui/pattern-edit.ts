@@ -22,6 +22,31 @@ export const placeNote = (step: number, midi: number, duration: number, velocity
 
 export const removeNoteAt = (step: number): PatternOp => p => ({ ...p, notes: p.notes.filter(n => !cells(n.step, n.duration).includes(step)) });
 
+/** Remove the overlapped cells' notes so the track stays monophonic (the engine rejects overlaps). */
+function withoutOverlaps(notes: Pattern['notes'], step: number, duration: number, except: string) {
+ const occupied = new Set(cells(step, duration));
+ return notes.filter(n => n.id === except || !cells(n.step, n.duration).some(c => occupied.has(c)));
+}
+const wrap = (step: number) => ((Math.round(step) % 64) + 64) % 64;
+
+/** Piano roll: move a note to a new start step and pitch; notes it lands on are replaced. */
+export const moveNote = (id: string, step: number, midi: number): PatternOp => p => {
+ const note = p.notes.find(n => n.id === id);
+ if (!note) return p;
+ const moved = { ...note, step: wrap(step), midi: Math.max(0, Math.min(127, Math.round(midi))) };
+ return { ...p, notes: [...withoutOverlaps(p.notes, moved.step, moved.duration, id).filter(n => n.id !== id), moved] };
+};
+
+/** Piano roll: change a note's length (1..64 steps); notes it now covers are replaced. */
+export const resizeNote = (id: string, duration: number): PatternOp => p => {
+ const note = p.notes.find(n => n.id === id);
+ if (!note) return p;
+ const resized = { ...note, duration: Math.max(1, Math.min(64, Math.round(duration))) };
+ return { ...p, notes: [...withoutOverlaps(p.notes, resized.step, resized.duration, id).filter(n => n.id !== id), resized] };
+};
+
+export const deleteNote = (id: string): PatternOp => p => ({ ...p, notes: p.notes.filter(n => n.id !== id) });
+
 export interface EditQueueDeps { dispatch(command: SessionCommand): ClientMessage; newId(): string }
 
 /**
@@ -60,8 +85,13 @@ export class PatternEditQueue {
   const track = this.session?.tracks.find(t => t.id === trackId);
   const base: Pattern = { notes: track?.notes ?? [], hits: track?.hits ?? [] };
   const edits = [...(this.inFlight?.edits ?? []), ...this.queued].filter(e => e.trackId === trackId);
-  return { ...edits.reduce((p, e) => e.op(p, () => 'pending'), base), pending: edits.length > 0 };
+  // Unapplied items get unique placeholder IDs (`pending:N`) so the UI can key and skip them safely.
+  let n = 0;
+  return { ...edits.reduce((p, e) => e.op(p, () => `pending:${n++}`), base), pending: edits.length > 0 };
  }
+
+ /** IDs created by view() for edits the engine has not applied yet. */
+ static isPlaceholder(id: string) { return id.startsWith('pending:'); }
 
  get busy() { return !!this.inFlight || this.queued.length > 0; }
 

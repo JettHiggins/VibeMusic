@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import type { VoiceInput, VoiceInputState } from '../input/voice-input.ts';
+import { C } from './theme.ts';
 
 /**
  * Guided timing calibration: instructions, a visible countdown, practice and measured clicks with
@@ -41,14 +42,14 @@ export function CalibrationPanel({ voice, state, disabled, playing }: { voice: V
      <div style={{ display: 'flex', gap: 3, margin: '4px 0' }}>
       {Array.from({ length: 4 + run.measuredTotal }, (_, i) => {
        const done = i < 4 ? i < run.practiceDone : i - 4 < run.measuredDone;
-       return <span key={i} style={{ width: 16, height: 8, borderRadius: 2, background: done ? (i < 4 ? '#888' : '#2a8') : '#8883' }} />;
+       return <span key={i} style={{ width: 16, height: 8, borderRadius: 2, background: done ? (i < 4 ? C.muted : C.ok) : C.raised }} />;
       })}
      </div>
     </>}
    <button onClick={() => voice.cancelCalibration()}>Cancel</button>
   </div>}
 
-  {result && !run && <div role="status" style={{ color: result.ok ? '#2a8' : '#e0a030' }}>{result.ok ? '✓ ' : '⚠ '}{result.text}
+  {result && !run && <div role="status" style={{ color: result.ok ? C.ok : C.warn }}>{result.ok ? '✓ ' : '⚠ '}{result.text}
    {result.suggestTrimMs !== undefined && <> <button disabled={disabled} onClick={() => voice.setOffsetAdjust(result.suggestTrimMs!)}>Apply trim {result.suggestTrimMs > 0 ? '+' : ''}{result.suggestTrimMs} ms</button></>}
   </div>}
 

@@ -36,7 +36,7 @@ test('rapid sound changes apply latest-wins through the real engine and preserve
  // Playing: edits queue for the boundary, so successive slider moves coalesce.
  core.dispatch({ id: 'play', expectedRevision: core.getSession().revision, boundary: 'immediate', operation: { type: 'play', playing: true } });
  { const l = new Float32Array(128), r = new Float32Array(128); core.render(l, r, 0); }
- const base = withEngine(core.getSession().tracks[0].patch, 9, 2);
+ const base = withEngine(core.getSession().tracks[0].patch, 1, 2); // DIGITAL; FM6 has no generic sliders
  q.set('synth-1', base);
  const cutoff = patchControls(base, metadata).find(c => c.name === 'FLT')!;
  for (const v of [-20, 10, 40]) q.set('synth-1', withParameter(q.view('synth-1')!, cutoff.id, v));
@@ -44,8 +44,18 @@ test('rapid sound changes apply latest-wins through the real engine and preserve
  const loop = Math.ceil(44100 * 960 / 120);
  for (let i = 0; i < 3; i++) { const l = new Float32Array(loop), r = new Float32Array(loop); core.render(l, r, 128 + i * loop); }
  const patch = core.getSession().tracks[0].patch;
- assert.equal(patch.engine, 9); assert.equal(patch.preset, 2);
+ assert.equal(patch.engine, 1); assert.equal(patch.preset, 2);
  assert.equal(patch.parameters[String(cutoff.id)], 40, 'latest value wins');
  assert.deepEqual(core.getSession().tracks[0].notes.map(x => x.id), ['n'], 'notes preserved');
  assert.equal(q.pending('synth-1'), false); assert.equal(q.lastError, null);
+});
+
+test('FM6 packed voices expose no generic sliders that would overwrite the real voice', { skip: !ready }, () => {
+ const metadata = JSON.parse(readFileSync(`${dir}/metadata.json`, 'utf8'));
+ const fm6 = metadata.engines.findIndex((e: { name: string }) => e.name === 'FM6');
+ const p = withEngine(createSession().tracks[0].patch, fm6, 0);
+ // The generic preset array is all zeros for FM6 (its voices are in fm6Factory).
+ assert.ok(metadata.engines[fm6].presets[0].parameters.slice(63, 71).every((v: number) => v === 0));
+ assert.deepEqual(patchControls(p, metadata), []);
+ assert.ok(patchControls(withEngine(p, 1, 0), metadata).length > 0, 'other engines keep their controls');
 });
