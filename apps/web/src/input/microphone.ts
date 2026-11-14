@@ -4,7 +4,14 @@ import type { Onset } from './onset.ts';
 import type { PitchReading, SungNote } from './pitch.ts';
 import type { CaptureSettings } from './diagnostics.ts';
 
-export interface AnalysisFrame { onsets: Onset[]; notes: SungNote[]; analysedThrough: number; levelDb: number; analysisMs: number; pitch?: PitchReading | null }
+export interface AnalysisFrame {
+ onsets: Onset[]; notes: SungNote[];
+ /** Verification coverage: held at the start of a note still being sung. */
+ analysedThrough: number;
+ /** Raw capture frame actually processed (real elapsed time, for diagnostics). */
+ processedThrough?: number;
+ levelDb: number; analysisMs: number; pitch?: PitchReading | null;
+}
 
 /**
  * Connects an input (the microphone, or a diagnostic test signal) to the capture worklet on the

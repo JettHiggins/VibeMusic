@@ -17,7 +17,14 @@ export function CalibrationPanel({ voice, state, disabled, playing }: { voice: V
  const [verify, setVerify] = useState(false);
  const start = () => { void voice.calibrateLatency({ verify }); };
 
+ const silence = state.silenceRun;
  return <div aria-label="Timing calibration" style={box}>
+  {silence && <div role="status" aria-live="polite" style={{ margin: '6px 0' }}>
+   {silence.phase === 'countdown'
+    ? <div style={{ fontSize: 24, fontWeight: 700 }}>Stay quiet… measuring in {silence.countdownLeft}</div>
+    : <div style={{ fontWeight: 600 }}>Measuring silence: stay quiet</div>}
+   <button onClick={() => voice.cancelCalibration()}>Cancel</button>
+  </div>}
   <div style={row}>
    <strong>Timing</strong>
    {cal && <span>{cal.latencySource === 'tap-along' ? `measured ${measuredMs} ms` : `browser estimate ${measuredMs} ms (not measured)`}{trim ? `, trim ${trim > 0 ? '+' : ''}${trim} ms` : ''}</span>}
