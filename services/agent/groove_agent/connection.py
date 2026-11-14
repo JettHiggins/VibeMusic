@@ -27,7 +27,7 @@ REMEMBERED_UTTERANCES = 256
 # No recognizer is wired yet (STT provider decision pending). Until one is, speech-audio
 # is validated and dropped, and speech-verified is never sent: nothing was classified.
 SPEECH_UNAVAILABLE = {"type": "speech-status", "available": False, "provider": "none",
-                      "reason": "no speech recognizer configured; speech-verified is not sent"}
+                      "reason": "no speech recognizer configured; speech-verified is not sent; hold speech-dependent commits"}
 
 
 @dataclass
@@ -121,7 +121,7 @@ class Connection:
         except ChunkError as error:
             self._speech_streams.mark_broken(stream_id)
             return [_error(stream_id, f"speech-audio rejected: {error}; send a new streamId")]
-        return [dict(SPEECH_UNAVAILABLE)] if first else []
+        return [{**SPEECH_UNAVAILABLE, "streamId": stream_id}] if first else []
 
     def tick(self, now: float) -> list[dict]:
         """Expire commands the browser never resolved, so later commands are not blocked forever."""

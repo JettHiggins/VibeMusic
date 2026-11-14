@@ -39,7 +39,7 @@ export const Transport = z.strictObject({ clockId: id, sampleRate: z.number().in
 // (the payload rate; frames stay on the context clock). At most 1 s of 48 kHz audio per chunk.
 const base64 = z.string().min(4).max(128000).regex(/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/);
 export const SpeechAudio = z.strictObject({ type: z.literal('speech-audio'), streamId: id, seq: frame, clockId: id, startFrame: frame, endFrame: frame, sampleRate: z.number().int().min(8000).max(48000), encoding: z.literal('pcm-s16le'), data: base64 });
-export const SpeechStatus = z.strictObject({ type: z.literal('speech-status'), available: z.boolean(), provider: id, reason: z.string().optional() });
+export const SpeechStatus = z.strictObject({ type: z.literal('speech-status'), streamId: id, available: z.boolean(), provider: id, reason: z.string().optional() });
 export const ClientMessage = z.discriminatedUnion('type', [
  z.strictObject({ type: z.literal('session'), session: SessionState }),
  z.strictObject({ type: z.literal('transport'), transport: Transport }),
@@ -51,7 +51,9 @@ export const ClientMessage = z.discriminatedUnion('type', [
 ]);
 export const ServerMessage = z.discriminatedUnion('type', [
  z.strictObject({ type: z.literal('command'), command: SessionCommand }),
- z.strictObject({ type: z.literal('speech-verified'), clockId: id, throughFrame: frame }),
+ // streamId/fromFrame are optional for older producers; every speech-audio pipeline sends both.
+ // Coverage is [fromFrame, throughFrame] (inclusive) of one contiguous stream, never across a gap.
+ z.strictObject({ type: z.literal('speech-verified'), clockId: id, throughFrame: frame, streamId: id.optional(), fromFrame: frame.optional() }),
  z.strictObject({ type: z.literal('command-span'), utteranceId: id, clockId: id, startFrame: frame, endFrame: frame }),
  z.strictObject({ type: z.literal('research'), jobId: id, status: z.enum(['running','complete','cancelled','failed']), progress: unit, candidates: z.array(PatchCandidate), error: z.string().optional() }),
  z.strictObject({ type: z.literal('error'), requestId: id, message: id }),

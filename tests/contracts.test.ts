@@ -37,7 +37,10 @@ test('speech transport fixtures validate and malformed audio chunks are rejected
  const base=JSON.parse(readFileSync('packages/contracts/fixtures/SpeechAudio.json','utf8'));
  for(const bad of [{data:'not base64!'},{data:'AAA'},{encoding:'float32'},{sampleRate:96000},{seq:-1},{data:'A'.repeat(128004)},{transcript:'groove stop'}])
   assert.equal(ClientMessage.safeParse({...base,...bad}).success,false,JSON.stringify(Object.keys(bad)));
- assert.equal(ServerMessage.safeParse({type:'speech-status',available:true}).success,false);
+ assert.equal(ServerMessage.safeParse({type:'speech-status',available:true,provider:'x'}).success,false,'speech-status must name its stream');
+ const verified=ServerMessage.parse(JSON.parse(readFileSync('packages/contracts/fixtures/SpeechVerified.json','utf8')));
+ assert.ok(verified.type==='speech-verified'&&verified.streamId&&verified.fromFrame!==undefined);
+ ServerMessage.parse({type:'speech-verified',clockId:'c',throughFrame:10});
 });
 
 test('recording-usability wire examples validate for both owners',()=>{
