@@ -51,6 +51,11 @@ export class PerformanceRecorder {
  private speechAvailable = false;
  private inFlight: { id: string; ids: Set<string> } | null = null;
  private retries = 0;
+ /**
+  * Batches this recorder replaced. Acks travel over a MessagePort, so a replaced batch may still
+  * turn out to have been applied before the replacement reached the audio thread.
+  */
+ private replaced = new Map<string, Set<string>>();
  /** Revision from the last authoritative ack; never build a batch on an older snapshot. */
  private minRevision = 0;
  private committed = 0;
@@ -161,6 +166,14 @@ export class PerformanceRecorder {
    if (!this.window || this.window.startFrame !== t.recordingStartFrame || this.window.clockId !== t.clockId) {
     // A new take replaces the engine's window; unsent events from the old take can no longer apply.
     if (this.window) this.discardUnverified('A new take started before earlier hits were verified');
+    // A batch the engine no longer lists as pending, with no acknowledgment yet, belongs to the old
+    // take: forget it rather than chaining the new take's batches onto it.
+    if (this.inFlight && !t.pendingCommandIds.includes(this.inFlight.id)) {
+     const lost = this.inFlight.ids;
+     this.events = this.events.filter(e => !lost.has(e.event.id));
+     this.dropped += lost.size; this.inFlight = null; this.replaced.clear();
+     this.lastError = "The previous take's last batch was not acknowledged by the engine";
+    }
     this.window = { clockId: t.clockId, startFrame: t.recordingStartFrame, target: t.recordingTarget, tempo: this.session?.tempo ?? 120, open: true, cutoff: t.currentFrame };
     this.speechVerifiedThrough = -1;
    }
@@ -208,6 +221,7 @@ export class PerformanceRecorder {
    operation: { type: 'commit-performance', events: batch.map(e => e.event), excludedSpans, verifiedThroughFrame: mark, ...(replacesCommandId?{replacesCommandId}:{}) },
   };
   batch.forEach(e => { e.status = 'submitted'; });
+  if (replacesCommandId && this.inFlight) this.replaced.set(replacesCommandId, this.inFlight.ids);
   this.inFlight = { id: command.id, ids: new Set(batch.map(e => e.event.id)) };
   this.changed();
   let receipt: ClientMessage;
@@ -217,6 +231,20 @@ export class PerformanceRecorder {
  }
 
  private onAck(ack: Extract<ClientMessage, { type: 'ack' }>) {
+  const replaced = this.replaced.get(ack.commandId);
+  if (replaced && ack.status !== 'queued') {
+   this.replaced.delete(ack.commandId);
+   if (ack.status === 'applied') {
+    // It applied before our replacement arrived: those events are committed; never resend them.
+    const before = this.events.length;
+    this.events = this.events.filter(e => !replaced.has(e.event.id));
+    this.committed += before - this.events.length;
+    if (this.inFlight) for (const id of replaced) this.inFlight.ids.delete(id);
+    this.minRevision = Math.max(this.minRevision, ack.revision);
+   }
+   this.changed();
+   return;
+  }
   const flight = this.inFlight;
   if (!flight || ack.commandId !== flight.id || ack.status === 'queued') return;
   this.inFlight = null;
