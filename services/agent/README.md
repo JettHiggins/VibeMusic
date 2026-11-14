@@ -90,7 +90,9 @@ Mock mode was exercised here only with synthetic metadata from the test fixtures
 - Speech-to-text. The service consumes `utterance` transcripts; an audio/provider protocol needs a contract
   proposal and a credential decision first.
 - Deep Agents orchestration. `intents.interpret` is the seam a model-backed interpreter replaces; it needs API access.
-- Meaningful text-to-sound ranking. The real SLOOP renderer is integrated, but the LAION CLAP embedder is not implemented/configured yet. Sound relevance and musical quality remain unverified.
+- Listening-verified sound quality. The real SLOOP renderer and local LAION CLAP (native-parity checked) are
+  integrated, and the ranking passes the instrument-family benchmark; whether candidates sound right, and whether
+  search beats preset-only picking, still needs the three-person blind comparison.
 - Research evaluation against preset-only retrieval with blind listening.
 - Physical microphone and speech integration remain pending. The browser Agent workspace now includes candidate previews, provenance and exact-candidate acceptance; its controller and the real WASM core have live research integration tests. Actual speech recognition and semantic ranking/listening gates are still pending.
 
@@ -137,7 +139,32 @@ Opt-in commands (from repository root, using the research virtualenv):
 ```sh
 GROOVE_TEST_CLAP=1 python -m pytest services/agent/tests/test_clap.py
 GROOVE_RESEARCH=sloop GROOVE_EMBEDDER=clap python -m uvicorn groove_agent.app:app --app-dir services/agent --host 127.0.0.1 --port 8000
-GROOVE_RESEARCH=sloop GROOVE_EMBEDDER=clap python -m groove_agent.research.evaluate artifacts/evaluation
+PYTHONPATH=services/agent GROOVE_RESEARCH=sloop GROOVE_EMBEDDER=clap python -m groove_agent.research.benchmark
+PYTHONPATH=services/agent GROOVE_RESEARCH=sloop GROOVE_EMBEDDER=clap python -m groove_agent.research.evaluate artifacts/blind-v1 --seed 20261114
 ```
 
-For the evaluation module, include `PYTHONPATH=services/agent` when launching from the repository root. Evaluation writes seeded A/B WAVs, a listening sheet, a separate answer key, and measured latencies. Keep the key separate from listeners until preferences are recorded. Embedding scores and synthetic tests do not replace the three-person listening comparison in PLAN.md.
+(On Windows use `PYTHONPATH="services/agent;."`.)
+
+### Ranking
+
+Retrieval and refinement rank with `retrieval.Ranking` (see its docstring and docs/CLAP.md): a seven-template
+prompt ensemble, hub correction against a fixed instrument vocabulary, and a preset-name prior with weight
+0.75 (audio stays the larger term; variations inherit their factory preset's name). Scores are z-scored ranking
+values, not cosines. `benchmark` reports, for 8 tuning and 12 held-out prompts, the rank of the first preset of
+the requested instrument family, judged from preset names. It catches family mismatches such as
+"80s electric piano" -> PHYS / TIMPANI; it says nothing about which candidate sounds best.
+
+The first request after a corpus rebuild embeds ~1,300 fixed index texts (about 16 s on two CPU threads) and
+caches them in `text-embeddings.npz` beside the corpus; later restarts take about 0.1 s. Spoken descriptions are
+never written to that file.
+
+### Blind listening kit
+
+`evaluate` writes the listening directory (A/B WAVs, blank `sheet.csv`, `kit.json`) and, separately,
+`<dir>-answer-key/` (`answers.json`, `latency.csv`). Give listeners only the listening directory. With the same
+seed (`--seed`, default 20261114), prompts (`--prompts fixed|all|"a,b"`), engine build and model revisions,
+every laptop gets the same A/B order; compare `kit.json`'s `fingerprint` to confirm the audio is identical too.
+If fingerprints differ, pool results only for one shared kit. Embedding scores and synthetic tests do not replace
+the three-person listening comparison in PLAN.md.
+
+`scripts/clap_native_parity.py` reproduces the comparison with LAION's native model code (see its docstring).

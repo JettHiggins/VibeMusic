@@ -1,4 +1,4 @@
-/** Dark monochrome palette for the DAW workspace. Red is reserved for recording state. */
+/** Dark monochrome palette for the DAW workspace. */
 export const C = {
  bg: '#0b0b0c',
  panel: '#141416',
@@ -12,9 +12,9 @@ export const C = {
  note: '#d6d6da',
  noteSelected: '#ffffff',
  pending: '#9a9aa2',
- rec: '#e5484d',
- warn: '#d6b25e',
- ok: '#9fd5b2',
+ rec: '#eeeeee',
+ warn: '#dddddd',
+ ok: '#e8e8ea',
 } as const;
 export const MONO = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
 
@@ -27,7 +27,7 @@ export const workspaceCss = `
  .vs button:disabled { opacity: .4; cursor: default; }
  .vs button[aria-pressed=true] { background: ${C.accent}; color: #111; border-color: ${C.accent}; }
  .vs button.rec { color: ${C.rec}; border-color: ${C.rec}; }
- .vs button.rec.on { background: ${C.rec}; color: #fff; }
+ .vs button.rec.on { background: ${C.rec}; color: #111; }
  .vs select, .vs input:not([type=range]):not([type=checkbox]) { background: ${C.raised}; color: ${C.text}; border: 1px solid ${C.lineStrong}; border-radius: 4px; padding: 3px 6px; font: inherit; }
  .vs input[type=range] { accent-color: ${C.accent}; }
  .vs :focus-visible { outline: 2px solid ${C.accent}; outline-offset: 1px; }

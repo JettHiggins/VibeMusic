@@ -14,17 +14,17 @@ export function TransportBar({ session, transport, enabled, busy, onEnable, send
  const rec = transport?.recordingState ?? 'idle';
  const pos = playheadStep(transport, session.tempo);
  const pending = transport?.pendingCommandIds.length ?? 0;
- return <header aria-label="Transport" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '8px 12px', background: C.panel, borderBottom: `1px solid ${C.line}` }}>
+ return <header aria-label="Transport" style={{ position: 'sticky', top: 0, zIndex: 30, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '8px 12px', background: C.panel, borderBottom: `1px solid ${C.line}` }}>
   <strong style={{ letterSpacing: '.2em', fontSize: 12 }}>VOICESYNTH</strong>
   {!enabled && <button onClick={onEnable} disabled={busy} style={{ background: C.accent, color: '#111' }}>Enable audio</button>}
   <button disabled={!enabled} onClick={() => send({ type: 'play', playing: !transport?.playing })} aria-label={transport?.playing ? 'Stop playback' : 'Play'}>{transport?.playing ? '■ Stop' : '▶ Play'}</button>
   {rec === 'idle'
-   ? <button className="rec" disabled={!enabled || !canRecord} title={recordHint ?? undefined} onClick={() => send({ type: 'record', target }, 'next-loop')}>● Rec {targetLabel(target)}</button>
+   ? <button className="rec" disabled={!enabled || !canRecord} title={recordHint ?? undefined} onClick={() => send({ type: 'record', target }, 'next-beat')}>● Rec {targetLabel(target)}</button>
    : <button className="rec on" disabled={!enabled} onClick={() => send({ type: 'stop-recording' })}>■ Stop rec</button>}
   <span style={{ fontFamily: MONO, color: rec === 'idle' ? C.faint : C.rec }}>{rec === 'recording' ? '● REC' : rec === 'armed' ? 'COUNT-IN' : 'REC OFF'}</span>
   <span style={{ width: 1, height: 20, background: C.line }} />
-  <button disabled={!enabled} onClick={() => send({ type: 'undo' }, 'next-loop')}>Undo</button>
-  <button disabled={!enabled || rec === 'recording'} onClick={() => send({ type: 'clear', target }, 'next-loop')}>Clear {targetLabel(target)}</button>
+  <button disabled={!enabled} onClick={() => send({ type: 'undo' }, 'immediate')}>Undo</button>
+  <button disabled={!enabled} onClick={() => send({ type: 'clear', target }, 'immediate')}>Clear {targetLabel(target)}</button>
   <span style={{ width: 1, height: 20, background: C.line }} />
   <button disabled={!enabled || rec === 'recording' || session.tempo <= 40} aria-label="Tempo down" onClick={() => send({ type: 'tempo', bpm: Math.max(40, session.tempo - 1) }, 'next-loop')}>−</button>
   <span style={{ fontFamily: MONO, fontSize: 15 }} aria-label="Tempo">{session.tempo}<span style={{ fontSize: 10, color: C.muted }}> BPM</span></span>
@@ -32,7 +32,7 @@ export function TransportBar({ session, transport, enabled, busy, onEnable, send
   <span style={{ fontFamily: MONO, fontSize: 15, minWidth: 44 }} aria-label="Bar and beat">{pos ? `${pos.bar}.${pos.beat}` : '-.-'}</span>
   {/* One fixed-height line: changing status text must never re-wrap the bar and shift the editor under the pointer. */}
   <span role="status" title={status} style={{ flex: '1 1 160px', minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontFamily: MONO, fontSize: 11, color: statusError ? C.warn : C.muted }}>
-   {pending > 0 && <span style={{ color: C.warn }} title="Changes are applied at the start of the next four-bar loop">{pending} change(s) at next loop · </span>}{status}
+   {pending > 0 && <span style={{ color: C.warn }} title="Pending recording or musical changes">{pending} pending change(s) · </span>}{status}
   </span>
   <SessionMenu session={session} transport={transport} enabled={enabled} send={send} />
  </header>;

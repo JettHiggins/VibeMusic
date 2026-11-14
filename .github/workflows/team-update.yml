@@ -3,7 +3,7 @@ name: Publish team coordination update
 on:
   push:
     branches: [engine-integration]
-    paths: [docs/TEAM-UPDATE.md, docs/PR-REVIEWS.json, .github/workflows/team-update.yml]
+    paths: [docs/TEAM-UPDATE.md, docs/PR-REVIEWS.json, docs/WS4-TICKETS.json, .github/workflows/team-update.yml]
 
 permissions:
   contents: read
@@ -79,6 +79,18 @@ jobs:
                   core.info(`Posting review comment on PR ${review.pullRequest}`);
                   await github.rest.issues.createComment({owner, repo, issue_number: review.pullRequest,
                     body: `${reviewMarker}\n${review.body}\n\nPosted from the WS1-reviewed coordination commit ${context.sha}.`});
+                }
+              }
+            }
+            if (fs.existsSync('docs/WS4-TICKETS.json')) {
+              const tickets = JSON.parse(fs.readFileSync('docs/WS4-TICKETS.json', 'utf8'));
+              const allIssues = await github.paginate(github.rest.issues.listForRepo, {owner, repo, state: 'all', per_page: 100});
+              for (const ticket of tickets) {
+                const ticketMarker = `<!-- ws4-ticket:${ticket.id} -->`;
+                const existing = allIssues.find(x => !x.pull_request && x.body?.includes(ticketMarker));
+                if (!existing) {
+                  const created = await github.rest.issues.create({owner, repo, title: ticket.title, body: `${ticketMarker}\n${ticket.body}`});
+                  core.notice(`WS4 ticket: ${created.data.html_url}`);
                 }
               }
             }
