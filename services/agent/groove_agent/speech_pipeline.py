@@ -154,6 +154,7 @@ class SpeechJob:
     clock_id: str
     segment: Segment
     context_start_frame: Optional[int] = None  # actual first word; exclusion may include pre-roll
+    research_epoch: int = 0  # newer UI research must defeat delayed recognition of old speech
 
 
 Deliver = Callable[[SpeechJob, Optional[str | Transcript], Optional[str]], None]  # (job, text, error)

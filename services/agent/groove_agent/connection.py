@@ -18,12 +18,13 @@ import json
 from dataclasses import dataclass
 from typing import Any, Callable, Deque, Mapping, Optional, Protocol, Sequence, Union
 
-from .intents import (BOUNDARY, MELODIC_TRACKS, WAKE_WORDS, AcceptCandidate, CancelSearch, Command, Ignored, Interpretation,
+from .intents import (BOUNDARY, MELODIC_TRACKS, WAKE_WORDS, AcceptCandidate, AuditionCandidate, CancelSearch, Command, Ignored, Interpretation,
                       NotUnderstood, SoundSearch, interpret, tokenize, validate_operation)
 from .speech import ChunkError, StreamTracker, decode_chunk
 from .speech_pipeline import EnergySegmenter, SpeechJob, SpeechWorker
 from .speech_pipeline import Transcript
 from .speech_alignment import locate_command
+from .preview import PreviewRequests
 
 from .language import LanguageJob
 from .contracts import ContractError, validate
@@ -115,7 +116,16 @@ def _error(request_id: str, message: str) -> dict:
 
 class Connection:
     def __init__(self, interpreter: Interpreter = interpret, ack_timeout_s: float = DEFAULT_ACK_TIMEOUT_S,
-                 research: Optional[ResearchPort] = None, speech: Optional[SpeechWorker] = None, language=None) -> None:
+                 research: Optional[ResearchPort] = None, speech: Optional[SpeechWorker] = None, language=None,
+                 voice_research: bool = False) -> None:
+        self._voice_research = voice_research
+        self._closed = False
+        self._previews = PreviewRequests()
+        self._research_epoch = 0
+        self._ui_research_cutoff: Optional[tuple[str, int]] = None
+        self._received_capture: dict[str, int] = {}
+        self._external_queued: "OrderedDict[str, float]" = OrderedDict()
+        self._seen_searches: "OrderedDict[str, tuple]" = OrderedDict()
         self._language = language
         self._language_pending: dict[str, tuple] = {}
         self._language_epoch = 0
@@ -139,6 +149,8 @@ class Connection:
 
     def handle(self, message: Mapping[str, Any], now: float) -> list[dict]:
         """Process one validated ClientMessage and return ServerMessages to send, in order."""
+        if self._closed:
+            return []
         kind = message["type"]
         if kind == "session":
             self.session = dict(message["session"])
@@ -157,11 +169,22 @@ class Connection:
             return self._on_utterance(message, now)
         if kind == "sound-request":
             return self._start_search(message["id"], message["trackId"], message["description"], None)
+        if kind == "preview-ack":
+            return self._previews.acknowledge(dict(message), now) if self._voice_research else [_error(message["id"], "voice preview is not enabled")]
         if kind == "speech-audio":
             return self._on_speech_audio(message, now)
         if kind == "cancel-job":
+            search = self._searches.get(message["jobId"])
+            if search is not None and search.status == "cancelled":
+                return []  # browser cleanup of an already-superseded voice context is idempotent
             if self._research is not None and self._research.cancel(message["jobId"]):
-                return []  # the job answers with status "cancelled"
+                current = search is not None and search is self._latest_search()
+                if search is not None:
+                    search.status = "cancelled"
+                if current:
+                    self._language_epoch += 1
+                    self._mark_ui_research_intent()
+                return self._previews.cancel("preview research job was cancelled", message["jobId"])
             return [_error(message["jobId"], "no such running research job")]
         return [_error("unknown", f"unsupported message type {kind!r}")]
 
@@ -192,6 +215,9 @@ class Connection:
             out = []
         if self._speech is None:
             return out
+        self._received_capture[chunk.clock_id] = max(self._received_capture.get(chunk.clock_id, -1), chunk.last_frame)
+        while len(self._received_capture) > 16:
+            del self._received_capture[next(iter(self._received_capture))]
         state = self._speech_state.get(stream_id)
         if state is None:
             state = self._speech_state[stream_id] = _SpeechStream(EnergySegmenter(chunk.sample_rate), deque())
@@ -201,7 +227,8 @@ class Connection:
             return out
         for segment in state.segmenter.feed(chunk):
             self._segment_count += 1
-            job = SpeechJob(f"{stream_id}:speech-{self._segment_count}", stream_id, chunk.clock_id, segment)
+            job = SpeechJob(f"{stream_id}:speech-{self._segment_count}", stream_id, chunk.clock_id, segment,
+                            research_epoch=self._research_epoch)
             state.pending.append(job)
             self._speech.submit(job)  # transcribed off the event loop; see speech_result
         out.extend(self._advance_speech(stream_id, chunk.clock_id, now))
@@ -213,6 +240,8 @@ class Connection:
         Order: the segment's command-span and command/error first, then any watermark it
         releases. A failure stops coverage for that stream and reports it unavailable.
         """
+        if self._closed:
+            return []
         state = self._speech_state.get(job.stream_id)
         if state is None or state.failed or job not in state.pending:
             return []
@@ -257,6 +286,7 @@ class Connection:
                 "duringRecording": window is not None and window.kind == "recording"}, now,
                 take_armed=(window is not None and window.kind == "armed") or (index > 0 and self._take_armed()),
                 obsolete=self._obsolete(window),
+                research_obsolete=(job.research_epoch < self._research_epoch or self._older_research_intent(job.clock_id, context_start)),
                 emit_span=not any(m["type"] == "command-span" for m in out)))
         return out
 
@@ -332,7 +362,13 @@ class Connection:
 
     def tick(self, now: float) -> list[dict]:
         """Expire commands the browser never resolved, so later commands are not blocked forever."""
-        out: list[dict] = []
+        if self._closed:
+            return []
+        out: list[dict] = self._previews.tick(now)
+        for command_id, queued_at in list(self._external_queued.items()):
+            if now - queued_at >= self._ack_timeout_s:
+                del self._external_queued[command_id]
+                out.append(_error(command_id, "queued browser edit has no final acknowledgment"))
         for command_id, flight in list(self._in_flight.items()):
             if now - flight.sent_at >= self._ack_timeout_s:
                 del self._in_flight[command_id]
@@ -348,13 +384,19 @@ class Connection:
 
     # -- research ----------------------------------------------------------------
 
-    def observe_research(self, message: Mapping[str, Any]) -> None:
+    def observe_research(self, message: Mapping[str, Any]) -> Optional[list[dict]]:
         """Record a research message on its way to the browser, so spoken accept/refine can refer to it."""
+        if self._closed:
+            return None
         search = self._searches.get(message["jobId"])
+        if search is None or (search.status == "cancelled" and message["status"] != "cancelled"):
+            return None  # a late worker must not revive a retired connection-owned job
         if search is not None:
             search.status = message["status"]
-            if message["candidates"] or message["status"] != "cancelled":
+            if self._voice_research or message["candidates"] or message["status"] != "cancelled":
                 search.candidates = message["candidates"]
+            return self._previews.prune(search.job_id, list(search.candidates))
+        return None
 
     def _latest_search(self, with_candidates: bool = False) -> Optional[_Search]:
         """Newest search; with_candidates skips ones that ended (or were cancelled) before producing any."""
@@ -363,32 +405,94 @@ class Connection:
                 return search
         return None
 
-    def _start_search(self, job_id: str, track_id: str, description: str, seeds: Optional[Sequence[dict]]) -> list[dict]:
+    def _start_search(self, job_id: str, track_id: str, description: str, seeds: Optional[Sequence[dict]],
+                      voice_request_id: Optional[str] = None) -> list[dict]:
+        accepted = False
         def failed(reason: str) -> list[dict]:
+            if self._voice_research and voice_request_id is not None and not accepted:
+                return [_error(voice_request_id, reason)]
             return [{"type": "research", "jobId": job_id, "status": "failed", "progress": 0, "candidates": [],
                      "error": reason}]
-        if job_id in self._searches:
-            return []
+        binding = (track_id, description, voice_request_id)
+        if job_id in self._seen_searches:
+            return [] if self._seen_searches[job_id] == binding else failed("research job ID is already bound to another request")
+        self._seen_searches[job_id] = binding
+        while len(self._seen_searches) > 256:
+            self._seen_searches.popitem(last=False)
+        if not description.strip():
+            return failed("describe the sound before starting research")
         if track_id not in MELODIC_TRACKS:
             return failed("sound search works on the three synth tracks; select one first")
         if self._research is None:
             return failed("sound research is not available in this build")
+        if self._patch_acceptance_pending():
+            return failed("a patch acceptance or queued browser edit is pending; wait for its final acknowledgment")
+        out: list[dict] = []
+        if self._voice_research:
+            for previous in self._searches.values():
+                if previous.status == "running":
+                    self._research.cancel(previous.job_id)
+                    previous.status = "cancelled"
+            out.extend(self._previews.cancel("preview research job was superseded"))
+        if voice_request_id is None:
+            self._mark_ui_research_intent()
         self._searches[job_id] = _Search(job_id, track_id, description)
+        accepted = True
         self._language_epoch += 1
         while len(self._searches) > 16:
             self._searches.popitem(last=False)
-        self._research.start(job_id, description, seeds)
-        return []
+        if self._voice_research and voice_request_id is not None:
+            out.append({"type": "research-context", "requestId": voice_request_id, "jobId": job_id,
+                        "trackId": track_id, "description": description, "origin": "voice"})
+        # Context is returned synchronously to the socket loop; worker callbacks are queued
+        # onto that loop and cannot run until after these frames enter its outbox.
+        try:
+            self._research.start(job_id, description, seeds)
+        except Exception:
+            self._searches[job_id].status = "failed"
+            out.extend(failed("sound research could not start"))
+        return out
 
-    def _on_sound_intent(self, utterance_id: str, result: Interpretation) -> Union[list, _Proposal]:
+    def _patch_acceptance_pending(self) -> bool:
+        own = any(f.proposal.operation["type"] == "apply-patch" for f in self._in_flight.values())
+        own = own or any(p.operation["type"] == "apply-patch" for p in self._backlog)
+        # UI command acks do not disclose the operation. Conservatively wait for unknown
+        # queued edits too, rather than replacing a possibly pending UI patch acceptance.
+        unknown = any(cid not in self._in_flight for cid in (self.transport or {}).get("pendingCommandIds", []))
+        return own or bool(self._external_queued) or unknown
+
+    def _older_research_intent(self, clock_id: str, frame: int) -> bool:
+        cutoff = self._ui_research_cutoff
+        # Equal frames are possible for a fresh manual transcript while the engine is
+        # stopped/offline. Socket order breaks that tie; already-pending speech jobs
+        # are independently protected by research_epoch.
+        return cutoff is not None and cutoff[0] == clock_id and frame < cutoff[1]
+
+    def _mark_ui_research_intent(self) -> None:
+        self._research_epoch += 1
+        if self.transport is not None:
+            clock = self.transport["clockId"]
+            self._ui_research_cutoff = (clock, max(self.transport["currentFrame"], self._received_capture.get(clock, -1)))
+
+    def _on_sound_intent(self, utterance_id: str, result: Interpretation, now: float) -> Union[list, _Proposal]:
         if isinstance(result, CancelSearch):
             running = self._latest_search()
             if (running is None or running.status != "running" or self._research is None
                     or not self._research.cancel(running.job_id)):
                 return [_error(utterance_id, "no sound search is running")]
             self._language_epoch += 1
-            return []
-        latest = self._latest_search(with_candidates=True)
+            running.status = "cancelled"
+            return self._previews.cancel("preview research job was cancelled", running.job_id)
+        latest = self._latest_search(with_candidates=not self._voice_research)
+        if isinstance(result, AuditionCandidate):
+            if not self._voice_research:
+                return [_error(utterance_id, "voice preview is not enabled; use the browser preview controls")]
+            if latest is None or not 1 <= result.index <= len(latest.candidates):
+                return [_error(utterance_id, "that candidate is not currently available to audition")]
+            candidate = latest.candidates[result.index - 1]
+            if sum(item["id"] == candidate["id"] for item in latest.candidates) != 1:
+                return [_error(utterance_id, "candidate ID is ambiguous; request fresh candidates")]
+            return self._previews.request(f"{utterance_id}:preview", latest.job_id, candidate, now)
         if isinstance(result, AcceptCandidate):
             if latest is None or not latest.candidates:
                 return [_error(utterance_id, "there are no sound candidates to accept yet")]
@@ -401,13 +505,15 @@ class Connection:
             if latest is None or not latest.candidates:
                 return [_error(utterance_id, "describe a sound first, for example: make it sound like an electric piano")]
             return self._start_search(f"{utterance_id}:job", latest.track_id, f"{latest.description}, {result.description}",
-                                      [candidate["patch"] for candidate in latest.candidates])
-        return self._start_search(f"{utterance_id}:job", self.session["selected"]["trackId"], result.description, None)
+                                      [candidate["patch"] for candidate in latest.candidates], voice_request_id=utterance_id)
+        return self._start_search(f"{utterance_id}:job", self.session["selected"]["trackId"], result.description, None,
+                                  voice_request_id=utterance_id)
 
     # -- utterances --------------------------------------------------------------
 
     def _on_utterance(self, message: Mapping[str, Any], now: float, take_armed: Optional[bool] = None,
-                      obsolete: bool = False, emit_span: bool = True) -> list[dict]:
+                      obsolete: bool = False, emit_span: bool = True,
+                      research_obsolete: Optional[bool] = None) -> list[dict]:
         utterance_id = message["id"]
         if utterance_id in self._utterances:
             return []  # already handled; never issue a second command for the same utterance
@@ -438,13 +544,17 @@ class Connection:
             # Recognized after its take or count-in ended (or a newer one began): never act on the
             # current transport or a newer take with it. Its span was still excluded above.
             return out + [_error(utterance_id, "spoken during a take or count-in that has already ended; not applied")]
+        if research_obsolete is None:
+            research_obsolete = self._older_research_intent(message["clockId"], message["startFrame"])
+        if research_obsolete and isinstance(result, (SoundSearch, AcceptCandidate, AuditionCandidate, CancelSearch, NotUnderstood)):
+            return out + [_error(utterance_id, "newer UI research supersedes this older voice intent; not applied")]
         if isinstance(result, NotUnderstood):
             # Familiar commands and explicit parser refusals never wait on a provider. Only
             # unknown addressed speech takes the optional bounded async interpretation path.
             if self._language is not None and result.reason == "command not recognized":
                 if len(self._language_pending) >= 5:
                     return out + [_error(utterance_id, "language queue is full; try again shortly")]
-                latest = self._latest_search(with_candidates=True)
+                latest = self._latest_search(with_candidates=not self._voice_research)
                 research = ({"jobId": latest.job_id, "trackId": latest.track_id, "description": latest.description,
                              "status": latest.status, "candidates": [
                                  {"index": i + 1, "id": item["id"], "provenance": item.get("provenance", "")}
@@ -466,12 +576,14 @@ class Connection:
                 tuple(sorted((transport.get("armedTarget") or {}).items())))
 
     def _language_token(self) -> tuple:
-        latest = self._latest_search(with_candidates=True)
+        latest = self._latest_search(with_candidates=not self._voice_research)
         candidates = tuple((item["id"], json.dumps(item["patch"], sort_keys=True)) for item in latest.candidates) if latest else ()
         return (self._language_epoch, self.revision, self._capture_signature(),
                 latest.job_id if latest else None, candidates)
 
     def language_result(self, job: LanguageJob, result: Optional[Interpretation], error: Optional[str], now: float) -> list[dict]:
+        if self._closed:
+            return []
         pending = self._language_pending.pop(job.request_id, None)
         if pending is None or pending[0] is not job:
             return []
@@ -481,9 +593,9 @@ class Connection:
             return [_error(job.request_id, error)]
         if result is None or isinstance(result, (Ignored, NotUnderstood)):
             return [_error(job.request_id, "language agent could not resolve the request; no change applied")]
-        if not isinstance(result, (Command, SoundSearch, AcceptCandidate, CancelSearch)):
+        if not isinstance(result, (Command, SoundSearch, AcceptCandidate, AuditionCandidate, CancelSearch)):
             return [_error(job.request_id, "invalid language proposal; no change applied")]
-        if isinstance(result, AcceptCandidate) and (type(result.index) is not int or not 1 <= result.index <= 5):
+        if isinstance(result, (AcceptCandidate, AuditionCandidate)) and (type(result.index) is not int or not 1 <= result.index <= 5):
             return [_error(job.request_id, "invalid candidate index; no change applied")]
         if isinstance(result, SoundSearch) and (not isinstance(result.description, str)
                                                or not 0 < len(result.description.strip()) <= 500):
@@ -505,7 +617,7 @@ class Connection:
                 return out + [_error(utterance_id, problem)]
             proposal: Optional[_Proposal] = _Proposal(utterance_id, result.operation, result.boundary)
         else:
-            outcome = self._on_sound_intent(utterance_id, result)
+            outcome = self._on_sound_intent(utterance_id, result, now)
             if isinstance(outcome, _Proposal):
                 proposal = outcome
             elif outcome:
@@ -565,7 +677,13 @@ class Connection:
     def _on_ack(self, message: Mapping[str, Any], now: float) -> list[dict]:
         self.revision = message["revision"] if self.revision is None else max(self.revision, message["revision"])
         flight = self._in_flight.get(message["commandId"])
+        if message["status"] != "queued":
+            self._external_queued.pop(message["commandId"], None)
         if flight is None:
+            if message["status"] == "queued":
+                self._external_queued.setdefault(message["commandId"], now)
+                while len(self._external_queued) > 256:
+                    self._external_queued.popitem(last=False)
             return []  # late or repeated acknowledgment
         status = message["status"]
         if status == "queued":
@@ -579,3 +697,11 @@ class Connection:
                               f"{flight.proposal.operation['type']} was rejected: {reason}"))
         out.extend(self._drain(now))
         return out
+
+    def close(self) -> None:
+        self._closed = True
+        self._language_pending.clear()
+        self._speech_state.clear()
+        self._previews.clear()
+        self._in_flight.clear()
+        self._backlog.clear()

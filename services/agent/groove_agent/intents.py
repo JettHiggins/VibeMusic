@@ -78,11 +78,16 @@ class AcceptCandidate:
 
 
 @dataclass(frozen=True)
+class AuditionCandidate:
+    index: int  # 1-based, resolved to an exact ID by the connection
+
+
+@dataclass(frozen=True)
 class CancelSearch:
     pass
 
 
-Interpretation = Union[Command, Ignored, NotUnderstood, SoundSearch, AcceptCandidate, CancelSearch]
+Interpretation = Union[Command, Ignored, NotUnderstood, SoundSearch, AcceptCandidate, AuditionCandidate, CancelSearch]
 
 
 def tokenize(text: str) -> list[str]:
@@ -229,6 +234,17 @@ def _describe(tokens: Sequence[str]) -> str:
 
 def _sound_intent(verb: str, rest: Sequence[str]) -> Optional[Interpretation]:
     tokens = [verb, *rest]
+    if verb in ("audition", "preview", "hear", "listen"):
+        for token in rest:
+            if token in _CANDIDATE_ORDINALS:
+                return AuditionCandidate(_CANDIDATE_ORDINALS[token])
+        number = find_number(rest)
+        if number is not None:
+            return (AuditionCandidate(int(number)) if float(number).is_integer() and 1 <= number <= 5
+                    else NotUnderstood("say candidate one through five to audition"))
+        if not rest or all(word in {"to", "it", "this", "that", "one", "candidate", "sound"} for word in rest):
+            return AuditionCandidate(1)
+        return NotUnderstood("say audition candidate two, for example")
     if verb == "cancel":
         return CancelSearch()
     if verb in ("accept", "keep", "use", "take", "apply"):

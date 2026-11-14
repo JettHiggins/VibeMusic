@@ -6,5 +6,7 @@ provider measurement is explicit through scripts/language_check.py --live.
 import os
 
 os.environ["GROOVE_LLM"] = ""
+os.environ["OPENROUTER_API_KEY"] = ""
 os.environ["GROOVE_STT"] = ""
 os.environ["GROOVE_RESEARCH"] = ""
+os.environ["GROOVE_VOICE_RESEARCH"] = "0"

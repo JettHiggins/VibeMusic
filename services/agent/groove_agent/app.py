@@ -22,7 +22,7 @@ from .contracts import ContractError, contracts_dir, validate
 from .research.service import ResearchService, backend_from_env
 from .speech_pipeline import ThreadedSpeechWorker
 from .stt import transcriber_from_env
-from .language import LanguageWorker, language_from_env, load_backend_env
+from .language import LanguageWorker, language_from_env, load_backend_env, voice_research_enabled
 
 log = logging.getLogger("groove_agent")
 TICK_SECONDS = 1.0
@@ -36,6 +36,7 @@ research_service = ResearchService(backend_from_env(contracts_dir().parents[1]),
 # No speech recognition unless GROOVE_STT is set (local faster-whisper); loaded once and shared.
 transcriber = transcriber_from_env()
 language = language_from_env()
+voice_research = voice_research_enabled()
 
 
 @app.get("/healthz")
@@ -44,7 +45,8 @@ def healthz() -> dict:
     return {"status": "ok", "version": __version__, "contract": 1,
             "research": backend.label if backend else "not configured",
             "speech": transcriber.name if transcriber else "not configured",
-            "language": "openrouter/deepagents (free-only)" if language else "parser"}
+            "language": "openrouter/deepagents (free-only)" if language else "parser",
+            "voiceResearch": voice_research}
 
 
 @app.get("/previews/{token}.wav")
@@ -109,8 +111,20 @@ async def session_socket(websocket: WebSocket) -> None:
     def from_worker(message: dict) -> None:
         """Called on research worker threads; hands the message to the event loop."""
         def deliver() -> None:
-            connection.observe_research(message)
+            try:
+                validate("ServerMessage", message)
+            except ContractError:
+                outbox.put_nowait(checked(message))
+                return
+            if message["type"] != "research":
+                outbox.put_nowait(message)
+                return
+            replies = connection.observe_research(message)
+            if replies is None:
+                return
             outbox.put_nowait(message)
+            for reply in replies:
+                outbox.put_nowait(reply)
         try:
             loop.call_soon_threadsafe(deliver)
         except RuntimeError:
@@ -134,7 +148,7 @@ async def session_socket(websocket: WebSocket) -> None:
             outbox.put_nowait(reply)
 
     language_worker = LanguageWorker(language, from_language) if language is not None else None
-    connection = Connection(research=port, speech=speech, language=language_worker)
+    connection = Connection(research=port, speech=speech, language=language_worker, voice_research=voice_research)
 
     async def tick() -> None:
         while True:
@@ -163,6 +177,7 @@ async def session_socket(websocket: WebSocket) -> None:
         pass
     finally:
         # Pending proposals and research jobs die with the connection; nothing is replayed after a reconnect.
+        connection.close()
         port.close()
         if speech is not None:
             speech.close()

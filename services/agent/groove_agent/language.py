@@ -13,7 +13,7 @@ from typing import Annotated, Any, Callable, Optional
 from pydantic import Field
 
 from .contracts import contracts_dir, validate
-from .intents import (BOUNDARY, AcceptCandidate, CancelSearch, Command, Interpretation,
+from .intents import (BOUNDARY, AcceptCandidate, AuditionCandidate, CancelSearch, Command, Interpretation,
                       NotUnderstood, SoundSearch, validate_operation)
 
 DEFAULT_MODEL = "inclusionai/ling-3.2-flash:free"
@@ -33,6 +33,7 @@ class LanguageConfig:
     api_key: str = field(default="", repr=False)
     timeout_s: float = 8.0
     max_tokens: int = 512
+    voice_research: bool = False
 
     def __post_init__(self) -> None:
         if self.model != "openrouter/free" and not re.fullmatch(r"[\w.-]+/[\w.-]+:free", self.model):
@@ -71,8 +72,8 @@ def decode_decision(decision: dict) -> Interpretation:
         if type(decision.get("refine", False)) is not bool:
             raise ValueError("invalid refine flag")
         return SoundSearch(decision["description"], decision.get("refine", False))
-    if kind == "accept" and type(decision.get("index")) is int and 1 <= decision["index"] <= 5:
-        return AcceptCandidate(decision["index"])
+    if kind in ("accept", "preview") and type(decision.get("index")) is int and 1 <= decision["index"] <= 5:
+        return (AcceptCandidate if kind == "accept" else AuditionCandidate)(decision["index"])
     if kind == "cancel":
         return CancelSearch()
     if kind == "refuse":
@@ -80,7 +81,7 @@ def decode_decision(decision: dict) -> Interpretation:
     raise ValueError("invalid language decision")
 
 
-def create_graph(model):
+def create_graph(model, voice_research: bool = False):
     """A real Deep Agents graph with typed proposal tools and a strict tool allowlist.
 
     Built-in filesystem/task tools are neither advertised nor allowed to execute. The
@@ -132,6 +133,12 @@ def create_graph(model):
         return json.dumps({"kind": "refuse"})
 
     tools = [command_tool, search_sound, accept_candidate, cancel_search, refuse_request]
+    if voice_research:
+        @tool(return_direct=True)
+        def audition_candidate(index: Annotated[int, Field(ge=1, le=5)]) -> str:
+            """Request non-mutating playback of one current candidate's existing preview; success requires browser acknowledgment."""
+            return json.dumps({"kind": "preview", "index": index})
+        tools.append(audition_candidate)
     allowed = {item.name for item in tools}
 
     @wrap_model_call
@@ -151,7 +158,8 @@ def create_graph(model):
         "Groove stop means stop-recording during recording/count-in; explicit stop playback means play(false). "
         "No recording/armed state: bare stop means play(false). A drum target requires a lane for record/select. "
         "Tempo is 40..240. Sound search/refine/accept preserve music. Unknown/ambiguous requests use refuse_request. "
-        "Audition playback is currently a browser UI action; refuse requests for unsupported automatic audition."),
+        + ("Audition uses audition_candidate and never applies a patch. It requests preview only, not proof of playback."
+           if voice_research else "Audition playback is currently a browser UI action; refuse automatic audition requests.")),
         middleware=[only_musical_tools, guard_tools,
                     ModelCallLimitMiddleware(run_limit=3, exit_behavior="error"),
                     ToolCallLimitMiddleware(run_limit=4, exit_behavior="error")])
@@ -183,7 +191,7 @@ class DeepLanguage:
                                    temperature=0, max_tokens=config.max_tokens,
                                    request_timeout=timeout_ms, max_retries=0,
                                    openrouter_provider=provider)
-        self.graph = create_graph(model)
+        self.graph = create_graph(model, voice_research=True) if config.voice_research else create_graph(model)
 
     async def infer(self, job: LanguageJob) -> Interpretation:
         from .intents import Ignored, interpret
@@ -217,8 +225,16 @@ def language_from_env() -> Optional[DeepLanguage]:
     config = LanguageConfig(model=os.environ.get("GROOVE_LLM_MODEL", DEFAULT_MODEL),
                             api_key=os.environ.get("OPENROUTER_API_KEY", ""),
                             timeout_s=float(os.environ.get("GROOVE_LLM_TIMEOUT", "8")),
-                            max_tokens=int(os.environ.get("GROOVE_LLM_MAX_TOKENS", "512")))
+                            max_tokens=int(os.environ.get("GROOVE_LLM_MAX_TOKENS", "512")),
+                            voice_research=voice_research_enabled())
     return DeepLanguage(config)
+
+
+def voice_research_enabled() -> bool:
+    value = os.environ.get("GROOVE_VOICE_RESEARCH", "").strip()
+    if value not in ("", "0", "1"):
+        raise ValueError("GROOVE_VOICE_RESEARCH must be unset, 0 or 1")
+    return value == "1"
 
 
 def safe_language_error(error: Exception) -> str:
