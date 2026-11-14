@@ -1,0 +1,12 @@
+{
+  "id": "hit-1",
+  "kind": "onset",
+  "target": {
+    "trackId": "drums",
+    "lane": "kick"
+  },
+  "clockId": "audio-1",
+  "captureFrame": 48000,
+  "confidence": 0.95,
+  "velocity": 0.8
+}

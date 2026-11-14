@@ -1,0 +1,24 @@
+{
+  "name": "voicesynthesizer",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/contracts",
+    "apps/web"
+  ],
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "dev": "npm run dev -w @voicesynth/web",
+    "build": "npm run build -w @voicesynth/web",
+    "check": "tsc --noEmit && node --import tsx scripts/export-contracts.ts && python3 scripts/check_contracts.py",
+    "test": "node --import tsx --test tests/*.test.ts",
+    "contracts:export": "node --import tsx scripts/export-contracts.ts"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "tsx": "^4.21.0",
+    "@types/node": "^22.0.0"
+  }
+}

@@ -1,7 +1,7 @@
 # VoiceSynthesizer
 
-A voice-controlled browser groovebox built around SLOOP's synthesizer engine.
+A voice-controlled browser groovebox built around SLOOP.
 
-Start with [the project and coordination plan](PLAN.md). Agent sessions must also read [AGENTS.md](AGENTS.md).
+Read [PLAN.md](PLAN.md) and [AGENTS.md](AGENTS.md), then follow [setup](docs/SETUP.md) and [contracts](docs/CONTRACTS.md).
 
-Implementation has not started. The first milestone establishes the shared contracts, build setup, and mock adapters needed for three parallel workstreams.
+Milestone 0 provides shared contracts, JSON Schemas, fixtures, mock adapters, a mock browser shell, and a pinned upstream engine source. Real audio, microphone analysis, agent service, and sound research are subsequent milestones. API access is deferred.

@@ -11,4 +11,4 @@ Read PLAN.md before work. It defines the product, workstream ownership, mileston
 - Keep real audio timing independent of backend/agent response time. Do not mark mock-only features complete.
 - Handoffs include commit/PR, behavior, validation, limitations, and next integration step.
 - Never commit secrets, raw microphone recordings, downloaded models, or large generated corpora.
-- Setup/build/test commands are not established yet. Workstream 1 must document actual verified commands during milestone 0; do not invent commands or claim unrun checks.
+- Setup and verified foundation commands are in docs/SETUP.md; protocol and directory ownership are in docs/CONTRACTS.md. API access is deferred. No live API calls or key setup without a new credential decision.

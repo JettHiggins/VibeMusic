@@ -1,0 +1,301 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "expectedRevision": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "boundary": {
+      "type": "string",
+      "enum": [
+        "immediate",
+        "next-loop"
+      ]
+    },
+    "operation": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "select"
+            },
+            "target": {
+              "type": "object",
+              "properties": {
+                "trackId": {
+                  "type": "string",
+                  "enum": [
+                    "synth-1",
+                    "synth-2",
+                    "synth-3",
+                    "drums"
+                  ]
+                },
+                "lane": {
+                  "type": "string",
+                  "enum": [
+                    "kick",
+                    "snare",
+                    "closed-hat"
+                  ]
+                }
+              },
+              "required": [
+                "trackId"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "type",
+            "target"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "record"
+            },
+            "target": {
+              "type": "object",
+              "properties": {
+                "trackId": {
+                  "type": "string",
+                  "enum": [
+                    "synth-1",
+                    "synth-2",
+                    "synth-3",
+                    "drums"
+                  ]
+                },
+                "lane": {
+                  "type": "string",
+                  "enum": [
+                    "kick",
+                    "snare",
+                    "closed-hat"
+                  ]
+                }
+              },
+              "required": [
+                "trackId"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "type",
+            "target"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "stop-recording"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "play"
+            },
+            "playing": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "type",
+            "playing"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "tempo"
+            },
+            "bpm": {
+              "type": "number",
+              "minimum": 40,
+              "maximum": 240
+            }
+          },
+          "required": [
+            "type",
+            "bpm"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "clear"
+            },
+            "target": {
+              "type": "object",
+              "properties": {
+                "trackId": {
+                  "type": "string",
+                  "enum": [
+                    "synth-1",
+                    "synth-2",
+                    "synth-3",
+                    "drums"
+                  ]
+                },
+                "lane": {
+                  "type": "string",
+                  "enum": [
+                    "kick",
+                    "snare",
+                    "closed-hat"
+                  ]
+                }
+              },
+              "required": [
+                "trackId"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "type",
+            "target"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "mute"
+            },
+            "trackId": {
+              "type": "string",
+              "enum": [
+                "synth-1",
+                "synth-2",
+                "synth-3",
+                "drums"
+              ]
+            },
+            "muted": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "type",
+            "trackId",
+            "muted"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "undo"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "apply-patch"
+            },
+            "trackId": {
+              "type": "string",
+              "enum": [
+                "synth-1",
+                "synth-2",
+                "synth-3",
+                "drums"
+              ]
+            },
+            "patch": {
+              "type": "object",
+              "properties": {
+                "engine": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "preset": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "parameters": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {
+                    "type": "number"
+                  }
+                },
+                "engineRevision": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "engine",
+                "preset",
+                "parameters",
+                "engineRevision"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "type",
+            "trackId",
+            "patch"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    }
+  },
+  "required": [
+    "id",
+    "expectedRevision",
+    "boundary",
+    "operation"
+  ],
+  "additionalProperties": false
+}

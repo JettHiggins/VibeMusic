@@ -1,0 +1,3 @@
+[submodule "vendor/sloop"]
+	path = vendor/sloop
+	url = https://github.com/isod89/sloop-fm1.git
