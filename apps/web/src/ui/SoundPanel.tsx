@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useReducer, useState } from 'react';
 import type { SessionState } from '@voicesynth/contracts';
 import type { FirmwareMetadata } from '../engine/metadata.ts';
-import { PatchEditQueue, patchControls, withEngine, withParameter } from './patch-edit.ts';
-import type { EditorEngine } from './PatternEditor.tsx';
+import { PatchEditQueue, patchControls, usesPackedVoice, withEngine, withParameter } from './patch-edit.ts';
+import type { EditorEngine } from './labels.ts';
 
 type TrackId = SessionState['tracks'][number]['id'];
 
@@ -15,7 +15,7 @@ export function SoundPanel({ engine, metadata, session, trackId, enabled }: { en
  const [drag, setDrag] = useState<Record<number, number>>({});
  useEffect(() => setDrag({}), [trackId, patch.engine, patch.preset]);
 
- if (trackId === 'drums') return <p style={small}>The drum kit is fixed for now: custom drum sounds need a drum-kit contract from Workstream 1. Use the pattern editor's lane buttons to audition it.</p>;
+ if (trackId === 'drums') return <p style={small}>The drum kit is fixed for now: custom drum sounds need a drum-kit contract from Workstream 1. Click a lane name in the step sequencer to audition it.</p>;
  if (!metadata) return <p style={small}>Enable audio to load the SLOOP engines.</p>;
  const engineMeta = metadata.engines[patch.engine];
  const controls = patchControls(patch, metadata);
@@ -32,6 +32,7 @@ export function SoundPanel({ engine, metadata, session, trackId, enabled }: { en
    <button disabled={!enabled || !engine.audition} onPointerDown={() => play(true)} onPointerUp={() => play(false)} onPointerLeave={() => play(false)}>Hold to audition</button>
    {queue.pending(trackId) && <span style={small}>applies at the next loop…</span>}
   </div>
+  {usesPackedVoice(patch, metadata) && <p style={small}>FM6 voices use packed factory data, so their parameters aren't editable here yet. Choose a preset, or switch engine to shape the sound.</p>}
   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(118px, 1fr))', gap: 8 }}>
    {controls.map(c => {
     const value = drag[c.id] ?? c.value;

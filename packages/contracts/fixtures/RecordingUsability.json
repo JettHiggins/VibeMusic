@@ -1,0 +1,93 @@
+[
+  {
+    "type": "command",
+    "command": {
+      "id": "record-next-beat",
+      "expectedRevision": 3,
+      "boundary": "next-beat",
+      "operation": {
+        "type": "record",
+        "target": {
+          "trackId": "drums",
+          "lane": "kick"
+        }
+      }
+    }
+  },
+  {
+    "type": "command",
+    "command": {
+      "id": "clear-live",
+      "expectedRevision": 4,
+      "boundary": "immediate",
+      "operation": {
+        "type": "clear",
+        "target": {
+          "trackId": "drums",
+          "lane": "kick"
+        }
+      }
+    }
+  },
+  {
+    "type": "command",
+    "command": {
+      "id": "undo-provisional",
+      "expectedRevision": 5,
+      "boundary": "immediate",
+      "operation": {
+        "type": "undo",
+        "discardCaptureOnly": true
+      }
+    }
+  },
+  {
+    "type": "transport",
+    "transport": {
+      "clockId": "clock",
+      "sampleRate": 44100,
+      "currentFrame": 90500,
+      "loopStartFrame": 0,
+      "playing": true,
+      "recording": true,
+      "recordingState": "recording",
+      "recordingStartFrame": 88200,
+      "recordingEpoch": 2,
+      "captureStartFrame": 90501,
+      "recordingLoopStartFrame": 0,
+      "recordingTarget": {
+        "trackId": "drums",
+        "lane": "kick"
+      },
+      "pendingCommandIds": []
+    }
+  },
+  {
+    "type": "command",
+    "command": {
+      "id": "fresh-batch",
+      "expectedRevision": 5,
+      "boundary": "next-loop",
+      "operation": {
+        "type": "commit-performance",
+        "recordingEpoch": 2,
+        "events": [
+          {
+            "kind": "onset",
+            "id": "fresh-hit",
+            "target": {
+              "trackId": "drums",
+              "lane": "kick"
+            },
+            "captureFrame": 91000,
+            "clockId": "clock",
+            "confidence": 0.9,
+            "velocity": 0.8
+          }
+        ],
+        "excludedSpans": [],
+        "verifiedThroughFrame": 91500
+      }
+    }
+  }
+]

@@ -1,0 +1,19 @@
+[
+  {
+    "pullRequest": 7,
+    "headSha": "11c5553cbd7521d9509cb48d2b3c1c7f83140d98",
+    "body": "WS1 integration review of 11c5553. The real-device evidence, device picker, granted-processing diagnostics and measurements-only report are useful and should be preserved. The ~62 ms browser estimate versus ~120 ms measured round trip directly explains the user's late-hit report.\n\nIntegration changes requested before combining with the WS1 capability:\n- An armed Record is now pinned to its original target/deadline in ws1/recording-usability; remove Record from automatic revision-based re-issue when adopting that capability. Re-sending next-beat Record during a stopped count-in can alter its start. The other musical commands retain strict revision checks. See docs/RECORDING-USABILITY.md on that branch.\n- MicCheck uses analysedThrough as elapsed time for its peak window. That watermark is intentionally held at the start of an open sung note, so a sustained note prevents peak eviction and stale pitch readings from aging. Use actual processed capture time for diagnostic expiry, separate from verification coverage, and add a sustained-note regression.\n\nThe current guidance to keep UI/capture changes owned by WS2 still applies. Please carry these fixes into your calibration/workspace stack and report the resulting head. This review does not establish full calibrated real-performer acceptance."
+  },
+  {
+    "pullRequest": 10,
+    "headSha": "10113cf4a3e2f527f66855353ee0a6c5b8d8f4eb",
+    "retargetBase": "engine-integration",
+    "body": "WS1 reviewed the updated lifecycle, processedThrough clock, effective-offset reporting and guided-silence fixes, then integrated the #7/#10/#11 stack in 89438d8. Combined shared checks, full Node tests, live service/WASM integration and build passed. Root Chromium checks confirmed the pitch-roll workspace and cancellation preserving timing/silence settings with synthetic input. Physical-performer validation remains open. The parent stack is integrated; this PR is retargeted to engine-integration to reflect the landed code."
+  },
+  {
+    "pullRequest": 11,
+    "headSha": "98976525285de86c1895ae57c6891df637df2966",
+    "retargetBase": "engine-integration",
+    "body": "WS1 reviewed and integrated the workspace stack in 89438d8 after combined checks/build and Chromium verification of no tabs, the synth piano roll, guided preparation and calibration Cancel. Follow-up for the owned consumer-wiring PR: adopt merged #12, pin the top transport while scrolling the inspector (root observed scrollY 297, header top -297/bottom -251), and keep recording state monochrome. Physical microphone/audio signoff is still open. Parent stack code is landed; this PR is retargeted to engine-integration."
+  }
+]

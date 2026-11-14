@@ -23,16 +23,16 @@ const Operation = z.discriminatedUnion('type', [
  z.strictObject({ type: z.literal('tempo'), bpm: z.number().min(40).max(240) }),
  z.strictObject({ type: z.literal('clear'), target: Target }),
  z.strictObject({ type: z.literal('mute'), trackId: TrackId, muted: z.boolean() }),
- z.strictObject({ type: z.literal('undo') }),
+ z.strictObject({ type: z.literal('undo'), discardCaptureOnly: z.boolean().optional() }),
  z.strictObject({ type: z.literal('edit-pattern'), trackId: TrackId, notes: z.array(Note).max(64), hits: z.array(Hit).max(192) }),
  z.strictObject({ type: z.literal('volume'), trackId: TrackId, volume: unit }),
  z.strictObject({ type: z.literal('load-session'), session: SessionState }),
- z.strictObject({ type: z.literal('commit-performance'), events: z.array(PerformanceEvent).min(1).max(256), excludedSpans: z.array(SpeechSpan).max(64), verifiedThroughFrame: frame, replacesCommandId: id.optional() }),
+ z.strictObject({ type: z.literal('commit-performance'), events: z.array(PerformanceEvent).min(1).max(256), excludedSpans: z.array(SpeechSpan).max(64), verifiedThroughFrame: frame, replacesCommandId: id.optional(), recordingEpoch: frame.optional() }),
  z.strictObject({ type: z.literal('apply-patch'), trackId: TrackId, patch: Patch })
 ]);
-export const SessionCommand = z.strictObject({ id, expectedRevision: frame, boundary: z.enum(['immediate', 'next-loop']), operation: Operation });
+export const SessionCommand = z.strictObject({ id, expectedRevision: frame, boundary: z.enum(['immediate', 'next-beat', 'next-loop']), operation: Operation });
 export const PatchCandidate = z.strictObject({ id, patch: Patch, provenance: id, previewUrl: z.string(), score: z.number().finite() });
-export const Transport = z.strictObject({ clockId: id, sampleRate: z.number().int().positive(), currentFrame: frame, loopStartFrame: frame, playing: z.boolean(), recording: z.boolean(), pendingCommandIds: z.array(id), recordingState: z.enum(['idle','armed','recording']).optional(), recordingStartFrame: frame.optional(), recordingTarget: Target.optional(), armedTarget: Target.optional() });
+export const Transport = z.strictObject({ clockId: id, sampleRate: z.number().int().positive(), currentFrame: frame, loopStartFrame: frame, playing: z.boolean(), recording: z.boolean(), pendingCommandIds: z.array(id), recordingState: z.enum(['idle','armed','recording']).optional(), recordingStartFrame: frame.optional(), recordingTarget: Target.optional(), armedTarget: Target.optional(), recordingEpoch: frame.optional(), captureStartFrame: frame.optional(), recordingLoopStartFrame: z.number().finite().optional() });
 // Speech transport (Workstream 3 proposal): microphone audio for server-side recognition.
 // startFrame/endFrame are AudioContext frames on the latency-corrected performance timeline,
 // half-open [startFrame, endFrame). data is base64 little-endian 16-bit mono PCM at sampleRate

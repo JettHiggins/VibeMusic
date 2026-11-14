@@ -39,3 +39,9 @@ test('speech transport fixtures validate and malformed audio chunks are rejected
   assert.equal(ClientMessage.safeParse({...base,...bad}).success,false,JSON.stringify(Object.keys(bad)));
  assert.equal(ServerMessage.safeParse({type:'speech-status',available:true}).success,false);
 });
+
+test('recording-usability wire examples validate for both owners',()=>{
+ for(const message of JSON.parse(readFileSync('packages/contracts/fixtures/RecordingUsability.json','utf8'))){
+  (message.type==='transport'?ClientMessage:ServerMessage).parse(message);
+ }
+});
