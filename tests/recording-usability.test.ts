@@ -92,3 +92,16 @@ test('unrelated edits during count-in preserve the armed record deadline and tar
  assert.deepEqual(s.core.transport().recordingTarget,s.target);
  assert.equal(s.core.getSession().tracks[0].muted,true);assert.deepEqual(s.core.getSession().selected,s.target);
 });
+
+test('discard-only Undo cancels queued piano-roll edits despite retaining revision', {skip:!ready},async()=>{
+ const s=await setup();s.record();s.render(1000);
+ const revision=s.core.getSession().revision;
+ const queued=s.dispatch({type:'edit-pattern',trackId:'synth-1',hits:[],notes:[{id:'pending-ui-note',step:8,duration:2,midi:64,velocity:.8}]},'next-loop');
+ assert.ok(queued.type==='ack'&&queued.status==='queued');
+ s.dispatch({type:'undo',discardCaptureOnly:true});
+ assert.equal(s.core.getSession().revision,revision);
+ s.render(SR*9);
+ assert.equal(s.core.getSession().tracks[0].notes.length,0);
+ assert.ok(s.messages.some(m=>m.type==='ack'&&m.commandId===queued.commandId&&m.status==='rejected'&&m.reason?.includes('discarded')));
+ assert.equal(s.core.transport().recording,true);
+});

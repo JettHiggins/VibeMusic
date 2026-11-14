@@ -15,8 +15,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Optional, Sequence
 
-from .audio import DEFAULT_RECIPE, Embedder, Renderer, RenderRecipe, render_problem, unit, wav_bytes
-from .corpus import Cancelled, Corpus
+import numpy as np
+
+from .audio import DEFAULT_RECIPE, Embedder, Renderer, RenderRecipe, render_problem, wav_bytes
+from .corpus import Cancelled, Corpus, Entry
+from .retrieval import RETRIEVAL_VERSION, Ranking, RetrievalIndex, TextCache
+
+TEXT_CACHE = "text-embeddings.npz"  # beside the corpus; keyed by embedder identity
 from .search import MAX_VARIATIONS, Scored, evolve
 from .space import MetadataError, ParameterSpace
 
@@ -38,10 +43,33 @@ class ResearchBackend:
     corpus_seed: int = 0
     corpus: Optional[Corpus] = None
     corpus_dir: Optional[Path] = None  # where a freshly built corpus is saved for the next start
+    _index: Optional[RetrievalIndex] = field(default=None, repr=False)
+    _index_corpus: Optional[Corpus] = field(default=None, repr=False)
 
     @property
     def label(self) -> str:
-        return f"renderer: {self.renderer.name}; embedder: {self.embedder.name}"
+        return f"renderer: {self.renderer.name}; embedder: {self.embedder.name}; ranking: {RETRIEVAL_VERSION}"
+
+    def ranking(self, description: str) -> Ranking:
+        """Ranking for a description over the current corpus (which must be built)."""
+        if self.corpus is None:
+            raise RuntimeError("corpus is not built")
+        if self._index is None or self._index_corpus is not self.corpus:
+            names = {(int(p["engine"]), int(p["preset"])): label for label, p in self.space.preset_patches()}
+            cache = TextCache(self.embedder, self.corpus_dir / TEXT_CACHE if self.corpus_dir is not None else None)
+            self._index = RetrievalIndex(cache, [e.embedding for e in self.corpus.entries],
+                                         [e.patch for e in self.corpus.entries], names)
+            self._index_corpus = self.corpus
+            cache.save()  # fixed index texts only; spoken descriptions stay in memory
+        return self._index.ranking(description)
+
+    def top(self, ranking: Ranking, k: int = 5) -> list[tuple[Entry, float]]:
+        """Best k corpus entries for a ranking, best first; ties keep corpus order."""
+        if self.corpus is None or not self.corpus.entries:
+            return []
+        scores = ranking.corpus_scores()
+        order = np.argsort(-scores, kind="stable")[:k]
+        return [(self.corpus.entries[i], float(scores[i])) for i in order]
 
 
 @dataclass
@@ -156,7 +184,7 @@ class ResearchPort:
                                                   cancelled=job.cancel.is_set)
                     if backend.corpus_dir is not None:
                         backend.corpus.save(backend.corpus_dir)
-                query = unit(backend.embedder.embed_text(description))
+                ranking = backend.ranking(description)
                 # Refinement starts from the candidates being refined, rescored for the new text.
                 # A fresh search, or a refinement whose seeds are all unusable, starts from retrieval.
                 carried: dict[str, Scored] = {}
@@ -165,12 +193,12 @@ class ResearchPort:
                         continue
                     audio = backend.renderer.render(patch, backend.recipe)
                     if render_problem(audio) is None:
-                        score = float(unit(backend.embedder.embed_audio(audio, backend.renderer.sample_rate)) @ query)
+                        score = ranking.score(patch, backend.embedder.embed_audio(audio, backend.renderer.sample_rate))
                         item = Scored(patch, score, "carried over from the previous search", audio)
                         carried.setdefault(item.key(), item)
                 pool = list(carried.values())
                 if not pool:
-                    for entry, score in backend.corpus.top(query, 5):
+                    for entry, score in backend.top(ranking, 5):
                         if job.cancel.is_set():
                             raise Cancelled()
                         # Disk corpora keep embeddings/patches, not float audio in RAM.
@@ -184,11 +212,11 @@ class ResearchPort:
                 pool.sort(key=lambda s: (-s.score, s.key()))
                 self._message(job, "running", RETRIEVAL_PROGRESS, pool[:5])
                 seed = int.from_bytes(hashlib.sha256(description.encode("utf-8")).digest()[:4], "big")
-                result = evolve(pool, backend.space, backend.renderer, backend.embedder, query, backend.recipe,
+                result = evolve(pool, backend.space, backend.renderer, backend.embedder, ranking.query, backend.recipe,
                                 seed=seed, budget=backend.budget, cancelled=job.cancel.is_set,
                                 progress=lambda done, total, best: self._message(
                                     job, "running", RETRIEVAL_PROGRESS + (1 - RETRIEVAL_PROGRESS) * done / max(1, total) * 0.99,
-                                    best))
+                                    best), ranking=ranking)
             self._message(job, "complete", 1.0, result.best)
         except Cancelled:
             self._message(job, "cancelled", 0.0, job.last)

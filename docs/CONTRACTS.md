@@ -72,7 +72,7 @@ The accepted additive ServerMessage is `{type:'speech-verified', clockId, throug
 
 Transport additionally exposes armedTarget when a record command is pending. Input UI uses the current window target while recording, armedTarget while counting in, and session selection after a take. A completed recording window does not pin the next selected lane.
 
-## Speech audio transport (Workstream 3 proposal, additive v1)
+## Speech audio transport (approved PR #14, additive v1)
 
 The browser streams microphone audio for recognition as ClientMessage `speech-audio`. The service reports recognizer availability per stream as ServerMessage `speech-status`, and classified coverage as `speech-verified` scoped to that stream. `utterance` remains the transcript-level seam for typed/development input. Examples: `fixtures/SpeechAudio.json` (20 ms of synthetic silence), `fixtures/SpeechStatus.json`, `fixtures/SpeechVerified.json`.
 

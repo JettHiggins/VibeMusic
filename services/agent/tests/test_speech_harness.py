@@ -308,3 +308,112 @@ def test_fast_beatboxing_is_not_held_as_one_long_speech_segment(tmp_path):
         received = chunk["endFrame"] - 1
         for mark in marks(replies):
             assert received - mark["throughFrame"] < 0.25 * CONTEXT_RATE  # never more than ~one hit behind
+# -- capture-time context (WS1 review of c8f4ed4) ------------------------------------------
+
+def transport_message(state, current, start=TAKE_START, clock="ctx", **extra):
+    transport = {"clockId": clock, "sampleRate": CONTEXT_RATE, "currentFrame": current, "loopStartFrame": TAKE_START,
+                 "playing": True, "recording": state == "recording", "pendingCommandIds": [], "recordingState": state}
+    if state == "recording":
+        transport.update(recordingStartFrame=start, recordingTarget={"trackId": "drums", "lane": "kick"})
+    if state == "armed":
+        transport.update(armedTarget={"trackId": "drums", "lane": "snare"})
+    transport.update(extra)
+    message = {"type": "transport", "transport": transport}
+    validate("ClientMessage", message)
+    return message
+
+
+def deliver_after(connection, worker, *transports):
+    for message in transports:
+        assert connection.handle(message, 0.0) == []
+    replies = worker.finish(connection)
+    for reply in replies:
+        validate("ServerMessage", reply)
+    return replies
+
+
+def test_ws1_repro_result_delivered_after_the_take_stopped_keeps_its_capture_context(take):
+    worker = ScriptedWorker(["Groove, stop"])
+    connection = connect(worker)
+    stream(connection, worker, chunks_from_wav(take), transcribe_each_chunk=False)
+    late = deliver_after(connection, worker, transport_message("idle", frame_at(4)))
+    kinds = [r["type"] for r in late]
+    assert kinds[0] == "command-span"  # spoken during the take: still excluded from it
+    assert not any(r["type"] == "command" and r["command"]["operation"] == {"type": "play", "playing": False}
+                   for r in late)  # never reinterpreted as ordinary speech that stops playback
+    assert "command" not in kinds and kinds[1] == "error" and "ended" in late[1]["message"]
+    assert kinds[-1] == "speech-verified" and late[-1]["streamId"] == "take-1"
+
+
+def test_result_from_an_old_take_never_acts_on_a_new_take_or_count_in(take):
+    for newer in (transport_message("armed", frame_at(4.2)),
+                  transport_message("recording", frame_at(6), start=frame_at(5))):
+        worker = ScriptedWorker(["Groove, stop"])
+        connection = connect(worker)
+        stream(connection, worker, chunks_from_wav(take), transcribe_each_chunk=False)
+        late = deliver_after(connection, worker, transport_message("idle", frame_at(4)), newer)
+        assert [r["type"] for r in late][:2] == ["command-span", "error"], newer
+        assert "command" not in [r["type"] for r in late]  # the new take is not stopped
+
+
+def test_a_segment_that_closes_after_the_stop_snapshot_keeps_its_capture_context(take):
+    worker = ScriptedWorker(["Groove, stop"])
+    connection = connect(worker)
+    chunks = list(chunks_from_wav(take))
+    split = next(i for i, c in enumerate(chunks) if c["startFrame"] >= frame_at(2.5))  # mid-speech
+    stream(connection, worker, chunks[:split])
+    connection.handle(transport_message("idle", frame_at(2.6)), 0.0)  # stop arrives before the audio does
+    replies = flat(stream(connection, worker, chunks[split:]))
+    kinds = [r["type"] for r in replies]
+    assert "command-span" in kinds and "command" not in kinds
+    span = next(r for r in replies if r["type"] == "command-span")
+    assert abs(span["startFrame"] - frame_at(2.0)) <= WINDOW_FRAMES
+
+
+def test_a_command_inside_the_current_take_still_applies_after_a_slow_transcription(take):
+    worker = ScriptedWorker(["Groove, stop"])
+    connection = connect(worker)
+    stream(connection, worker, chunks_from_wav(take), transcribe_each_chunk=False)
+    late = deliver_after(connection, worker, transport_message("recording", frame_at(4.5)))  # same take continues
+    assert [r["type"] for r in late][:2] == ["command-span", "command"]
+    assert late[1]["command"]["operation"] == {"type": "stop-recording"}
+
+
+def test_stop_recording_spoken_during_count_in_keeps_its_armed_context(tmp_path):
+    take = synth_take(tmp_path / "countin.wav", hits=(), speech=(1.0, 1.6), seconds=3.0)
+    worker = ScriptedWorker(["stop recording"])
+    connection = connect(worker, recording=False)
+    connection.handle(transport_message("armed", TAKE_START), 0.0)
+    stream(connection, worker, chunks_from_wav(take), transcribe_each_chunk=False)
+    late = deliver_after(connection, worker, transport_message("armed", frame_at(2.9)))
+    assert [r["command"]["operation"] for r in late if r["type"] == "command"] == [{"type": "stop-recording"}]
+
+
+def test_a_held_or_joined_wake_word_keeps_the_context_it_was_spoken_in(tmp_path):
+    # "Groove" during the take, the take stops, then the command half is recognized and joined.
+    take = synth_take(tmp_path / "split-stop.wav", speech=(2.0, 2.4), more_speech=((3.3, 3.7),), seconds=5.0)
+    worker = ScriptedWorker(["Groove.", "Stop."])
+    connection = connect(worker)
+    chunks = list(chunks_from_wav(take))
+    split = next(i for i, c in enumerate(chunks) if c["startFrame"] >= frame_at(3.0))
+    stream(connection, worker, chunks[:split])
+    connection.handle(transport_message("idle", frame_at(3.0)), 0.0)
+    replies = flat(stream(connection, worker, chunks[split:]))
+    kinds = [r["type"] for r in replies]
+    assert kinds.count("command-span") == 1 and "command" not in kinds
+    assert "ended" in next(r for r in replies if r["type"] == "error")["message"]
+    span = next(r for r in replies if r["type"] == "command-span")
+    assert abs(span["startFrame"] - frame_at(2.0)) <= WINDOW_FRAMES
+
+
+def test_a_lone_wake_word_from_an_ended_take_is_excluded_and_never_applied(tmp_path):
+    take = synth_take(tmp_path / "lone-stop.wav", speech=(1.0, 1.4), hits=(), seconds=4.5)
+    worker = ScriptedWorker(["Groove."])
+    connection = connect(worker)
+    chunks = list(chunks_from_wav(take))
+    split = next(i for i, c in enumerate(chunks) if c["startFrame"] >= frame_at(2.2))
+    stream(connection, worker, chunks[:split])
+    connection.handle(transport_message("idle", frame_at(2.2)), 0.0)
+    replies = flat(stream(connection, worker, chunks[split:]))
+    kinds = [r["type"] for r in replies]
+    assert kinds.count("command-span") == 1 and "command" not in kinds and "error" in kinds

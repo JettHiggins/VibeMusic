@@ -25,6 +25,17 @@ COMMAND_PROMPT = ("Groove, record kick. Groove, stop. Groove, stop playback. Sna
                   "Tempo one forty. Undo. Clear. Mute drums.")
 
 
+def to_whisper_rate(audio: np.ndarray, sample_rate: int) -> np.ndarray:
+    """Polyphase resampling to 16 kHz. Browser speech arrives at the approved 44.1 kHz, so this is
+    the normal path; SciPy is declared in requirements-speech.txt for it."""
+    audio = np.asarray(audio, dtype=np.float32)
+    if sample_rate == WHISPER_RATE or audio.size == 0:
+        return audio
+    from scipy.signal import resample_poly
+    divisor = gcd(WHISPER_RATE, sample_rate)
+    return resample_poly(audio, WHISPER_RATE // divisor, sample_rate // divisor).astype(np.float32)
+
+
 class FasterWhisperTranscriber:
     def __init__(self, model: str = "", device: str = "", compute_type: str = "", threads: int = 0) -> None:
         from faster_whisper import WhisperModel
@@ -42,10 +53,7 @@ class FasterWhisperTranscriber:
         audio = np.asarray(samples, dtype=np.float32)
         if audio.size == 0:
             return ""
-        if sample_rate != WHISPER_RATE:
-            from scipy.signal import resample_poly
-            divisor = gcd(WHISPER_RATE, sample_rate)
-            audio = resample_poly(audio, WHISPER_RATE // divisor, sample_rate // divisor).astype(np.float32)
+        audio = to_whisper_rate(audio, sample_rate)
         with self._lock:
             segments, _ = self._model.transcribe(
                 audio, language="en", beam_size=1, condition_on_previous_text=False, without_timestamps=True,

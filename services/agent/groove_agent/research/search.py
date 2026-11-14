@@ -9,9 +9,12 @@ from __future__ import annotations
 import json
 import random
 from dataclasses import dataclass
-from typing import Callable, Optional, Sequence
+from typing import TYPE_CHECKING, Callable, Optional, Sequence
 
 import numpy as np
+
+if TYPE_CHECKING:
+    from .retrieval import Ranking
 
 from .audio import Embedder, Renderer, RenderRecipe, render_problem, unit
 from .corpus import Cancel, Cancelled
@@ -41,11 +44,14 @@ class SearchResult:
 def evolve(seeds: Sequence[Scored], space: ParameterSpace, renderer: Renderer, embedder: Embedder,
            text_embedding: np.ndarray, recipe: RenderRecipe, seed: int, budget: int = MAX_VARIATIONS,
            population: int = 16, elite: int = 6, keep: int = 5, cancelled: Cancel = lambda: False,
-           progress: Callable[[int, int, list[Scored]], None] = lambda done, total, best: None) -> SearchResult:
+           progress: Callable[[int, int, list[Scored]], None] = lambda done, total, best: None,
+           ranking: Optional[Ranking] = None) -> SearchResult:
     """Render at most `budget` variations of `seeds` and return the best `keep` patches found.
 
     Deterministic for a given seed, renderer and embedder. Silent or clipping
-    renders are rejected and still count against the budget.
+    renders are rejected and still count against the budget. With `ranking`,
+    children are scored like retrieval (retrieval.Ranking.score); seeds must
+    then carry scores from the same ranking. Otherwise plain cosine is used.
     """
     if not seeds:
         raise ValueError("search needs at least one seed patch")
@@ -74,7 +80,8 @@ def evolve(seeds: Sequence[Scored], space: ParameterSpace, renderer: Renderer, e
             if render_problem(audio) is not None:
                 rejected += 1
                 continue
-            score = float(unit(embedder.embed_audio(audio, renderer.sample_rate)) @ query)
+            embedding = unit(embedder.embed_audio(audio, renderer.sample_rate))
+            score = ranking.score(child, embedding) if ranking is not None else float(embedding @ query)
             candidate = Scored(child, score, f"evolved, seed {seed}, generation {generation}", audio)
             pool.setdefault(candidate.key(), candidate)
         progress(rendered, budget, ranked()[:keep])
