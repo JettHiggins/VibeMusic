@@ -1,4 +1,4 @@
-import type { InputCalibration } from './calibration.ts';
+import { effectiveLatencyFrames, type InputCalibration } from './calibration.ts';
 import type { MicCheckState } from './mic-check.ts';
 import type { RecorderStatus } from './recorder.ts';
 
@@ -23,7 +23,7 @@ export interface MicTestReport {
  browser: string;
  context: { sampleRate: number; baseLatencyMs: number | null; outputLatencyMs: number | null };
  capture: CaptureSettings & { processingDisabledAsRequested: boolean };
- calibration: { noiseFloorDb: number; noiseMeasured: boolean; latencyMs: number; latencySource: string; latencySpreadMs: number | null } | null;
+ calibration: { noiseFloorDb: number; noiseMeasured: boolean; latencyMs: number; latencySource: string; latencySpreadMs: number | null; offsetAdjustMs: number; effectiveLatencyMs: number } | null;
  micCheck: Pick<MicCheckState, 'peakDb' | 'verdict' | 'noisyRoom' | 'onsetsDetected' | 'notesDetected'> & { lastOnsetLevelDb: number | null; lastNoteMidi: number | null };
  takes: { committed: number; dropped: number; lastError: string | null };
  analysisP95Ms: number | null;
@@ -40,7 +40,7 @@ export function buildMicTestReport(input: {
   format: 'voicesynth-mic-test', version: 1, createdAt: (input.now ?? new Date()).toISOString(), browser: input.browser,
   context: { sampleRate: context.sampleRate, baseLatencyMs: context.baseLatency === undefined ? null : Math.round(context.baseLatency * 10000) / 10, outputLatencyMs: context.outputLatency === undefined ? null : Math.round(context.outputLatency * 10000) / 10 },
   capture: { ...pick(capture), processingDisabledAsRequested: capture.echoCancellation === false && capture.noiseSuppression === false && capture.autoGainControl === false },
-  calibration: c && { noiseFloorDb: Math.round(c.noiseFloorDb * 10) / 10, noiseMeasured: c.noiseSource === 'measured', latencyMs: ms(c.latencyFrames, c.sampleRate), latencySource: c.latencySource, latencySpreadMs: c.latencySpreadFrames === null ? null : ms(c.latencySpreadFrames, c.sampleRate) },
+  calibration: c && { noiseFloorDb: Math.round(c.noiseFloorDb * 10) / 10, noiseMeasured: c.noiseSource === 'measured', latencyMs: ms(c.latencyFrames, c.sampleRate), latencySource: c.latencySource, latencySpreadMs: c.latencySpreadFrames === null ? null : ms(c.latencySpreadFrames, c.sampleRate), offsetAdjustMs: c.offsetAdjustMs ?? 0, effectiveLatencyMs: ms(effectiveLatencyFrames(c), c.sampleRate) },
   micCheck: { peakDb: Number.isFinite(micCheck.peakDb) ? Math.round(micCheck.peakDb * 10) / 10 : -120, verdict: micCheck.verdict, noisyRoom: micCheck.noisyRoom, onsetsDetected: micCheck.onsetsDetected, notesDetected: micCheck.notesDetected, lastOnsetLevelDb: micCheck.lastOnset ? Math.round(micCheck.lastOnset.levelDb * 10) / 10 : null, lastNoteMidi: micCheck.lastNote?.midi ?? null },
   takes: { committed: recorder.committed, dropped: recorder.dropped, lastError: recorder.lastError },
   analysisP95Ms: input.analysisP95Ms === null ? null : Math.round(input.analysisP95Ms * 10) / 10,

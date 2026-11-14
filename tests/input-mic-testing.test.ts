@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { calibrationStatus, clickPlan, estimateLatency, type InputCalibration } from '../apps/web/src/input/calibration.ts';
+import { calibrationProgress, calibrationStatus, clickPlan, effectiveLatencyFrames, estimateLatency, type InputCalibration } from '../apps/web/src/input/calibration.ts';
 import { MicCheck } from '../apps/web/src/input/mic-check.ts';
 import { buildMicTestReport } from '../apps/web/src/input/diagnostics.ts';
 import type { AnalysisFrame } from '../apps/web/src/input/microphone.ts';
@@ -8,20 +8,38 @@ import type { AnalysisFrame } from '../apps/web/src/input/microphone.ts';
 const SR = 44100;
 const cal = (over: Partial<InputCalibration> = {}): InputCalibration => ({ version: 1, noiseFloorDb: -60, peakDb: null, latencyFrames: 2734, latencySource: 'default', latencySpreadFrames: null, sampleRate: SR, deviceId: 'mic', ...over });
 
-test('calibration clicks include unscored lead-ins; a real-hardware warm-up no longer fails calibration', () => {
- const plan = clickPlan(1, { leadIn: 2, measured: 10, interval: 0.5 });
- assert.equal(plan.all.length, 12);
- assert.deepEqual(plan.measured, plan.all.slice(2));
+test('guided calibration: countdown, unscored practice clicks, and a real-hardware warm-up no longer fails it', () => {
+ const plan = clickPlan(1, { countdown: 3, practice: 4, measured: 8, interval: 0.5 });
+ assert.equal(plan.countdownEnd, 4);
+ assert.deepEqual(plan.practice, [4, 4.5, 5, 5.5]);
+ assert.equal(plan.measured.length, 8);
+ assert.equal(plan.measured[0], 6);
+ assert.equal(plan.end, 10);
  // Reproduced on a Windows laptop: the first clicks after silence arrive ~15-20 dB quieter and
  // are missed; only later clicks are detected, ~120 ms after scheduling.
  const latency = Math.round(0.12 * SR);
  const heard = (clicks: number[], missedFirst: number) => clicks.slice(missedFirst).map((c, i) => Math.round(c * SR) + latency + (i % 2 ? 90 : -90));
  const old = [1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5];
  assert.throws(() => estimateLatency(old.map(c => Math.round(c * SR)), heard(old, 3), { sampleRate: SR }), /matched/, 'old 8-click run with 3 warm-up misses fails');
- const fresh = clickPlan(1);
- const est = estimateLatency(fresh.measured.map(c => Math.round(c * SR)), heard(fresh.all, 3), { sampleRate: SR });
+ const est = estimateLatency(plan.measured.map(c => Math.round(c * SR)), heard(plan.all, 3), { sampleRate: SR });
  assert.ok(Math.abs(est.latencyFrames - latency) < 0.004 * SR, `latency ${est.latencyFrames}`);
- assert.ok(est.matched >= 9);
+ assert.equal(est.matched, 8, 'the warm-up misses fall inside the practice clicks');
+});
+
+test('calibration progress drives the countdown, practice and measured displays', () => {
+ const plan = clickPlan(10);
+ assert.deepEqual(calibrationProgress(plan, 10.2), { phase: 'countdown', countdownLeft: 3, practiceDone: 0, measuredDone: 0, measuredTotal: 8 });
+ assert.equal(calibrationProgress(plan, 12.5).countdownLeft, 1);
+ assert.equal(calibrationProgress(clickPlan(10.05), 10).countdownLeft, 3, 'never shows more than the countdown length');
+ assert.deepEqual(calibrationProgress(plan, 13.6), { phase: 'practice', countdownLeft: 0, practiceDone: 2, measuredDone: 0, measuredTotal: 8 });
+ assert.deepEqual(calibrationProgress(plan, 16.1), { phase: 'measuring', countdownLeft: 0, practiceDone: 4, measuredDone: 3, measuredTotal: 8 });
+ assert.equal(calibrationProgress(plan, plan.end + 0.1).phase, 'analysing');
+});
+
+test('manual recording-offset trim is added to the measured latency and never goes negative', () => {
+ assert.equal(effectiveLatencyFrames(cal({ latencyFrames: 5292 })), 5292);
+ assert.equal(effectiveLatencyFrames(cal({ latencyFrames: 5292, offsetAdjustMs: 20 })), 5292 + 882);
+ assert.equal(effectiveLatencyFrames(cal({ latencyFrames: 441, offsetAdjustMs: -50 })), 0);
 });
 
 test('recording readiness requires measured silence and tap calibration, except for test signals', () => {
@@ -91,4 +109,30 @@ test('the mic test report holds measurements only', () => {
  assert.ok(!/secret-id|My Headset|deviceId|label/.test(text), 'no device identifiers');
  assert.equal(report.takes.committed, 4);
  assert.equal(report.micCheck.onsetsDetected, 1);
+});
+
+test('live pitch diagnosis explains why singing does or does not become notes', async () => {
+ const { readPitch } = await import('../apps/web/src/input/pitch.ts');
+ const f = (rmsDb: number, f0: number | null, clarity: number) => ({ frame: 0, rmsDb, f0, clarity });
+ // Noisy room from real testing: floor -39 dBFS, so notes need -24 dBFS.
+ assert.equal(readPitch([f(-44, 220, 0.9)], -39, false)!.state, 'silent');
+ const quiet = readPitch([f(-30, 220, 0.95)], -39, false)!;
+ assert.deepEqual([quiet.state, quiet.midi, quiet.gateDb], ['quiet', 57, -24]);
+ assert.equal(readPitch([f(-20, 220, 0.6)], -39, false)!.state, 'unclear');
+ assert.equal(readPitch([f(-20, null, 0)], -39, false)!.state, 'unclear');
+ const ok = readPitch([f(-40, 110, 0.9), f(-18, 261.63, 0.93)], -39, true)!;
+ assert.deepEqual([ok.state, ok.midi, ok.holding], ['pitch', 60, true]);
+ assert.equal(readPitch([], -39, false), null);
+
+ const check = new MicCheck(SR);
+ assert.match(check.state(-39).pitchAdvice, /Sing or hum/);
+ check.add(frame(1024, -30, { pitch: quiet }));
+ assert.match(check.state(-39).pitchAdvice, /notes need -24 dBFS: sing louder or closer, or reduce room noise/);
+ check.add(frame(2048, -20, { pitch: readPitch([f(-20, 220, 0.6)], -39, false) }));
+ assert.match(check.state(-39).pitchAdvice, /clarity 0.60, needs 0.80/);
+ check.add(frame(3072, -18, { pitch: ok }));
+ assert.match(check.state(-39).pitchAdvice, /Hearing C4 \(clarity 0.93\): note being held/);
+ // A momentary quieter frame does not hide a usable pitch heard just before it.
+ check.add(frame(4096, -40, { pitch: readPitch([f(-44, null, 0)], -39, true) }));
+ assert.match(check.state(-39).pitchAdvice, /Hearing C4/);
 });

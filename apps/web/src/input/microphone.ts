@@ -1,10 +1,17 @@
 import captureUrl from './capture-worklet.ts?worker&url';
 import type { AnalysisRequest, AnalysisResult } from './analysis-worker.ts';
 import type { Onset } from './onset.ts';
-import type { SungNote } from './pitch.ts';
+import type { PitchReading, SungNote } from './pitch.ts';
 import type { CaptureSettings } from './diagnostics.ts';
 
-export interface AnalysisFrame { onsets: Onset[]; notes: SungNote[]; analysedThrough: number; levelDb: number; analysisMs: number }
+export interface AnalysisFrame {
+ onsets: Onset[]; notes: SungNote[];
+ /** Verification coverage: held at the start of a note still being sung. */
+ analysedThrough: number;
+ /** Raw capture frame actually processed (real elapsed time, for diagnostics). */
+ processedThrough?: number;
+ levelDb: number; analysisMs: number; pitch?: PitchReading | null;
+}
 
 /**
  * Connects an input (the microphone, or a diagnostic test signal) to the capture worklet on the
@@ -42,7 +49,7 @@ export class MicrophoneInput {
    else if (data.type === 'noise-floor') { this.noiseWaiters.splice(0).forEach(resolve => resolve(data.db)); }
    else this.onError(new Error(data.message));
   };
-  worker.onerror = event => this.onError(new Error(event.message || 'Analysis worker failed'));
+  worker.onerror = event => this.onError(new Error(`Microphone analysis failed to load${event.message ? ` (${event.message})` : ''}. Restart npm run dev and reload the page; if it persists, run npm ci.`));
   const channel = new MessageChannel();
   node.port.postMessage({ type: 'connect', port: channel.port1 }, [channel.port1]);
   this.request({ type: 'connect', port: channel.port2, sampleRate: this.context.sampleRate }, [channel.port2]);

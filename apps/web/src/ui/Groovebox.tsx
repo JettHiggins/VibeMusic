@@ -33,6 +33,8 @@ export function Groovebox(props: GrooveboxProps) {
  const client = useMemo(() => new CommandClient(engine), [engine]);
  const [result, setResult] = useState<CommandResult | null>(null);
  useEffect(() => { client.onResult = setResult; return engine.subscribe(m => client.handle(m)); }, [engine, client]);
+ // Engine/asset errors arrive through the app message; show them instead of an older command result.
+ useEffect(() => { setResult(null); }, [message]);
  const dispatch = (operation: SessionCommand['operation'], boundary: SessionCommand['boundary'] = 'immediate') => { client.send(operation, boundary); };
  const [tab, setTab] = useState<Tab>('record');
  const selected = session.selected.trackId;
