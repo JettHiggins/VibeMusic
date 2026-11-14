@@ -127,5 +127,13 @@ export interface AgentAdapter {
  subscribe(listener: (message: ServerMessage) => void): () => void;
  dispose(): void;
 }
+/** WS2 input executor seam; WS1 bridges these messages to the connected agent. */
+export interface BrowserActionAdapter {
+ getBrowserStatus(): BrowserStatus|null;
+ handleBrowserAction(action: BrowserAction): void;
+ subscribeBrowserActions(listener:(message:BrowserStatus|BrowserActionAck)=>void):()=>void;
+ /** Cancel agent-owned work on disconnect; do not cancel unrelated manual UI calibration. */
+ cancelBrowserActions(reason:string):void;
+}
 export { MockEngine, MockAgent, createSession } from './mocks.ts';
 export {snapMidiToScale} from './pitch-snap.ts';
