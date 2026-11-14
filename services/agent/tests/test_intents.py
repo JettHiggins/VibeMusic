@@ -123,4 +123,5 @@ def test_stop_recording_cancels_an_armed_take_only_when_one_is_armed():
     session = load_fixture("SessionState")
     assert isinstance(interpret("stop recording", session, False), NotUnderstood)
     assert interpret("stop recording", session, False, take_armed=True).operation == {"type": "stop-recording"}
-    assert interpret("stop", session, False, take_armed=True).operation == {"type": "play", "playing": False}
+    assert interpret("stop", session, False, take_armed=True).operation == {"type": "stop-recording"}
+    assert interpret("stop playback", session, False, take_armed=True).operation == {"type": "play", "playing": False}

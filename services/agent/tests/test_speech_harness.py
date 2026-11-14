@@ -417,3 +417,53 @@ def test_a_lone_wake_word_from_an_ended_take_is_excluded_and_never_applied(tmp_p
     replies = flat(stream(connection, worker, chunks[split:]))
     kinds = [r["type"] for r in replies]
     assert kinds.count("command-span") == 1 and "command" not in kinds and "error" in kinds
+
+
+@pytest.mark.parametrize("recording", [False, True])
+def test_joined_record_and_stop_are_both_issued_without_stopping_playback(take, recording):
+    worker = ScriptedWorker(["Groove, record kick. Groove, stop."])
+    connection = connect(worker, recording=recording)
+    replies = flat(stream(connection, worker, chunks_from_wav(take)))
+    commands = [r["command"] for r in replies if r["type"] == "command"]
+    assert [c["operation"] for c in commands] == [
+        {"type": "record", "target": {"trackId": "drums", "lane": "kick"}},
+        {"type": "stop-recording"}]
+    assert [c["boundary"] for c in commands] == ["next-beat", "immediate"]
+    assert len({c["id"] for c in commands}) == 2
+    spans = [r for r in replies if r["type"] == "command-span"]
+    assert len(spans) == int(recording)
+    if recording:
+        assert replies.index(spans[0]) < replies.index(next(r for r in replies if r["type"] == "command"))
+        covering = next(i for i, r in enumerate(replies)
+                        if r["type"] == "speech-verified" and r["throughFrame"] >= spans[0]["endFrame"])
+        assert max(i for i, r in enumerate(replies) if r["type"] == "command") < covering
+    # Duplicate worker delivery never reissues either command.
+    assert connection.speech_result(worker.transcribed[0], "Groove, record kick. Groove, stop.", None, 1) == []
+
+
+def test_joined_commands_from_ended_take_are_all_refused_before_coverage(take):
+    worker = ScriptedWorker(["Groove, record kick. Groove, stop."])
+    connection = connect(worker)
+    stream(connection, worker, chunks_from_wav(take), transcribe_each_chunk=False)
+    replies = deliver_after(connection, worker, transport_message("idle", frame_at(4)))
+    assert [r["type"] for r in replies] == ["command-span", "error", "error", "speech-verified"]
+    assert all("ended" in r["message"] for r in replies if r["type"] == "error")
+
+
+def test_unknown_first_command_does_not_swallow_later_stop(take):
+    worker = ScriptedWorker(["Groove, frobnicate. Grove, stop."])
+    replies = flat(stream(connect(worker), worker, chunks_from_wav(take)))
+    actions = [r for r in replies if r["type"] != "speech-verified" and r["type"] != "speech-status"]
+    assert [r["type"] for r in actions] == ["command-span", "error", "command"]
+    assert actions[-1]["command"]["operation"] == {"type": "stop-recording"}
+
+
+@pytest.mark.parametrize("text,expected", [
+    ("Groove, record kick. Groove, stop.", ["Groove, record kick.", "Groove, stop."]),
+    ("GROVE record snare GROOVE stop", ["GROVE record snare", "GROOVE stop"]),
+    ("Groove, find a groovy electric piano", ["Groove, find a groovy electric piano"]),
+    ("", []),
+])
+def test_split_commands_respects_wake_word_boundaries(text, expected):
+    from groove_agent.connection import split_commands
+    assert split_commands(text) == expected
