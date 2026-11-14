@@ -49,7 +49,7 @@ export class EngineCore {
   try{
    if(c.operation.type==='undo'&&c.boundary==='immediate'&&this.pending.some(p=>p.operation.type==='commit-performance'))c.operation.discardCaptureOnly=true;
    this.propose(c);
-   const requiresBoundary=['tempo','apply-patch','commit-performance','edit-pattern','load-session'].includes(c.operation.type);
+   const requiresBoundary=['tempo','commit-performance','edit-pattern','load-session'].includes(c.operation.type);
    if(c.operation.type==='record'&&!['next-beat','next-loop'].includes(c.boundary))throw new Error('Record requires next-beat or next-loop boundary');
    if(c.boundary==='next-beat'&&c.operation.type!=='record')throw new Error('Next-beat boundary is only supported for record');
    if(requiresBoundary && c.boundary!=='next-loop')throw new Error('Operation requires next-loop boundary');
