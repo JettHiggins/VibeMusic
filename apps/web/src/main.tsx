@@ -63,5 +63,5 @@ function App(){
 }
 createRoot(document.getElementById('root')!).render(<App/>);
 if(import.meta.hot)import.meta.hot.dispose(()=>{
- coordinator.dispose();agent.dispose();engine.dispose();
+ voice.dispose();coordinator.dispose();agent.dispose();engine.dispose();
 });

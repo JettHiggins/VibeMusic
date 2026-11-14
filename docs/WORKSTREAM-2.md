@@ -1,6 +1,6 @@
 # Workstream 2 handoff — UI and musical input
 
-Branch `ui-input`, based on `engine-integration` @ `411ec19` (milestone 0 foundation `a19badd` plus the real engine, recording windows, `commit-performance`, editing and `load-session`). Owned directories: `apps/web/src/input`, `apps/web/src/ui`, `apps/web/src/persistence`.
+Branch `ui-input`, based on `engine-integration` @ `ca78e57` (milestone 0 foundation `a19badd` plus the real engine, recording windows, `commit-performance`, editing and `load-session`). Owned directories: `apps/web/src/input`, `apps/web/src/ui`, `apps/web/src/persistence`.
 
 ## What this slice adds (milestone 2: first voice slice, drums)
 
@@ -38,7 +38,7 @@ Meaning: every utterance that starts at or before `throughFrame` has been classi
 ## Checks run (Windows 11, Node 26.13.1, engine assets from CI run 43575605059 for `411ec19`)
 
 - `npx tsc --noEmit`: clean.
-- `npm test`: 63 pass, 1 skipped (Workstream 3's opt-in live-service test). This includes all of Workstream 1's real-WASM tests on Windows, plus:
+- `npm test`: 66 pass, 1 skipped (Workstream 3's opt-in live-service test). This includes all of Workstream 1's real-WASM tests on Windows, plus:
   - `tests/input-onset.test.ts`: kick/snare/hat onsets within 2 ms; no double triggers (flams, decaying pitch sweeps in silence and in noise); weak transients don't mask louder hits; velocity tracks level; noise rejection; block-size invariance; p95 analysis per 1024-frame block < 50 ms; noise floor; tap-along latency, both synthetic and through the detector.
   - `tests/input-recorder.test.ts`: latency compensation applied once, single in-flight batch, analysis/clock watermark, speech verification, span exclusion and `excludedSpans`, stale-revision resubmission with a new ID, semantic rejection reported, confidence filter, take boundaries, final batch after stop.
   - `tests/input-engine.test.ts` (real SLOOP WASM): record kick → count-in → downbeat → beatboxed audio with 90 ms latency and ±10 ms human error plus a percussive “Groove stop” span → steps `[0, 6, 8, 14, 36]` exactly, playback continues after stop.
