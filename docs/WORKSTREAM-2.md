@@ -56,3 +56,21 @@ Meaning: every utterance that starts at or before `throughFrame` has been classi
 ## Next integration step
 
 Integrator: review the `main.tsx` wiring, merge `ui-input` into `engine-integration`, and decide on the `speech-verified` proposal. Workstream 3: emit `command-span` for wake-phrase commands with measured capture-clock frames, plus the verification watermark once agreed.
+
+
+## Second batch (branch `ui-melody`, stacked on `ui-input`)
+
+| Piece | File | Notes |
+| --- | --- | --- |
+| Pitch | `input/pitch.ts` | YIN in the analysis worker: FFT cross-correlation difference function, CMND threshold 0.15, parabolic refinement, 75–1100 Hz, 1024-sample window, 256-sample hop. |
+| Notes | `input/pitch.ts` (`NoteSegmenter`) | Clarity ≥ 0.8 and level gate; 3-hop onset agreement; a pitch change must hold 4 hops at > 0.9 semitone (so vibrato never splits); octave errors folded; a 9 dB dip then 6 dB rise splits repeated pitches; minimum 70 ms; flushed when the take closes. No forced scale. |
+| Recorder | `input/recorder.ts` | Note events for melodic targets, watermark waits for note ends, notes still sounding at stop are clamped to the cut-off, analysis that arrives late (for audio before the cut-off) still counts after stop. **Batches are sent 0.4 s before each loop boundary while a take is open**, so everything performed in a loop lands on the following loop. |
+| Session UI | `ui/SessionPanel.tsx` | Save to this browser, list and load saves, export a file, import a file → `load-session` at the next loop (undo restores the previous session). |
+| Editor | `ui/pattern-edit.ts`, `ui/PatternEditor.tsx` | Drum lane toggles, synth note placement and removal (monophonic, wraps the loop edge), pitch/octave/length, audition keyboard (note-off on release or leave) and drum audition, per-track volume. `PatternEditQueue` merges clicks within a loop into one `edit-pattern`, and after a stale rejection re-applies the edits on top of the newer session instead of overwriting a take. |
+| Recording UI | `ui/InputPanel.tsx` | Targets Kick/Snare/Hats/Synth 1–3, a note grid with pitch names, and dashed provisional cells. |
+
+Checks: `npm test` 84 pass, 1 skipped. New: `input-pitch` (accuracy within 0.2 semitone from G2 to G5, phrase boundaries within 20–30 ms, legato, vibrato, repeats, octave folding, block-size invariance, p95 < 50 ms), melodic recorder cases, `pattern-edit` (ops, coalescing, stale re-apply, real WASM), and the real-WASM reload. `input-engine` now also runs the **milestone 3 acceptance on real SLOOP WASM**: a sung four-bar melody records exactly, then re-singing bar 3 replaces only bar 3 while playback continues.
+
+Browser (real WASM, test signal through the identical worklet → worker path): Record Synth 1 committed all 10 sung notes exactly, and the phrase landed on the loop after it was sung. A second take that sang only bar 3 replaced exactly those three notes and kept the other seven. The session panel saved, then after clearing Synth 1 loaded the save back. The editor placed E4 at steps 5 and 9 during playback with two clicks, both landing at the boundary, with other tracks untouched.
+
+Known behaviour: if Stop is pressed after a batch has been queued for the coming boundary, that batch goes stale (stop bumps the revision) and lands one loop later. Basic Pitch phrase refinement has not been benchmarked yet (optional per PLAN). Audition sound was not checked by ear.

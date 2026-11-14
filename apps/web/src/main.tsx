@@ -7,6 +7,7 @@ import {SessionCoordinator} from './integration/coordinator.ts';
 import {VoiceInput} from './input/voice-input.ts';
 import {InputPanel} from './ui/InputPanel.tsx';
 import {SessionPanel} from './ui/SessionPanel.tsx';
+import {PatternEditor} from './ui/PatternEditor.tsx';
 const demo=createSession();
 demo.tracks[0].patch.engine=1;
 for(let bar=0;bar<4;bar++){
@@ -53,6 +54,7 @@ function App(){
   <button disabled={!enabled||busy} onClick={()=>command({type:'clear',target:session.selected},'next-loop')}>Clear selected next loop</button>{' '}
   <button disabled={!enabled||busy} onClick={()=>command({type:'undo'},'next-loop')}>Undo next loop</button></p>
   <InputPanel voice={voice} session={session} transport={transport} enabled={enabled} dispatch={command}/>
+  <PatternEditor engine={engine} session={session} enabled={enabled}/>
   <SessionPanel session={session} transport={transport} enabled={enabled} dispatch={command}/>
  <section aria-label="Agent integration"><h2>Local command service</h2>
   <button disabled={connected} onClick={()=>{void agent.connect().catch(e=>setMessage(String(e)));}}>Connect agent</button>
