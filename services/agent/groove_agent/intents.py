@@ -176,7 +176,7 @@ def interpret(text: str, session: Mapping[str, Any], during_recording: bool, tak
             return _command({"type": "stop-recording"})
         if rest:
             return NotUnderstood("say stop, stop recording, or stop playback")
-        if during_recording:
+        if during_recording or take_armed:
             return _command({"type": "stop-recording"})
         return _command({"type": "play", "playing": False})
 
