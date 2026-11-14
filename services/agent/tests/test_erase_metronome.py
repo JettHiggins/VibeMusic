@@ -147,3 +147,39 @@ def test_a_capture_erasure_fence_invalidates_older_language_context():
     assert conn._language_epoch == before + 1
     conn.handle(message, 0.0)  # the same retained fence again: no further invalidation
     assert conn._language_epoch == before + 1
+
+
+
+# -- WS1 review of #37: conflicting/invalid targets and leftover positions never erase -------
+
+UNSAFE_ERASES = [
+    "erase synth four bar one beat two",            # WS1 repro: erased synth-1 step 4
+    "erase kick and snare bar one beat two",        # WS1 repro: picked kick
+    "erase kick bar one beat two and three",        # WS1 repro: picked beat two
+    "erase synth two and synth three bar one beat two",  # WS1 repro: picked synth-2
+    "erase synth 9 bar 1 beat 1", "erase bar 1 beat 2 3", "erase bar 1 beat 2 subdivision 3 4",
+    "erase kick bar 1 beat 2 on the snare", "erase bar one beat two on synth one and synth two",
+]
+
+
+@pytest.mark.parametrize("text", UNSAFE_ERASES)
+def test_unsafe_erase_specifications_never_mutate_for_any_context(text):
+    for selected in ("synth-1", "synth-2", "synth-3", "drums"):
+        for take in (None, {"trackId": "synth-2"}, {"trackId": "drums", "lane": "kick"}):
+            result = op(text, recording_target=take, selected=selected)
+            assert isinstance(result, NotUnderstood), (text, selected, take, result)
+            assert result.reason != "command not recognized"  # no language-model fallback either
+
+
+@pytest.mark.parametrize("text", UNSAFE_ERASES[:4])
+def test_unsafe_spoken_erase_through_the_connection_issues_no_command(text):
+    conn = connection(target={"trackId": "synth-1"})
+    out = say(conn, f"Groove, {text}")
+    assert [m["type"] for m in out] == ["command-span", "error"], out
+    assert conn._language.jobs == [] and conn.pending_command_ids == []
+
+
+def test_single_clear_targets_still_erase():
+    assert op("erase the kick bar one beat two")["target"] == {"trackId": "drums", "lane": "kick"}
+    assert op("erase bar one beat two on synth three")["target"] == {"trackId": "synth-3"}
+    assert op("erase the snare on the drums bar 2 beat 1")["target"] == {"trackId": "drums", "lane": "snare"}
