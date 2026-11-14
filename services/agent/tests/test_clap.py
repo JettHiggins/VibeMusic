@@ -35,3 +35,16 @@ def test_text_embeddings_are_not_degenerate_and_broken_checkpoints_are_refused(c
     assert float(organ @ organ_again) > float(organ @ noise) + 0.2
     # Do not assert that another remote checkpoint remains broken forever.
     # Check rejection deterministically in test_clap_validation instead.
+
+
+def test_batched_text_features_equal_single_texts(clap):
+    texts = ["a church organ", "80s electric piano with chorus", "deep sub bass"]
+    batched = clap.embed_texts(texts)
+    for text, vector in zip(texts, batched):
+        assert np.allclose(vector, clap.embed_text(text), atol=1e-5)
+
+
+def test_render_level_does_not_change_the_audio_embedding(clap):
+    from groove_agent.research.audio import unit
+    quiet, loud = tone(330) * 0.25, tone(330)
+    assert float(unit(clap.embed_audio(quiet, 44100)) @ unit(clap.embed_audio(loud, 44100))) > 0.999

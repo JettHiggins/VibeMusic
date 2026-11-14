@@ -25,6 +25,30 @@ from .clap_checkpoint import (MUSIC_MODEL, MUSIC_CONFIG_REVISION, MUSIC_SOURCE, 
 
 DEFAULT_MODEL = MUSIC_MODEL
 CLAP_RATE = 48000
+# Native LAION (laion_clap.hook and its training loader) rounds waveforms through int16
+# before the mel frontend. Matching it gives cosine 1.000000 parity with the native model;
+# skipping it shifted quiet/noisy renders by up to 0.045 cosine. Before that, renders are
+# RMS-normalized so preset output level (peaks 0.17-0.55 across factory presets) does not
+# drive timbre retrieval; previews keep their real level. Part of corpus identity.
+PREPROCESSING = "rms-20dBFS+int16-repeatpad-v1"
+TARGET_RMS_DB = -20.0
+
+
+def loudness_normalize(audio: np.ndarray, target_db: float = TARGET_RMS_DB) -> np.ndarray:
+    """Scale to a fixed RMS, limited so the peak stays below full scale. Silence is returned unchanged."""
+    audio = np.asarray(audio, dtype=np.float64)
+    rms = float(np.sqrt(np.mean(audio ** 2))) if audio.size else 0.0
+    if rms <= 1e-9:
+        return audio
+    scaled = audio * (10 ** (target_db / 20) / rms)
+    peak = float(np.abs(scaled).max())
+    return scaled * (0.99 / peak) if peak > 0.99 else scaled
+
+
+def quantize_int16(audio: np.ndarray) -> np.ndarray:
+    """Same round trip as laion_clap's float32_to_int16/int16_to_float32."""
+    audio = np.clip(np.asarray(audio, dtype=np.float32), -1.0, 1.0)
+    return (audio * 32767.0).astype(np.int16).astype(np.float32) / 32767.0
 
 
 class DegenerateModel(RuntimeError):
@@ -47,7 +71,8 @@ class ClapEmbedder:
             raise RuntimeError('cannot identify the immutable Hugging Face model snapshot')
         config = ClapConfig.from_pretrained(model_id, revision=revision)
         self.name = (f"LAION CLAP ({model_id}@{revision or 'unversioned'}; "
-                     f"transformers {version('transformers')}; torch {torch.__version__}; scipy {version('scipy')})")
+                     f"transformers {version('transformers')}; torch {torch.__version__}; scipy {version('scipy')}; "
+                     f"preprocessing {PREPROCESSING})")
         self._processor = ClapProcessor.from_pretrained(model_id, revision=revision)
         if model_id == MUSIC_MODEL:
             self._model = load_music_model(torch, config, ClapModel)
@@ -85,15 +110,25 @@ class ClapEmbedder:
             raise DegenerateModel(f"{model_id} gives indistinguishable embeddings for unrelated texts ({similarity:.3f})")
 
     def embed_audio(self, audio: np.ndarray, sample_rate: int) -> np.ndarray:
+        audio = loudness_normalize(audio)
         if sample_rate != CLAP_RATE:
             from scipy.signal import resample_poly
             divisor = gcd(CLAP_RATE, sample_rate)
             audio = resample_poly(audio.astype(np.float64), CLAP_RATE // divisor, sample_rate // divisor)
-        inputs = self._processor(audio=np.asarray(audio, dtype=np.float32), sampling_rate=CLAP_RATE, return_tensors="pt")
+        inputs = self._processor(audio=quantize_int16(audio), sampling_rate=CLAP_RATE, return_tensors="pt")
         with self._torch.no_grad():
             return self._vector(self._model.get_audio_features(**inputs))
 
     def embed_text(self, text: str) -> np.ndarray:
-        inputs = self._processor(text=[text], return_tensors="pt", padding=True)
-        with self._torch.no_grad():
-            return self._vector(self._model.get_text_features(**inputs))
+        return self.embed_texts([text])[0]
+
+    def embed_texts(self, texts: list[str], batch: int = 64) -> list[np.ndarray]:
+        """Padded batches with attention masks give the same features as one text at a time."""
+        out = []
+        for start in range(0, len(texts), batch):
+            inputs = self._processor(text=texts[start:start + batch], return_tensors="pt", padding=True)
+            with self._torch.no_grad():
+                features = self._model.get_text_features(**inputs)
+            tensor = features if hasattr(features, "detach") else features.pooler_output
+            out.extend(self._checked_vector(row) for row in tensor.detach().cpu().numpy())
+        return out
