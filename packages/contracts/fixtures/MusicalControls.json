@@ -1,0 +1,193 @@
+[
+  {
+    "type": "session",
+    "session": {
+      "version": 1,
+      "revision": 0,
+      "tempo": 120,
+      "bars": 4,
+      "beatsPerBar": 4,
+      "stepsPerBeat": 4,
+      "selected": {
+        "trackId": "drums",
+        "lane": "kick"
+      },
+      "tracks": [
+        {
+          "id": "synth-1",
+          "name": "synth-1",
+          "muted": false,
+          "volume": 0.7,
+          "patch": {
+            "engine": 0,
+            "preset": 0,
+            "parameters": {},
+            "engineRevision": "bac9c05ea7627449405aa10e48da21d75b6c8c56"
+          },
+          "notes": [],
+          "hits": []
+        },
+        {
+          "id": "synth-2",
+          "name": "synth-2",
+          "muted": false,
+          "volume": 0.7,
+          "patch": {
+            "engine": 0,
+            "preset": 0,
+            "parameters": {},
+            "engineRevision": "bac9c05ea7627449405aa10e48da21d75b6c8c56"
+          },
+          "notes": [],
+          "hits": []
+        },
+        {
+          "id": "synth-3",
+          "name": "synth-3",
+          "muted": false,
+          "volume": 0.7,
+          "patch": {
+            "engine": 0,
+            "preset": 0,
+            "parameters": {},
+            "engineRevision": "bac9c05ea7627449405aa10e48da21d75b6c8c56"
+          },
+          "notes": [],
+          "hits": []
+        },
+        {
+          "id": "drums",
+          "name": "drums",
+          "muted": false,
+          "volume": 0.7,
+          "patch": {
+            "engine": 0,
+            "preset": 0,
+            "parameters": {},
+            "engineRevision": "bac9c05ea7627449405aa10e48da21d75b6c8c56"
+          },
+          "notes": [],
+          "hits": []
+        }
+      ],
+      "pitchSnap": {
+        "root": 0,
+        "scale": "major"
+      }
+    }
+  },
+  {
+    "type": "command",
+    "command": {
+      "id": "key-on",
+      "expectedRevision": 0,
+      "boundary": "immediate",
+      "operation": {
+        "type": "set-pitch-snap",
+        "settings": {
+          "root": 9,
+          "scale": "minor"
+        }
+      }
+    }
+  },
+  {
+    "type": "command",
+    "command": {
+      "id": "key-off",
+      "expectedRevision": 0,
+      "boundary": "immediate",
+      "operation": {
+        "type": "set-pitch-snap",
+        "settings": null
+      }
+    }
+  },
+  {
+    "type": "command",
+    "command": {
+      "id": "snap-track",
+      "expectedRevision": 0,
+      "boundary": "next-loop",
+      "operation": {
+        "type": "snap-notes",
+        "trackId": "synth-1"
+      }
+    }
+  },
+  {
+    "type": "browser-action",
+    "id": "calibration-1",
+    "clockId": "clock-1",
+    "expectedInputRevision": 2,
+    "operation": {
+      "type": "calibrate-input",
+      "mode": "full"
+    }
+  },
+  {
+    "type": "browser-action",
+    "id": "profile-1",
+    "clockId": "clock-1",
+    "expectedInputRevision": 2,
+    "operation": {
+      "type": "set-input-profile",
+      "profile": "noisy-room"
+    }
+  },
+  {
+    "type": "browser-action",
+    "id": "offset-1",
+    "clockId": "clock-1",
+    "expectedInputRevision": 2,
+    "operation": {
+      "type": "set-input-offset",
+      "milliseconds": 10
+    }
+  },
+  {
+    "type": "browser-action",
+    "id": "cancel-1",
+    "clockId": "clock-1",
+    "expectedInputRevision": 2,
+    "operation": {
+      "type": "cancel-input-action",
+      "actionId": "calibration-1"
+    }
+  },
+  {
+    "type": "browser-status",
+    "clockId": "clock-1",
+    "inputRevision": 2,
+    "available": true,
+    "microphone": "on",
+    "profile": "noisy-room",
+    "calibration": {
+      "noiseMeasured": true,
+      "noiseFloorDb": -48,
+      "latencySource": "tap-along",
+      "latencyMs": 120,
+      "offsetAdjustMs": 0
+    },
+    "activeAction": {
+      "id": "calibration-1",
+      "kind": "calibrate-input",
+      "phase": "countdown"
+    },
+    "guidance": "Stay quiet during the room measurement."
+  },
+  {
+    "type": "browser-action-ack",
+    "id": "calibration-1",
+    "clockId": "clock-1",
+    "inputRevision": 2,
+    "status": "running"
+  },
+  {
+    "type": "browser-action-ack",
+    "id": "calibration-1",
+    "clockId": "clock-1",
+    "inputRevision": 3,
+    "status": "complete"
+  }
+]

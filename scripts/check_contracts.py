@@ -45,3 +45,8 @@ for example in json.loads((root / 'fixtures/PlaytestRepair.json').read_text()):
     name = 'ClientMessage' if example['type'] == 'transport' else 'ServerMessage'
     Draft202012Validator(json.loads((root / f'{name}.schema.json').read_text())).validate(example)
 print('Playtest repair examples pass Python message validation.')
+
+for example in json.loads((root / 'fixtures/MusicalControls.json').read_text()):
+    name = 'ServerMessage' if example['type'] in ('command', 'browser-action') else 'ClientMessage'
+    Draft202012Validator(json.loads((root / f'{name}.schema.json').read_text())).validate(example)
+print('Musical control and browser-action examples pass Python message validation.')

@@ -6,6 +6,184 @@
       "properties": {
         "type": {
           "type": "string",
+          "const": "browser-status"
+        },
+        "clockId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "inputRevision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "available": {
+          "type": "boolean"
+        },
+        "microphone": {
+          "type": "string",
+          "enum": [
+            "off",
+            "starting",
+            "on",
+            "test-signal"
+          ]
+        },
+        "profile": {
+          "type": "string",
+          "enum": [
+            "noisy-room",
+            "music"
+          ]
+        },
+        "calibration": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "noiseMeasured": {
+                  "type": "boolean"
+                },
+                "noiseFloorDb": {
+                  "type": "number"
+                },
+                "latencySource": {
+                  "type": "string",
+                  "enum": [
+                    "default",
+                    "tap-along"
+                  ]
+                },
+                "latencyMs": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "offsetAdjustMs": {
+                  "type": "integer",
+                  "minimum": -150,
+                  "maximum": 150
+                }
+              },
+              "required": [
+                "noiseMeasured",
+                "noiseFloorDb",
+                "latencySource",
+                "latencyMs",
+                "offsetAdjustMs"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "activeAction": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "calibrate-input",
+                    "set-input-profile",
+                    "set-input-offset"
+                  ]
+                },
+                "phase": {
+                  "type": "string",
+                  "enum": [
+                    "starting",
+                    "countdown",
+                    "practice",
+                    "measuring",
+                    "analysing",
+                    "reconnecting"
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "kind",
+                "phase"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "guidance": {
+          "type": "string",
+          "maxLength": 500
+        }
+      },
+      "required": [
+        "type",
+        "clockId",
+        "inputRevision",
+        "available",
+        "microphone",
+        "profile",
+        "calibration",
+        "activeAction"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "browser-action-ack"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "clockId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "inputRevision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "running",
+            "complete",
+            "cancelled",
+            "rejected"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "type",
+        "id",
+        "clockId",
+        "inputRevision",
+        "status"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
           "const": "session"
         },
         "session": {
@@ -217,6 +395,35 @@
                 ],
                 "additionalProperties": false
               }
+            },
+            "pitchSnap": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "root": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 11
+                    },
+                    "scale": {
+                      "type": "string",
+                      "enum": [
+                        "major",
+                        "minor"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "root",
+                    "scale"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
             }
           },
           "required": [
