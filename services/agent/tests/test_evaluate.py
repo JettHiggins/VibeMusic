@@ -66,3 +66,37 @@ def test_command_line_without_a_backend_explains_configuration(monkeypatch, tmp_
     monkeypatch.delenv("GROOVE_RESEARCH", raising=False)
     with pytest.raises(SystemExit, match="GROOVE_RESEARCH"):
         main([str(tmp_path / "kit"), "--seed", "42"])
+
+
+@pytest.mark.parametrize("nested", ["answer-key", "deep/inside/key", "."])
+def test_answer_key_cannot_be_inside_the_listening_directory(tmp_path, nested):
+    out = tmp_path / "listen"
+    with pytest.raises(ValueError, match="answer key"):
+        run(backend(budget=0), out, prompts=("piano",), key_dir=out / nested)
+    assert not out.exists() or not any(out.rglob("answers.json"))
+
+
+def test_answer_key_cannot_reach_the_listening_directory_through_a_symlink(tmp_path):
+    import os
+    out = tmp_path / "listen"
+    out.mkdir()
+    alias = tmp_path / "alias"
+    try:
+        os.symlink(out, alias, target_is_directory=True)
+    except (OSError, NotImplementedError):
+        try:  # Windows without symlink privilege: a directory junction is the same kind of alias
+            import _winapi
+            _winapi.CreateJunction(str(out), str(alias))
+        except (ImportError, OSError):
+            pytest.skip("directory aliases are not available to this user")
+    with pytest.raises(ValueError, match="answer key"):
+        run(backend(budget=0), out, prompts=("piano",), key_dir=alias / "key")
+    assert not any(out.rglob("answers.json"))
+
+
+def test_default_key_is_a_sibling_and_explicit_outside_keys_still_work(tmp_path):
+    _, out, key = kit(tmp_path)
+    assert key == tmp_path / "listen-answer-key" and (key / "answers.json").exists()
+    elsewhere = tmp_path / "keys" / "mine"
+    run(backend(budget=0), tmp_path / "second", prompts=("piano",), key_dir=elsewhere)
+    assert (elsewhere / "answers.json").exists() and not (tmp_path / "second" / "answers.json").exists()

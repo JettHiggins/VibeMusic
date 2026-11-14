@@ -42,6 +42,14 @@ SEED = 20261114
 SHEET_HEADER = ["listener", "number", "prompt", "preferred (A/B/same)", "notes"]
 
 
+def _separate(out: Path, key_dir: Path) -> None:
+    """The key may not be the listening directory or anywhere inside it (symlinks resolved),
+    since listeners receive the whole listening directory."""
+    listening, key = out.resolve(), key_dir.resolve()
+    if key == listening or listening in key.parents:
+        raise ValueError(f"the answer key must not be stored with the listening files: {key_dir} is inside {out}")
+
+
 def _empty(directory: Path) -> None:
     if directory.exists() and any(directory.iterdir()):
         raise ValueError(f'choose an empty evaluation directory; existing listening results are preserved: {directory}')
@@ -50,8 +58,7 @@ def _empty(directory: Path) -> None:
 def run(backend: ResearchBackend, out: Path, prompts: Sequence[str] = PROMPTS, seed: int = SEED,
         key_dir: Optional[Path] = None) -> list[dict]:
     key_dir = key_dir if key_dir is not None else out.with_name(out.name + "-answer-key")
-    if key_dir.resolve() == out.resolve():
-        raise ValueError("the answer key must not be stored with the listening files")
+    _separate(out, key_dir)
     _empty(out)
     _empty(key_dir)
     if not prompts:
