@@ -21,7 +21,7 @@ PR #8 speech-capture requirements are reviewed and merged. They do not approve a
 
 **WS1 / Jett / @JettHiggins:** integrate reviewed capability-sized PRs, own schemas/engine/root config and final signoff. Review the current WS2 stack and WS3 retrieval PR. Separate ws1/dev-worklet-sync at 248585a is ready for PR/review: current-source dev worklets, compile-error recovery, no stale public artifact. Local checks and actual browser enable/play pass. Repository settings block Actions from creating PRs; a collaborator must open that review. Do not rewrite the UI concurrently with WS2.
 
-**WS2 / Leo / @leoAndrade2332:** PR #7 microphone-test support, #10 guided calibration/fixes, #11 monochrome workspace/piano roll are the owned stack. Integrate the approved PR #12 merge now: next-beat Record, immediate Clear/Undo, exact epoch/cutoff reset in recorder/worker, discard-only provisional Undo and epoch-tagged batches. Remove automatic Record re-issue. Send final combined tests/limitations and main.tsx wiring notes in the PR. WS1 reviews before merging. Preserve input picker, granted-processing diagnostics and measurements-only reporting.
+**WS2 / Leo / @leoAndrade2332:** PR #7 microphone-test support, #10 guided calibration/fixes, and #11 monochrome workspace/piano roll are reviewed and integrated. Integrate the approved PR #12 merge now: next-beat Record, immediate Clear/Undo, exact epoch/cutoff reset in recorder/worker, discard-only provisional Undo and epoch-tagged batches. Remove automatic Record re-issue. Send final combined tests/limitations and main.tsx wiring notes in the PR. WS1 reviews before merging. Preserve input picker, granted-processing diagnostics and measurements-only reporting.
 
 **WS3 / Lenny / @lennyyanza:** PR #13 adds native-parity preprocessing, retrieval ranking and reproducible listening kits; WS1 review pending. Adopt PR #12 in backend proposals (Record next-beat, Clear/Undo immediate) with tests. Coordinate speech-transport proposal with WS2; no provider has been selected. Keep real-time audio independent of inference. Do not substitute the parser for completion of Deep Agents.
 
@@ -31,7 +31,7 @@ The user tested on Lenny's device. Drum mic capture worked, but hits landed late
 
 Required UX: dark monochrome persistent DAW transport/tracks/editor/inspector, no workspace tabs; drum lanes plus editable synth piano roll (create/delete/move/resize, four-bar grid, keyboard and playhead). Guided calibration: visible three-second preparation, four practice/eight measured clicks for timing, progress/Cancel and offset trim; silence measurement has preparation/cancellation without clicks. Preserve old calibration on interruption. Show live pitch and pending/committed/rejected states with actionable engine errors.
 
-WS1 requested fixes on exact original heads of PRs #7/#10. Leo reports fixes in #10 at 10113cf and #11: diagnostic expiry uses processedThrough rather than the held watermark; TimedRun settles on lifecycle cancellation; reports include trim/effective latency; silence measurement is guided. WS1 is verifying these current changes before merging.
+WS1 requested fixes on exact original heads of PRs #7/#10. Leo reports fixes in #10 at 10113cf and #11: diagnostic expiry uses processedThrough rather than the held watermark; TimedRun settles on lifecycle cancellation; reports include trim/effective latency; silence measurement is guided. WS1 verified those fixes in source, ran the combined full Node suite/shared checks/live-service integration/build, and exercised timing/silence cancellation in Chromium before integrating the stack.
 
 ## Remaining acceptance gates
 
@@ -41,3 +41,7 @@ WS1 requested fixes on exact original heads of PRs #7/#10. Leo reports fixes in 
 - Three-person blind sound comparison using one shared kit/fingerprint; ranking gains and preset-name benchmarks do not establish perceptual quality.
 - Real speech recognition/classification and Deep Agents after the necessary decisions/contracts; full hands-free scenario in PLAN.md.
 - Ten-minute audible browser playback and timing/command targets on real macOS/Windows/WSL2 setups. CI and offline clock renders support but do not replace physical acceptance.
+
+## Combined workspace integration checkpoint
+
+PRs #7/#10/#11 are integrated together, including reviewed lifecycle/diagnostic fixes. Chromium showed the dark workspace, no tabs, and synth piano roll; timing/silence preparation and Cancel preserved calibration using a synthetic input. This is not physical-microphone signoff. The top bar still sends legacy next-loop requests and the recorder still needs epoch/cutoff wiring: WS2's immediate next task is adopting merged PR #12. Root browser review found transport scrolls offscreen while using the inspector (scrollY 297, header top -297/bottom -251); WS2 should anchor it and add a scroll regression. Keep the requested monochrome palette, including recording state.
