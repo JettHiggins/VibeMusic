@@ -100,7 +100,7 @@ test('the mic test report holds measurements only', () => {
   processingProfile: 'noisy-room',
   calibration: cal({ noiseSource: 'measured', noiseFloorDb: -38.94, latencySource: 'tap-along', latencyFrames: 5292, latencySpreadFrames: 220 }),
   micCheck: check.state(-38.9),
-  recorder: { mode: 'manual', capturing: false, provisional: [], committed: 4, dropped: 1, lastError: null, inFlight: null },
+  recorder: { mode: 'manual', capturing: false, provisional: [], timing: [], committed: 4, dropped: 1, lastError: null, inFlight: null },
   analysisP95Ms: 3.21,
  });
  assert.equal(report.capture.processingProfile, 'noisy-room');
