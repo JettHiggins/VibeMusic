@@ -48,6 +48,7 @@ class _Window:
     kind: str
     start: int
     end: Optional[int] = None  # first frame known to be outside it; None while still current
+    target: Optional[dict] = None  # the take's recordingTarget, so a late "erase bar 2 beat 3" keeps it
 
 
 MAX_WINDOWS = 32
@@ -257,6 +258,7 @@ class Connection:
                 "duringRecording": window is not None and window.kind == "recording"}, now,
                 take_armed=(window is not None and window.kind == "armed") or (index > 0 and self._take_armed()),
                 obsolete=self._obsolete(window),
+                recording_target=window.target if window is not None and window.kind == "recording" else None,
                 emit_span=not any(m["type"] == "command-span" for m in out)))
         return out
 
@@ -304,7 +306,7 @@ class Connection:
                 return  # the same take (Clear/Undo epochs do not start a new take)
             if current is not None:
                 current.end = start if current.kind == "armed" else now_frame
-            self._windows.append(_Window("recording", start))
+            self._windows.append(_Window("recording", start, target=transport.get("recordingTarget")))
         elif state == "armed":
             if current is not None and current.kind == "armed":
                 return
@@ -407,7 +409,8 @@ class Connection:
     # -- utterances --------------------------------------------------------------
 
     def _on_utterance(self, message: Mapping[str, Any], now: float, take_armed: Optional[bool] = None,
-                      obsolete: bool = False, emit_span: bool = True) -> list[dict]:
+                      obsolete: bool = False, emit_span: bool = True,
+                      recording_target: Optional[dict] = None) -> list[dict]:
         utterance_id = message["id"]
         if utterance_id in self._utterances:
             return []  # already handled; never issue a second command for the same utterance
@@ -424,7 +427,10 @@ class Connection:
 
         during_recording = bool(message["duringRecording"])
         armed = self._take_armed() if take_armed is None else take_armed
-        result = self._interpret(message["text"], self.session, during_recording, take_armed=armed)
+        if recording_target is None and during_recording:
+            recording_target = (self.transport or {}).get("recordingTarget")  # typed/transcript path
+        result = self._interpret(message["text"], self.session, during_recording, take_armed=armed,
+                                 recording_target=recording_target)
         if isinstance(result, Ignored):
             return []  # performance, not speech addressed to Groove
         # During recording, anything not Ignored began with the wake word. Its span is excluded
@@ -463,7 +469,10 @@ class Connection:
         return (transport.get("clockId"), transport.get("recordingState", "recording" if transport.get("recording") else "idle"),
                 transport.get("recordingStartFrame"), transport.get("recordingEpoch"), transport.get("captureStartFrame"),
                 transport.get("playing"), tuple(sorted((transport.get("recordingTarget") or {}).items())),
-                tuple(sorted((transport.get("armedTarget") or {}).items())))
+                tuple(sorted((transport.get("armedTarget") or {}).items())),
+                # A provisional-only erase leaves the revision unchanged but must still invalidate
+                # an older model intention (PLAYTEST-REPAIR-CONTRACT.md).
+                (transport.get("captureErasure") or {}).get("commandId"))
 
     def _language_token(self) -> tuple:
         latest = self._latest_search(with_candidates=True)
