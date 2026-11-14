@@ -17,12 +17,27 @@ Implemented building blocks:
 - A discontinuity terminally fails the stream and discards its pending samples. A new
   stream begins at sequence zero; old buffered samples are never replayed.
 
-Pending before any hands-free claim: MicrophoneInput lifecycle hook, bounded socket
-backpressure, user-selected local speech mode/status, active-stream/clock coverage gate,
-fromFrame bounds, unavailable/gap discard and fresh take/epoch recovery, end-to-end
-browser-to-service tests, actual faster-whisper and physical-user validation. Socket
-connectivity alone must never enable commits. The service currently has no recognizer;
-PR #15 is separately under review for delayed capture-context handling.
+Connected on this feature branch: MicrophoneInput creates/tears down the speech worker and
+separate port; WebSocketAgent bounds speech socket buffering; explicit local hands-free
+mode/status routes active-stream/clock coverage through SpeechSession. Socket connection
+never proves recognition. Unavailable/error/gap clears local pending capture, stops the take
+and resets retained capture without stopping playback; recovery requires explicit Retry
+and a fresh take. Calibration/device/clock changes invalidate the old stream. Manual
+fallback is explicit only. Unscoped/foreign coverage cannot verify the new stream; first
+coverage is bounded by its actual first sent frame and last sent end. Old worker results
+cannot replay after failure/restart.
+
+Actual Chromium-to-service check: synthetic silence traversed the real capture worklet,
+PCM worker, WebSocket and service schema validation. A 4410-frame chunk carried 8820 bytes
+at 44.1 kHz, sequence zero. The real no-recognizer service returned stream-scoped
+unavailable: recording stayed blocked in speech mode, playback continued, and only
+explicit checkbox opt-out restored manual mode. Script: tests/browser/speech-unavailable.js.
+
+Pending before hands-free completion: positive classified-flow browser integration with
+an explicitly SCRIPTED test producer, actual faster-whisper, delayed capture-context fixes
+in #15, measured recognition lag/backpressure behavior, physical microphone and human
+latency/recognition validation. No recognizer is installed/configured by this branch and
+Deep Agents/API access is still deferred. This is transport/mode wiring, not delivered STT.
 
 Checks: PCM frame/sample counts, silence/uneven blocks, fractional latency/startup trim,
 gap discard and real capture-worklet transfer behavior pass deterministic tests. Shared

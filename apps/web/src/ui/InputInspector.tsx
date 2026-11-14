@@ -29,6 +29,9 @@ export function InputInspector({ voice, state, transport, enabled, melodic }: { 
    <option value="">System default</option>
    {devices.map(d => <option key={d.deviceId} value={d.deviceId}>{d.label}</option>)}
   </select></label>}
+  <label><input type="checkbox" checked={state.speech.enabled} onChange={e=>voice.setHandsFree(e.target.checked)} /> Hands-free commands (local service)</label>
+  {state.speech.enabled && <div role="status">{state.speech.message ?? 'Checking local speech recognition…'}{state.speech.status==='unavailable' && <button onClick={()=>voice.setHandsFree(true)}>Retry speech</button>}</div>}
+  {state.speech.enabled && <small>Microphone audio streams continuously to your local service. Recording requires verified speech coverage.</small>}
   <Meter db={state.levelDb} floor={state.calibration?.noiseFloorDb ?? -60} active={micReady} />
   <div style={{ color: C.muted }}>
    {state.calibration ? <>Noise floor {state.calibration.noiseFloorDb.toFixed(0)} dBFS · compensation {Math.round(effectiveLatencyFrames(state.calibration) / state.calibration.sampleRate * 1000)} ms</> : 'Use headphones. Microphone audio is analysed locally and never stored.'}

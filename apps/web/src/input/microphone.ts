@@ -2,6 +2,7 @@ import captureUrl from './capture-worklet.ts?worker&url';
 import type { AnalysisRequest, AnalysisResult } from './analysis-worker.ts';
 import type { Onset } from './onset.ts';
 import type { PitchReading, SungNote } from './pitch.ts';
+import type { SpeechRequest, SpeechResult } from './speech-worker.ts';
 import type { CaptureSettings } from './diagnostics.ts';
 
 export interface AnalysisFrame {
@@ -15,7 +16,7 @@ export interface AnalysisFrame {
 
 /**
  * Connects an input (the microphone, or a diagnostic test signal) to the capture worklet on the
- * engine's AudioContext and the analysis worker. Raw audio is never stored or sent anywhere.
+ * engine's AudioContext and the analysis worker. Raw audio is never stored. An explicitly enabled speech tap can send PCM to the local service.
  */
 export class MicrophoneInput {
  onAnalysis: (frame: AnalysisFrame) => void = () => {};
@@ -28,6 +29,7 @@ export class MicrophoneInput {
  private node: AudioWorkletNode | null = null;
  private sink: GainNode | null = null;
  private worker: Worker | null = null;
+ private speechWorker: Worker | null = null;
  private source: AudioNode | null = null;
  private stream: MediaStream | null = null;
  private noiseWaiters: ((db: number) => void)[] = [];
@@ -87,6 +89,23 @@ export class MicrophoneInput {
   this.source = source; this.inputLatencySeconds = 0; this.deviceId = 'test-signal'; this.captureSettings = null;
  }
 
+ /** Local speech tap: PCM encoding happens in its own worker, never in the audio callback. */
+ startSpeech(config: {streamId:string;clockId:string;latencyFrames:number}, onResult:(result:SpeechResult)=>void) {
+  this.stopSpeech();
+  if (!this.node || !this.source) throw new Error('Enable microphone first');
+  const worker=this.speechWorker=new Worker(new URL('./speech-worker.ts',import.meta.url),{type:'module'});
+  worker.onmessage=({data}:MessageEvent<SpeechResult>)=>{if(this.speechWorker===worker)onResult(data);};
+  worker.onerror=()=>{if(this.speechWorker===worker)onResult({type:'gap',streamId:config.streamId,reason:'Speech capture worker failed'});};
+  const channel=new MessageChannel();
+  const message:SpeechRequest={type:'connect',...config,sampleRate:this.context.sampleRate,port:channel.port2};
+  worker.postMessage(message,[channel.port2]);
+  this.node.port.postMessage({type:'connect-speech',port:channel.port1},[channel.port1]);
+ }
+ stopSpeech() {
+  this.node?.port.postMessage({type:'disconnect-speech'});
+  this.speechWorker?.terminate();this.speechWorker=null;
+ }
+
  /** End any open sung note at a raw capture frame. */
  flush(frame: number) { this.request({ type: 'flush', frame }); }
 
@@ -104,6 +123,7 @@ export class MicrophoneInput {
  }
 
  private disconnectSource() {
+  this.stopSpeech();
   this.source?.disconnect(); this.source = null;
   this.stream?.getTracks().forEach(track => track.stop()); this.stream = null;
  }

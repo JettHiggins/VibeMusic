@@ -20,6 +20,7 @@ const engine=new BrowserEngine(demo);
 const agent=new WebSocketAgent();
 const coordinator=new SessionCoordinator(engine,agent,()=>agent.connected);
 const voice=new VoiceInput(engine);
+voice.configureSpeechSender(message=>agent.send(message));
 coordinator.prepareCommand=command=>voice.prepareCommand(command);
 const research=new ResearchController(engine,agent,()=>agent.connected);
 // Development-only handle for driving the capture path with a test signal; absent from production builds.
