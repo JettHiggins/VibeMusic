@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import type {AnalysisRequest,AnalysisResult} from '../apps/web/src/input/analysis-worker.ts';
 
-test('real analysis worker reset drops held pitch, trims crossing chunks and ignores queued pre-cutoff audio',async()=>{
+test('analysis worker honors reset cutoffs and keeps quiet singing out of the measured room floor',async()=>{
  const results:AnalysisResult[]=[];
  const scope={postMessage:(m:AnalysisResult)=>results.push(m),onmessage:null as ((e:{data:AnalysisRequest})=>void)|null};
  Object.assign(globalThis,{self:scope});
@@ -29,4 +29,23 @@ test('real analysis worker reset drops held pitch, trims crossing chunks and ign
  const notes=results.flatMap(m=>m.type==='onsets'?m.notes:[]);
  assert.ok(notes.length>0,'fresh singing still detected');
  assert.ok(notes.every(n=>n.startFrame>=30001));
+
+ // A quiet but clearly pitched voice is foreground, even when the current gate labels it quiet.
+ send({type:'configure',noiseFloorDb:-40});
+ send({type:'measure-noise',frames:Math.round(1.5*44100)});
+ results.length=0;
+ let cursor=53528;
+ const voiceEnd=cursor+44100;
+ while(cursor<voiceEnd){
+  const samples=Float32Array.from({length:1024},(_,i)=>10**(-30/20)*Math.SQRT2*Math.sin(2*Math.PI*220*(cursor+i)/44100));
+  port.onmessage!({data:{type:'audio',startFrame:cursor,samples}});cursor+=samples.length;
+ }
+ let seed=17;
+ while(cursor<voiceEnd+120000&&!results.some(m=>m.type==='noise-floor')){
+  const samples=Float32Array.from({length:1024},()=>{seed=(seed*1664525+1013904223)>>>0;return ((seed/4294967296)*2-1)*10**(-45/20)*Math.sqrt(3);});
+  port.onmessage!({data:{type:'audio',startFrame:cursor,samples}});cursor+=samples.length;
+ }
+ const floor=results.find(m=>m.type==='noise-floor');
+ assert.ok(floor?.type==='noise-floor', 'calibration completes after enough non-voiced room frames arrive');
+ assert.ok(floor.db>-48&&floor.db<-42, `quiet singing must not raise the room floor; got ${floor.db.toFixed(1)} dBFS`);
 });
