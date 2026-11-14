@@ -340,3 +340,39 @@ test('a new take does not chain onto an unacknowledged batch from the previous t
  const op = sent[0].operation;
  assert.ok(op.type === 'commit-performance' && !op.replacesCommandId);
 });
+
+test('epoch reset forgets queued/replaced batches, rejects late results, and tags fresh mid-loop input', () => {
+ const {engine,recorder,advance,hit}=setup();
+ advance(20*STEP);
+ recorder.handle(engine.transport({recordingEpoch:1,recordingLoopStartFrame:START-4*STEP}));
+ recorder.addOnsets([hit(2)],0,CLOCK,engine.frame);
+ recorder.addOnsets([hit(3)],0,CLOCK,engine.frame);
+ const old=engine.sent.slice(),cutoff=engine.frame+1;
+ recorder.handle(engine.transport({recordingEpoch:2,captureStartFrame:cutoff,recordingLoopStartFrame:START-4*STEP}));
+ assert.equal(recorder.status().inFlight,null);
+ assert.equal(recorder.status().provisional.length,0);
+ for(const c of old)recorder.handle({type:'ack',commandId:c.id,status:'rejected',revision:0,reason:'Stale revision'});
+ assert.equal(engine.sent.length,old.length,'old terminal acks do not retry');
+ recorder.addOnsets([hit(3)],0,CLOCK,engine.frame);
+ recorder.addNotes([{startFrame:START,endFrame:cutoff+100,midi:60,confidence:1,velocity:1}],0,CLOCK,cutoff+100);
+ assert.equal(engine.sent.length,old.length,'late pre-edit audio does not return');
+ engine.frame=cutoff+STEP;
+ recorder.handle(engine.transport({recordingEpoch:2,captureStartFrame:cutoff,recordingLoopStartFrame:START-4*STEP}));
+ recorder.addOnsets([{...hit(0),frame:engine.frame-100}],0,CLOCK,engine.frame);
+ const last=engine.sent.at(-1)!;
+ assert.ok(last.operation.type==='commit-performance');
+ assert.equal(last.operation.recordingEpoch,2);
+ assert.equal(last.operation.replacesCommandId,undefined);
+ assert.equal(recorder.status().provisional[0].step,25,'grid follows composition origin rather than take start');
+ assert.equal(recorder.status().lastError,null,'intentional cancellation is quiet');
+});
+
+test('clear after stop resets the retained window too',()=>{
+ const {engine,recorder,advance,hit}=setup();advance(20*STEP);
+ recorder.handle(engine.transport({recordingEpoch:1}));
+ engine.window.endFrame=engine.frame;
+ recorder.handle(engine.transport({recordingEpoch:1}));
+ recorder.handle(engine.transport({recordingEpoch:2,captureStartFrame:engine.frame+1}));
+ recorder.addOnsets([hit(4)],0,CLOCK,engine.frame);
+ assert.equal(engine.sent.length,0);
+});

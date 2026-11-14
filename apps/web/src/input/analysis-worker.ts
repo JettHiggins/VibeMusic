@@ -8,7 +8,9 @@ export type AnalysisRequest =
  | { type: 'configure'; noiseFloorDb: number; sensitivity?: number }
  | { type: 'measure-noise'; frames: number }
  /** End any open sung note at this raw capture frame (the take closed). */
- | { type: 'flush'; frame: number };
+ | { type: 'flush'; frame: number }
+ /** Drop held notes and pre-edit queued audio; never flush it back into the track. */
+ | { type: 'reset'; frame: number };
 export type AnalysisResult =
  | { type: 'onsets'; onsets: Onset[]; notes: SungNote[]; analysedThrough: number; levelDb: number; analysisMs: number; pitch?: PitchReading | null; processedThrough?: number }
  | { type: 'noise-floor'; db: number }
@@ -24,6 +26,7 @@ let noiseFloorDb = -60;
 let sensitivity: number | undefined;
 /** Raw frame just past the last analysed sample; 0 before audio arrives or after a gap. */
 let lastFrame = 0;
+let captureCutoff = 0;
 let measuring: { frames: number; chunks: Float32Array[]; collected: number } | null = null;
 const post = (message: AnalysisResult) => scope.postMessage(message);
 
@@ -49,6 +52,8 @@ function analysedThrough() {
 
 function onAudio(startFrame: number, samples: Float32Array) {
  if (!detector || !yin || !segmenter) return;
+ if (startFrame + samples.length <= captureCutoff) return;
+ if (startFrame < captureCutoff) { samples = samples.subarray(captureCutoff - startFrame); startFrame = captureCutoff; }
  const started = performance.now();
  const notes: SungNote[] = [];
  if (lastFrame && startFrame !== lastFrame) notes.push(...gap());
@@ -84,6 +89,9 @@ scope.onmessage = ({ data }: MessageEvent<AnalysisRequest>) => {
  } else if (data.type === 'configure') {
   noiseFloorDb = data.noiseFloorDb; sensitivity = data.sensitivity;
   detector?.setNoiseFloor(noiseFloorDb); segmenter?.setNoiseFloor(noiseFloorDb);
+ } else if (data.type === 'reset') {
+  captureCutoff = Math.max(captureCutoff, Math.ceil(data.frame));
+  start(); // Fresh segmenter deliberately drops the old held note.
  } else if (data.type === 'flush') {
   const notes = segmenter?.flush(data.frame) ?? [];
   post({ type: 'onsets', onsets: [], notes, analysedThrough: lastFrame, levelDb: -120, analysisMs: 0 });

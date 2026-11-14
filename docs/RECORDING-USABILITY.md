@@ -44,3 +44,38 @@ Review does not establish calibrated microphone performance on Lenny's laptop or
 ## WS2 consumer review clarifications
 
 WS2 reviewed bd1428b with its calibration/workspace stack and reported clean TypeScript checks and 141 passing tests (one opt-in test skipped). The applied acknowledgment deliberately has the existing shape: it does not distinguish discard-only from musical-history Undo. The input/UI consumer knows whether it requested discardCaptureOnly or had queued/provisional input and should label that result accordingly. discardCaptureOnly requires an existing retained/current recording window; without one it rejects with `No capture to discard`. Tempo remains next-loop and is rejected during active capture; keep those tempo controls disabled during a take. These clarify the tested behavior and add no interface changes.
+
+## Consumer implementation handoff
+
+WS1 temporarily took over the consumer while Leo is out of usage (explicit user assignment).
+The workspace now requests next-beat Record and immediate Clear/Undo. `VoiceInput.prepareCommand`
+is shared by the UI CommandClient and backend SessionCoordinator; it preserves the backend command
+ID and uses discardCaptureOnly when completed provisional/submitted input or a held sung note exists.
+The recorder clears old flight/replacement/retry bookkeeping on epoch changes, tags fresh batches,
+rejects late pre-cutoff results and projects from the composition origin. The worker resets without
+flushing old notes and trims queued chunks at the raw cutoff (effective latency added once).
+
+Explicit live Clear/Undo supersedes local queued pattern intentions too. The engine cancels queued
+edit-pattern commands (the clear target's track, or all for Undo), including discard-only Undo whose
+revision stays unchanged; clients drop those intentions rather than retrying them. There is no wire
+shape change. Clear/Undo remain enabled during capture. Armed Record is never automatically re-issued.
+
+The transport is sticky, its session menu remains above the editor and recording/diagnostic colors
+use the monochrome palette. `tests/browser/recording-consumer.js` exercises the real UI/WASM with
+synthetic silent input and an injected provisional event; `tests/browser/input-pipeline.js` exercises
+synthetic audio through the actual worklet/worker. Neither establishes physical-microphone acceptance.
+
+`tests/browser/next-beat-melody.js` additionally feeds three generated harmonic/vibrato tones through
+the actual browser capture worklet and YIN worker after next-beat Record. It requires C4/E4/G4 at
+composition steps 20/24/28 (durations 3/3/4), three committed notes, no input error and continuing
+playback. This passed on the WS1 Linux Chromium setup (~8.1 ms p95 analysis). It narrows the software
+path under test; it does not reproduce or resolve Lenny's reported physical-device loading error.
+
+`tests/browser/live-capture-edits.js` covers the cross-port live-edit race with continuous generated
+sustained tones through the actual capture and analysis workers. Undo occurs while C4 is held inside
+the worker, before any completed note event exists: discard-only Undo keeps the musical revision.
+Clear then occurs while E4 is held and completed C4 is provisional. Capture/playback continue; every
+subsequent submitted event must use the new epoch and begin at/after the reset cutoff. Only fresh E4
+remains in the real engine, with no old C4 or rejected-input error. This passed in WS1 Chromium
+(~8.6 ms p95 analysis). Run this isolated diagnostic on the consumer branch with Vite and staged WASM
+assets; no microphone permission, provider or raw audio persistence is involved.
