@@ -49,7 +49,7 @@ class ScriptedWorker:
         return replies
 
 
-def synth_take(path, hits=(0.5, 1.0, 1.5), speech=(2.0, 2.7), seconds=4.0):
+def synth_take(path, hits=(0.5, 1.0, 1.5), speech=(2.0, 2.7), seconds=4.0, more_speech=()):
     rng = np.random.default_rng(7)
     t = np.arange(int(seconds * PAYLOAD_RATE)) / PAYLOAD_RATE
     audio = 0.0005 * rng.standard_normal(len(t))  # room noise, about -66 dBFS
@@ -57,10 +57,11 @@ def synth_take(path, hits=(0.5, 1.0, 1.5), speech=(2.0, 2.7), seconds=4.0):
         i = int(start * PAYLOAD_RATE)
         n = int(0.06 * PAYLOAD_RATE)
         audio[i:i + n] += 0.6 * rng.standard_normal(n) * np.exp(-np.arange(n) / (0.015 * PAYLOAD_RATE))
-    a, b = (int(x * PAYLOAD_RATE) for x in speech)
-    voiced = t[a:b] - t[a]
-    syllables = 0.6 + 0.4 * np.sin(2 * np.pi * 4 * voiced)  # stays voiced, like connected speech
-    audio[a:b] += 0.2 * syllables * sum(np.sin(2 * np.pi * 140 * k * voiced) / k for k in range(1, 6))
+    for region in (speech, *more_speech):
+        a, b = (int(x * PAYLOAD_RATE) for x in region)
+        voiced = t[a:b] - t[a]
+        syllables = 0.6 + 0.4 * np.sin(2 * np.pi * 4 * voiced)  # stays voiced, like connected speech
+        audio[a:b] += 0.2 * syllables * sum(np.sin(2 * np.pi * 140 * k * voiced) / k for k in range(1, 6))
     pcm = (np.clip(audio, -1, 1) * 32767).astype("<i2")
     with wave.open(str(path), "wb") as out:
         out.setnchannels(1)
@@ -156,8 +157,8 @@ def test_watermark_is_stream_scoped_monotonic_never_ahead_of_audio_and_held_duri
     assert seen == sorted(set(seen))  # strictly increasing
     speech_start = frame_at(2.0)
     assert all(m < speech_start for m, r in zip(seen, received) if speech_start <= r < frame_at(2.7))
-    assert any(frame_at(0.56) <= m <= frame_at(1.0) for m in seen)  # hits resolve after burst + hangover
-    assert seen[-1] >= frame_at(4.0) - round(0.36 * CONTEXT_RATE)
+    assert any(frame_at(0.56) <= m <= frame_at(0.8) for m in seen)  # a hit resolves ~0.1 s after it ends
+    assert seen[-1] >= frame_at(4.0) - round(0.04 * CONTEXT_RATE)  # trailing quiet is decided at once
 
 
 def test_watermark_waits_for_a_slow_transcription_then_follows_its_span(take):
@@ -262,3 +263,48 @@ def test_threaded_worker_transcribes_off_the_calling_thread_and_reports_failures
     assert seen[0] == ("a", "heard 10 on speech-worker", None)
     assert seen[1][0] == "b" and seen[1][1] is None and "no audio" in seen[1][2]
     assert threading.current_thread().name != "speech-worker"
+
+
+
+def test_a_pause_after_the_wake_word_still_gives_one_command_and_one_span(tmp_path):
+    # A pause longer than the 0.6 s speech hangover splits the wake word off; joining recovers it.
+    take = synth_take(tmp_path / "split.wav", speech=(2.0, 2.4), more_speech=((3.3, 3.7),), seconds=5.0)
+    worker = ScriptedWorker(["Groove.", "Stop."])
+    replies = flat(stream(connect(worker), worker, chunks_from_wav(take)))
+    spans = [r for r in replies if r["type"] == "command-span"]
+    assert len(worker.transcribed) == 2 and len(spans) == 1
+    assert abs(spans[0]["startFrame"] - frame_at(2.0)) <= WINDOW_FRAMES
+    assert abs(spans[0]["endFrame"] - frame_at(3.7)) <= WINDOW_FRAMES  # covers the wake word and the command
+    assert [r["command"]["operation"] for r in replies if r["type"] == "command"] == [{"type": "stop-recording"}]
+    kinds = [r["type"] for r in replies]
+    covering = next(i for i, r in enumerate(replies) if r["type"] == "speech-verified" and r["throughFrame"] >= frame_at(2.0))
+    assert kinds.index("command-span") < kinds.index("command") < covering
+
+
+def test_a_lone_wake_word_holds_coverage_then_is_excluded_and_reported(tmp_path):
+    take = synth_take(tmp_path / "lone.wav", speech=(1.0, 1.4), hits=(), seconds=4.5)
+    worker = ScriptedWorker(["Groove."])
+    log = stream(connect(worker), worker, chunks_from_wav(take))
+    replies = flat(log)
+    kinds = [r["type"] for r in replies]
+    assert "command" not in kinds and kinds.count("command-span") == 1
+    span = kinds.index("command-span")
+    assert kinds[span + 1] == "error"
+    before = [m["throughFrame"] for m in marks(replies[:span])]
+    assert before and max(before) < frame_at(1.0)  # held while a command might still follow
+    resolved_at = next(c for c, rs in log if any(r["type"] == "command-span" for r in rs))
+    assert resolved_at["endFrame"] - frame_at(1.4) >= 2.0 * CONTEXT_RATE  # waited the join window
+    assert max(m["throughFrame"] for m in marks(replies[span:])) > frame_at(1.4)
+
+
+
+def test_fast_beatboxing_is_not_held_as_one_long_speech_segment(tmp_path):
+    hits = tuple(0.5 + 0.25 * i for i in range(12))  # sixteenth notes at 120 BPM for 3 s
+    take = synth_take(tmp_path / "busy.wav", hits=hits, speech=(4.0, 4.0), seconds=4.5)
+    worker = ScriptedWorker()
+    log = stream(connect(worker), worker, chunks_from_wav(take))
+    assert worker.transcribed == []
+    for chunk, replies in log:
+        received = chunk["endFrame"] - 1
+        for mark in marks(replies):
+            assert received - mark["throughFrame"] < 0.25 * CONTEXT_RATE  # never more than ~one hit behind

@@ -49,6 +49,35 @@ with no mutation on error), and only then can `speech-verified` advance. Coverag
 (`streamId`, `fromFrame`, `throughFrame`), never crosses a gap, and stays behind any segment still being
 transcribed. A recognition failure stops that stream's coverage and sends `speech-status available:false`.
 
+### Local recognition (faster-whisper)
+
+Team decision (docs/STATUS.md): local faster-whisper, no API or key. Install the optional requirements and enable it:
+
+```sh
+python -m pip install -r services/agent/requirements-speech.txt
+GROOVE_STT=faster-whisper python -m uvicorn groove_agent.app:app --app-dir services/agent --host 127.0.0.1 --port 8000
+```
+
+The model downloads into the Hugging Face cache on first use (`GROOVE_STT_MODEL`, default `base.en`, about 140 MB;
+also `GROOVE_STT_DEVICE`, `GROOVE_STT_COMPUTE`, `GROOVE_STT_THREADS`). `/healthz` reports the speech provider.
+Measured on this Windows CPU (int8, 4 threads) with Windows text-to-speech commands, not real users. Each model
+recognized all seven test phrases and the interpreter mapped them to the right operations:
+
+| model | load | decode per command | note |
+|---|---|---|---|
+| tiny.en | 6.5 s | 0.21 s | fastest |
+| base.en (default) | 6.7 s | 0.38 s | default: margin for real voices at under 0.5 s |
+| small.en | 19.9 s | 1.2 s | slower than the two-second acknowledgment budget allows with hangover |
+
+A spoken command is proposed about hangover (0.6 s) plus decode after it ends. People pause after the wake word, so
+segmentation keeps a 0.6 s speech hangover. A segment that is only "Groove" waits up to 2 s for the command that
+follows, then gets one span covering both, or is excluded and reported as not understood. Short bursts
+(beatboxed hits, under 150 ms of continuous sound) close after 0.1 s of quiet and never reach the recognizer.
+
+`GROOVE_TEST_STT=1 GROOVE_TEST_STT_WAV=<16 kHz mono WAV of "Groove, stop"> python -m pytest services/agent/tests/test_stt.py`
+streams that phrase between beatboxed hits through the real Connection, worker and model. Do not commit the WAV.
+Physical microphones, real voices, accents and room noise are not yet measured.
+
 Without a configured worker the service answers `available:false` and never sends `speech-verified`.
 EXPERIMENTAL: energy segmentation stands in for a real VAD and treats sustained singing as a candidate segment.
 `tests/test_speech_harness.py` streams a synthetic WAV through the real `Connection` with a SCRIPTED worker; it

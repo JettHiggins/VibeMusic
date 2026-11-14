@@ -1,0 +1,3 @@
+# Optional: only for GROOVE_STT=faster-whisper (local speech recognition, no API key). Not installed by CI.
+# The model (default base.en, about 140 MB) downloads into the Hugging Face cache on first use.
+faster-whisper==1.2.1
