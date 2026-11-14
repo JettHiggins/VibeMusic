@@ -83,5 +83,25 @@
     "pullRequest": 28,
     "headSha": "56f67492733595cb5de8b8c7e7d377529a4b9200",
     "body": "WS1 approved and integrated this proposal as the basis for the published shared schemas/examples. Final normative decisions: docs/VOICE-RESEARCH.md. Coordinated rollout, producers default-off until browser adoption/preview lands; strict old clients are not compatible with new variants. Preserve newer UI intent over delayed STT/model results, exact candidate binding, pending patch acceptance, async play cancellation, correlated preview acknowledgments and unchanged musical state. Node 166 passed/one optional skip; TypeScript/Python positive/negative/direction checks, live-service/WASM and build passed. Interface publication only; WS1 browser consumer and WS3 producers/tools still required."
+  },
+  {
+    "pullRequest": 33,
+    "headSha": "713975de4d1cb8f6a2461e501204eb05a0711587",
+    "body": "WS1 source review and isolated combined backend verification: 263 passed / 12 optional skips across #33/#34/#35 plus offline isolation. Adaptive steady-noise coverage and recognition padding have focused regressions; preserve the documented steady-noise/TTS limits. Suitable as a repair building block, not evidence of real room conversation or foreground discrimination. Root is preparing reviewed integration; do not restart or duplicate this work."
+  },
+  {
+    "pullRequest": 35,
+    "headSha": "ecbc07b50e64db475c70047077429990fdae71c9",
+    "body": "WS1 reviewed the incremental span/hangover fix against #33 and ran the combined backend suite (263 passed / 12 optional skips). Trimming after the final speech run addresses the reproduced post-command beatboxing case; retain the explicit limitation for speech-like sustained/percussive runs. Suitable for integration with #33, pending combined browser flow. Physical playtest remains required."
+  },
+  {
+    "pullRequest": 34,
+    "headSha": "e19b72fdd19f16867160d1d020f51e07aa734f92",
+    "body": "WS1 reproduced remaining unsafe fallback at this exact head using interpret + SessionState selected synth-1: \"record synth four\" records synth-1; \"clear synth 4\" clears synth-1; \"mute synth 9\" mutes synth-1. \"record synth two and synth three\" chooses synth-2. find_target returns the generic synth fallback before _target_or_selected can reject unresolved tokens. Please refuse explicit invalid or conflicting track specifications before generic fallback, with regressions for record/clear/mute across all selections. Keep bare record/clear and genuinely unnumbered synth behavior deliberate. Please also implement deterministic metronome/precise erase plus captureErasure.commandId stale-intent invalidation in a separate focused repair PR; the contracts have been published since 5560129 (see issue #9)."
+  },
+  {
+    "pullRequest": 36,
+    "headSha": "5295c5f1629df110000ad1968527c2a4ac88f588",
+    "body": "WS1 isolated combined review with both engine capabilities: Node 186 passed / one optional skip; shared checks passed with Python jsonschema available. The profile and same-ID in-flight fence integration are useful; no human acceptance claimed. Follow-up before frozen test: when measure-noise filters sustained pitched input, collected frames may never reach the target, but microphone.ts times out with \"No microphone audio arrived\" although real audio is flowing. Report insufficient quiet/background speech rather than a missing device and test the actual worker/lifecycle path. The approved normal-volume foreground reference/guidance is also still missing; document remaining scope and implement it in a focused WS2 PR. WS1 will exercise mouse erasure with real AudioWorklet and surviving queued input. Do not duplicate engine work."
   }
 ]
