@@ -127,6 +127,7 @@
                     "additionalProperties": false
                   },
                   "notes": {
+                    "maxItems": 64,
                     "type": "array",
                     "items": {
                       "type": "object",
@@ -167,6 +168,7 @@
                     }
                   },
                   "hits": {
+                    "maxItems": 192,
                     "type": "array",
                     "items": {
                       "type": "object",

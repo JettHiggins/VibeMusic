@@ -7,6 +7,7 @@ function emptyStep() { return {notes:[0,0,0,0],n:0,time:2,flags:0,vel:0,lvl:0,ra
 /** Translate logical sessions to upstream FirmwareAudio.sync without mutating either input. */
 export function firmwareSnapshot(input: SessionState, metadata: FirmwareMetadata) {
  const session=SessionState.parse(input);
+ if(!Number.isInteger(session.tempo))throw new Error('Integer BPM required by firmware');
  if(session.tracks.some((t,k)=>t.id!==TRACK_IDS[k]))throw new Error('Tracks must be in firmware slot order');
  if(session.selected.trackId!=='drums' && session.selected.lane)throw new Error('Only drum targets have lanes');
  const g=metadata.globals.map(p=>p.default);g[0]=session.tempo;g[1]=0;g[2]=0;g[13]=0;
@@ -31,6 +32,8 @@ export function firmwareSnapshot(input: SessionState, metadata: FirmwareMetadata
   const dstep=Array.from({length:64},()=>({on:0,lvl:Array(16).fill(0),rat:Array(16).fill(0)}));
   if(k===3 && track.notes.length)throw new Error('Drum tracks cannot contain melodic notes');
   if(k!==3 && track.hits.length)throw new Error('Melodic tracks cannot contain drum hits');
+  const ids=[...track.notes,...track.hits].map(event=>event.id);
+  if(new Set(ids).size!==ids.length)throw new Error('Duplicate pattern event ID');
   const occupied=new Set<number>();
   for(const note of track.notes){
    if(note.velocity===0)continue;

@@ -78,3 +78,46 @@ test('stopping an armed recording cancels the take and never enters recording', 
  assert.equal(s.core.transport().recordingState,'idle');assert.equal(s.core.transport().recording,false);
  assert.ok(s.messages.some(m=>m.type==='ack'&&m.commandId==='record'&&m.status==='rejected'));
 });
+test('manual pattern edits apply atomically at loop boundary and preserve patch state', {skip:!ready},async()=>{
+ const s=await setup(120);s.core.dispatch(s.command('play',{type:'play',playing:true}));s.render(128);
+ const patch=s.core.getSession().tracks[0].patch;
+ s.core.dispatch(s.command('edit',{type:'edit-pattern',trackId:'synth-1',notes:[{id:'manual',step:63,duration:2,midi:67,velocity:0.8}],hits:[]},'next-loop'));
+ assert.equal(s.core.getSession().tracks[0].notes.length,0);s.render(352800);
+ assert.equal(s.core.getSession().tracks[0].notes[0].step,63);assert.deepEqual(s.core.getSession().tracks[0].patch,patch);
+ s.core.dispatch(s.command('bad-edit',{type:'edit-pattern',trackId:'drums',notes:[{id:'wrong',step:0,duration:1,midi:60,velocity:1}],hits:[]},'next-loop'));
+ assert.equal(s.core.getSession().tracks[3].notes.length,0);
+ assert.ok(s.messages.some(m=>m.type==='ack'&&m.commandId==='bad-edit'&&m.status==='rejected'));
+});
+test('load normalizes saved revisions, supports undo, and rejects malformed musical state', {skip:!ready},async()=>{
+ const s=await setup(120);const before=s.core.getSession();
+ const saved=structuredClone(before);saved.revision=999;saved.tempo=140;saved.tracks[3].hits=[];
+ s.core.dispatch(s.command('load',{type:'load-session',session:saved},'next-loop'));
+ assert.equal(s.core.getSession().revision,1);assert.equal(s.core.getSession().tempo,140);
+ s.core.dispatch(s.command('undo-load',{type:'undo'},'next-loop'));assert.deepEqual(s.core.getSession(),{...before,revision:2});
+ const bad=structuredClone(saved);bad.tempo=92.5;
+ s.core.dispatch(s.command('bad-load',{type:'load-session',session:bad},'next-loop'));
+ assert.equal(s.core.getSession().revision,2);
+ s.core.dispatch(s.command('record',{type:'record',target:{trackId:'synth-1'}},'next-loop'));s.render(352801);
+ s.core.dispatch(s.command('recording-load',{type:'load-session',session:saved},'next-loop'));
+ assert.ok(s.messages.some(m=>m.type==='ack'&&m.commandId==='recording-load'&&m.status==='rejected'));
+});
+test('note and drum auditions produce real audio without changing session or recording patterns', {skip:!ready},async()=>{
+ const s=await setup(120);const before=s.core.getSession();
+ s.core.audition({kind:'drum',lane:'kick',velocity:1});const drums=s.render(4096);
+ assert.ok(drums.some(v=>Math.abs(v)>0.001));
+ s.core.audition({kind:'note',trackId:'synth-1',midi:60,velocity:0.8,on:true});s.render(4096);
+ s.core.audition({kind:'note',trackId:'synth-1',midi:60,velocity:0,on:false});
+ assert.deepEqual(s.core.getSession(),before);assert.equal(s.core.transport().recording,false);
+});
+test('volume edits use session mixer and keep pattern data intact', {skip:!ready},async()=>{
+ const s=await setup(120);const hits=s.core.getSession().tracks[3].hits;
+ s.core.dispatch(s.command('volume',{type:'volume',trackId:'drums',volume:0.25}));
+ assert.equal(s.core.getSession().tracks[3].volume,0.25);assert.equal(s.dsp.previous.tracks[3].p[0],32);
+ assert.deepEqual(s.core.getSession().tracks[3].hits,hits);
+});
+test('loading while playing restarts imported music at its boundary without stopping transport', {skip:!ready},async()=>{
+ const s=await setup(120);s.core.dispatch(s.command('play',{type:'play',playing:true}));s.render(128);
+ const saved=s.core.getSession();saved.tempo=140;
+ s.core.dispatch(s.command('load-playing',{type:'load-session',session:saved},'next-loop'));s.render(352800);
+ assert.equal(s.core.transport().playing,true);assert.equal(s.core.getSession().tempo,140);assert.equal(s.core.transport().loopStartFrame,352800);
+});

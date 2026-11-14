@@ -1,4 +1,4 @@
-import {ClientMessage,SessionCommand,createSession,type EngineAdapter,type SessionState} from '@voicesynth/contracts';
+import {AuditionEvent,ClientMessage,SessionCommand,createSession,type EngineAdapter,type SessionState} from '@voicesynth/contracts';
 import {loadMetadata,type FirmwareMetadata} from './metadata.ts';
 import {firmwareSnapshot} from './snapshot.ts';
 export class BrowserEngine implements EngineAdapter {
@@ -48,6 +48,10 @@ export class BrowserEngine implements EngineAdapter {
    const gain=context.createGain();gain.gain.value=0.5;node.connect(gain).connect(context.destination);
    try{await ready;}finally{clearTimeout(timeout);}
   }catch(error){this.node?.disconnect();this.node=null;if(context.state!=='closed')await context.close();this.context=null;throw error;}
+ }
+ audition(input:AuditionEvent){
+  const event=AuditionEvent.parse(input);if(!this.node)throw new Error('Enable audio first');
+  this.node.port.postMessage({type:'audition',event});
  }
  dispatch(input:SessionCommand):ClientMessage{
   const c=SessionCommand.parse(input);

@@ -8,7 +8,7 @@ export const Target = z.strictObject({ trackId: TrackId, lane: Lane.optional() }
 export const Patch = z.strictObject({ engine: z.number().int().nonnegative(), preset: z.number().int().nonnegative(), parameters: z.record(z.string(), z.number().finite()), engineRevision: id });
 export const Note = z.strictObject({ id, step: z.number().int().min(0).max(63), duration: z.number().int().min(1).max(64), midi: z.number().int().min(0).max(127), velocity: unit });
 export const Hit = z.strictObject({ id, step: z.number().int().min(0).max(63), lane: Lane, velocity: unit });
-export const Track = z.strictObject({ id: TrackId, name: id, muted: z.boolean(), volume: unit, patch: Patch, notes: z.array(Note), hits: z.array(Hit) });
+export const Track = z.strictObject({ id: TrackId, name: id, muted: z.boolean(), volume: unit, patch: Patch, notes: z.array(Note).max(64), hits: z.array(Hit).max(192) });
 export const SessionState = z.strictObject({ version: z.literal(1), revision: frame, tempo: z.number().min(40).max(240), bars: z.literal(4), beatsPerBar: z.literal(4), stepsPerBeat: z.literal(4), selected: Target, tracks: z.array(Track).length(4) });
 export const PerformanceEvent = z.discriminatedUnion('kind', [
  z.strictObject({ kind: z.literal('onset'), id, target: Target, captureFrame: frame, clockId: id, confidence: unit, velocity: unit }),
@@ -24,6 +24,9 @@ const Operation = z.discriminatedUnion('type', [
  z.strictObject({ type: z.literal('clear'), target: Target }),
  z.strictObject({ type: z.literal('mute'), trackId: TrackId, muted: z.boolean() }),
  z.strictObject({ type: z.literal('undo') }),
+ z.strictObject({ type: z.literal('edit-pattern'), trackId: TrackId, notes: z.array(Note).max(64), hits: z.array(Hit).max(192) }),
+ z.strictObject({ type: z.literal('volume'), trackId: TrackId, volume: unit }),
+ z.strictObject({ type: z.literal('load-session'), session: SessionState }),
  z.strictObject({ type: z.literal('commit-performance'), events: z.array(PerformanceEvent).min(1).max(256), excludedSpans: z.array(SpeechSpan).max(64), verifiedThroughFrame: frame }),
  z.strictObject({ type: z.literal('apply-patch'), trackId: TrackId, patch: Patch })
 ]);
@@ -51,6 +54,12 @@ export type Transport = z.infer<typeof Transport>;
 export type ClientMessage = z.infer<typeof ClientMessage>;
 export type ServerMessage = z.infer<typeof ServerMessage>;
 export type PatchCandidate = z.infer<typeof PatchCandidate>;
+export const AuditionEvent = z.discriminatedUnion('kind',[
+ z.strictObject({kind:z.literal('note'),trackId:z.enum(['synth-1','synth-2','synth-3']),midi:z.number().int().min(0).max(127),velocity:unit,on:z.boolean()}),
+ z.strictObject({kind:z.literal('drum'),lane:Lane,velocity:unit})
+]);
+export type AuditionEvent=z.infer<typeof AuditionEvent>;
+export interface AuditionEngineAdapter extends EngineAdapter { audition(event:AuditionEvent):void; }
 export interface EngineAdapter {
  initialize(): Promise<void>;
  getSession(): SessionState;

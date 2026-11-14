@@ -14,7 +14,7 @@ class VoiceSynthProcessor extends AudioWorkletProcessor {
   super(options);const p=options.processorOptions;
   try{this.core=new EngineCore(new FirmwareAudio(p.module),p.metadata,p.session,p.clockId,m=>this.port.postMessage(m));}
   catch(error){this.port.postMessage({type:'engine-error',message:String(error)});return;}
-  this.port.onmessage=({data})=>{try{this.core.dispatch(data);}catch(e){this.port.postMessage({type:'engine-error',message:String(e)});}};
+  this.port.onmessage=({data})=>{try{if(data.type==='audition')this.core.audition(data.event);else this.core.dispatch(data);}catch(e){this.port.postMessage({type:'engine-error',message:String(e)});}};
   this.port.postMessage({type:'session',session:this.core.getSession()});
  }
  process(_inputs:Float32Array[][],outputs:Float32Array[][]){

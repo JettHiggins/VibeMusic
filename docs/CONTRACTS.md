@@ -53,3 +53,7 @@ The engine retains the latest recording window after stopping, so a final verifi
 BrowserEngine.getAudioContext() exposes the actual shared 44.1 kHz context after initialization so the capture worklet uses the same sample clock. Correct measured input latency once in the input pipeline. SessionCoordinator.captureAllowed is false on agent disconnect and requests local stop-recording on disconnect when the last transport shows an armed/active take; the input owner must also stop submitting new events immediately when disconnected. Wire actual measured recognition spans via ClientMessage rather than the development transcript field's zero-length span.
 
 Pull the updated schemas and restart the Python service after contract changes; its JSON Schema validators are cached per process. `fixtures/PerformanceBatch.json` is a structurally valid example, not real captured audio.
+
+## Manual editing and restore
+
+`edit-pattern` and `load-session` require next-loop boundaries. `volume` permits immediate changes. Complete semantics and audition capability examples are in EDITING.md. Pattern arrays are limited to 64 monophonic notes or 192 drum hits, with unique event IDs per track. Imported fractional BPM rejects at firmware validation. Load replaces musical state with a fresh revision, releases live voices, clears the old recording window, and rejects during an armed/active take.

@@ -1,9 +1,9 @@
-import { SessionCommand, type SessionState, type ClientMessage, type Transport } from '@voicesynth/contracts';
+import { AuditionEvent, SessionCommand, type SessionState, type ClientMessage, type Transport } from '@voicesynth/contracts';
 import type { FirmwareMetadata } from './metadata.ts';
 import { firmwareSnapshot } from './snapshot.ts';
 import {commitPerformance,type RecordingWindow} from './performance.ts';
 export interface FirmwareBridge {
- w: { memory: WebAssembly.Memory; vs_playing(): number; vs_beat(): number; vs_phase(): number; vs_render(frames:number): number; preview_play(on:number): number };
+ w: { memory: WebAssembly.Memory; vs_playing(): number; vs_beat(): number; vs_phase(): number; vs_render(frames:number): number; preview_play(on:number): number; preview_panic(): number; vs_note(track:number,note:number,velocity:number,on:number): number };
  sync(state: ReturnType<typeof firmwareSnapshot>): void;
 }
 function copy<T>(value:T):T { return JSON.parse(JSON.stringify(value)); }
@@ -21,6 +21,11 @@ export class EngineCore {
  constructor(private dsp: FirmwareBridge, private metadata:FirmwareMetadata, session:SessionState, private clockId:string, private emit:(m:ClientMessage)=>void){
   this.session=copy(session);this.sync();
  }
+ audition(input:AuditionEvent){
+  const event=AuditionEvent.parse(input);
+  if(event.kind==='drum')this.dsp.w.vs_note(3,{kick:36,snare:38,'closed-hat':42}[event.lane],Math.round(event.velocity*127),1);
+  else this.dsp.w.vs_note(['synth-1','synth-2','synth-3'].indexOf(event.trackId),event.midi,Math.round(event.velocity*127),event.on?1:0);
+ }
  getSession(){return copy(this.session);}
  private sync(){
   const snapshot=firmwareSnapshot(this.session,this.metadata);
@@ -36,7 +41,7 @@ export class EngineCore {
   const previous=this.replies.get(c.id);if(previous){this.emit(previous);return previous;}
   try{
    this.propose(c);
-   const requiresBoundary=['record','tempo','clear','undo','apply-patch','commit-performance'].includes(c.operation.type);
+   const requiresBoundary=['record','tempo','clear','undo','apply-patch','commit-performance','edit-pattern','load-session'].includes(c.operation.type);
    if(requiresBoundary && c.boundary!=='next-loop')throw new Error('Operation requires next-loop boundary');
    if(c.operation.type==='record'&&!this.dsp.w.vs_playing()){
     this.dsp.w.preview_play(1);this.cycle=0;this.loopStart=this.frame;this.startRequested=true;
@@ -56,6 +61,15 @@ export class EngineCore {
   switch(op.type){
    case 'select': state.selected=op.target;break;
    case 'play':if(op.playing&&this.recording?.endFrame===null)throw new Error('Stop recording before restarting playback');break;
+   case 'edit-pattern':{
+    const track=state.tracks.find(t=>t.id===op.trackId)!;track.notes=op.notes;track.hits=op.hits;break;
+   }
+   case 'volume':state.tracks.find(t=>t.id===op.trackId)!.volume=op.volume;break;
+   case 'load-session':{
+    if(this.recording?.endFrame===null||this.pending.some(c=>c.operation.type==='record'))throw new Error('Stop recording before loading a session');
+    const restored=copy(op.session);restored.revision=this.session.revision+1;
+    firmwareSnapshot(restored,this.metadata);return restored;
+   }
    case 'mute':state.tracks.find(t=>t.id===op.trackId)!.muted=op.muted;break;
    case 'tempo':if(this.recording?.endFrame===null)throw new Error('Stop recording before changing tempo');if(!Number.isInteger(op.bpm))throw new Error('Integer BPM required');state.tempo=op.bpm;break;
    case 'clear':{
@@ -81,6 +95,11 @@ export class EngineCore {
   if(c.operation.type==='undo')this.history.pop();
   else if(!['select','play','record','stop-recording'].includes(c.operation.type)){this.history.push(old);if(this.history.length>64)this.history.shift();}
   this.session=state;
+  if(c.operation.type==='load-session'){
+   this.recording=null;
+   const playing=!!this.dsp.w.vs_playing();this.dsp.w.preview_panic();
+   if(playing){this.dsp.w.preview_play(1);this.cycle=0;this.loopStart=this.frame;this.startRequested=true;}
+  }
   if(c.operation.type==='record')this.recording={startFrame:this.frame,endFrame:null,loopStartFrame:this.loopStart,tempo:this.session.tempo,target:copy(c.operation.target)};
   if(c.operation.type==='stop-recording'){
    if(this.recording&&this.recording.endFrame===null)this.recording.endFrame=this.frame;

@@ -32,3 +32,9 @@ test('our snapshot produces real audible finite output for every SLOOP engine', 
   assert.ok([...l,...r].every(x=>Number.isFinite(x)&&Math.abs(x)<=1));assert.ok(l.reduce((a,b)=>a+Math.abs(b),0)>0.01,`engine ${engine} must sound`);
  }
 });
+test('duplicate pattern event IDs and oversized imported patterns cannot reach firmware', {skip:!ready},()=>{
+ const session=createSession();session.tracks[0].notes=[{id:'same',step:0,duration:1,midi:60,velocity:1},{id:'same',step:2,duration:1,midi:64,velocity:1}];
+ assert.throws(()=>firmwareSnapshot(session,metadata()),/Duplicate/);
+ session.tracks[0].notes=Array.from({length:65},(_,i)=>({id:String(i),step:0,duration:1,midi:60,velocity:1}));
+ assert.throws(()=>firmwareSnapshot(session,metadata()));
+});

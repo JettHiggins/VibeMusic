@@ -13,7 +13,7 @@ Milestone 0 is available on `engine-integration` (foundation a19badd). Build ins
 
 ## Workstream 2 next integration
 
-Use BrowserEngine via EngineAdapter and the existing coordinator. Own UI/input/persistence directories as documented. The engine now supports performance-batch submission, shared capture clock access via BrowserEngine.getAudioContext(), and recording/count-in state. See the additive v1 recording contract and fixtures. Editing/import/export commands are still pending; propose those contracts with Workstream 1. The harness's transcript field is not a microphone implementation. Server command-span events must reach the provisional-event buffer before commit.
+Use BrowserEngine via EngineAdapter and the existing coordinator. Own UI/input/persistence directories as documented. The engine now supports performance-batch submission, shared capture clock access via BrowserEngine.getAudioContext(), and recording/count-in state. See the additive v1 recording contract and fixtures. Editing and load commands are now available; see EDITING.md for edit-pattern, volume, load-session, and real note/drum auditions. Save/export uses the authoritative session snapshot; storage/UI remains Workstream 2. The harness's transcript field is not a microphone implementation. Server command-span events must reach the provisional-event buffer before commit.
 
 ## Workstream 3 next integration
 
