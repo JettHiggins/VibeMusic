@@ -1,5 +1,7 @@
 # Recording usability: WS1 contract and engine handoff
 
+Current priority: [PLAYTEST-REPAIR.md](PLAYTEST-REPAIR.md) and [STATUS.md](STATUS.md). New repair behavior is planned, not yet implemented; historical demo/count-in/editing/noise guidance below may be superseded. Use a frozen integrated commit for human acceptance.
+
 This capability is integrated into `engine-integration` through reviewed PR #12 (source ece7d80; consumer review covered bd1428b). Consumers should integrate its approved merge commit, not invent equivalent fields. The browser UI and input reset consumer remain WS2 work; the backend parser/proposal changes remain WS3 work. Existing callers remain supported while those owners integrate.
 
 ## Scheduling and live edits

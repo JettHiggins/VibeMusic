@@ -1,3 +1,23 @@
+# Workstream 2 — playtest repair
+
+Owner: Leo. Ownership: UI, microphone capture, calibration, performance analysis and persistence.
+
+Current scope and acceptance: [PLAYTEST-REPAIR.md](PLAYTEST-REPAIR.md). Read [STATUS.md](STATUS.md) for the latest contract publication/dependencies. Supersedes older feature assignments. No producer/consumer may invent shared interfaces; WS1 publishes them first. Finish independent reproduction while a contract is pending.
+
+## Copyable goal
+
+```text
+/goal Own WS2 for the playtest repair milestone. Read AGENTS.md, PLAN.md, docs/STATUS.md, docs/WORKSTREAM-2.md and PLAYTEST-REPAIR.md. Preserve current work; use a fresh repair branch from reviewed engine-integration. Prioritize aggressive Noisy room capture cleanup, normal-volume singing on all three synths, calibration keyed to device/profile and honest pitch-versus-verification feedback. Do not let foreground singing become the learned noise floor. Make individual committed/provisional drum hits and melody notes easy to erase during playback/recording. Wire only WS1-published erase/metronome/countdown interfaces; keep the monochrome UI simple. Submit small PRs. Validate on Lenny's mic with conversation, in track orders 1-2-3 and 3-1-2; synthetic success alone does not close the report. Do not duplicate backend or sound-search work.
+```
+
+## Handoff requirements
+
+Use a fresh owner-specific repair branch from reviewed engine-integration; preserve existing work, .env and assets. Small PRs to engine-integration, merged by WS1. Include exact commit/PR, reproduction, behavior, checks, limitations and next integration step. Never commit secrets/raw microphone audio/models. Do not count synthetic evidence as human acceptance.
+
+## Historical handoff — superseded
+
+The material below is historical evidence, not current assignments or setup instructions.
+
 # Workstream 2 handoff — UI and musical input
 
 Branch `ui-input`, based on `engine-integration` @ `ca78e57` (milestone 0 foundation `a19badd` plus the real engine, recording windows, `commit-performance`, editing and `load-session`). Owned directories: `apps/web/src/input`, `apps/web/src/ui`, `apps/web/src/persistence`.
