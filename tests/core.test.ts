@@ -121,3 +121,9 @@ test('loading while playing restarts imported music at its boundary without stop
  s.core.dispatch(s.command('load-playing',{type:'load-session',session:saved},'next-loop'));s.render(352800);
  assert.equal(s.core.transport().playing,true);assert.equal(s.core.getSession().tempo,140);assert.equal(s.core.transport().loopStartFrame,352800);
 });
+test('record cancelled before any audio callback never opens a recording window', {skip:!ready},async()=>{
+ const s=await setup(120);
+ s.core.dispatch(s.command('record-early',{type:'record',target:{trackId:'drums',lane:'kick'}},'next-loop'));
+ s.core.dispatch(s.command('cancel-early',{type:'stop-recording'}));s.render(352801);
+ assert.equal(s.core.transport().recording,false);assert.equal(s.core.transport().recordingState,'idle');assert.equal(s.core.transport().playing,true);
+});

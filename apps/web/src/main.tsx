@@ -56,3 +56,6 @@ function App(){
  </main>;
 }
 createRoot(document.getElementById('root')!).render(<App/>);
+if(import.meta.hot)import.meta.hot.dispose(()=>{
+ coordinator.dispose();agent.dispose();engine.dispose();
+});
