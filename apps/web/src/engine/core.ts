@@ -1,10 +1,10 @@
-import { AuditionEvent, SessionCommand, type SessionState, type ClientMessage, type Transport } from '@voicesynth/contracts';
+import { AuditionEvent, SessionCommand, type SessionState, type ClientMessage, type Transport, type CaptureErasure } from '@voicesynth/contracts';
 import type { FirmwareMetadata } from './metadata.ts';
 import {OutputTransition} from './output-transition.ts';
 import { firmwareSnapshot } from './snapshot.ts';
-import {commitPerformance,type RecordingWindow} from './performance.ts';
+import {commitPerformance,performanceWasErased,type RecordingWindow} from './performance.ts';
 export interface FirmwareBridge {
- w: { memory: WebAssembly.Memory; vs_playing(): number; vs_beat(): number; vs_phase(): number; vs_render(frames:number): number; preview_play(on:number): number; preview_panic(): number; vs_note(track:number,note:number,velocity:number,on:number): number };
+ w: { memory: WebAssembly.Memory; vs_playing(): number; vs_beat(): number; vs_phase(): number; vs_render(frames:number): number; preview_play(on:number): number; preview_panic(): number; vs_note(track:number,note:number,velocity:number,on:number): number; vs_erase_note?(track:number,note:number):void };
  sync(state: ReturnType<typeof firmwareSnapshot>): void;
 }
 function copy<T>(value:T):T { return JSON.parse(JSON.stringify(value)); }
@@ -14,6 +14,7 @@ export class EngineCore {
  private pending: SessionCommand[]=[];
  private scheduledBeats=new Map<string,number>();
  private recordingEpoch=0;
+ private captureErasure:CaptureErasure|null=null;
  private recording:RecordingWindow|null=null;
  private replies=new Map<string,ClientMessage>();
  private history: SessionState[]=[];
@@ -50,6 +51,7 @@ export class EngineCore {
    if(c.operation.type==='record'&&!['next-beat','next-loop'].includes(c.boundary))throw new Error('Record requires next-beat or next-loop boundary');
    if(c.boundary==='next-beat'&&c.operation.type!=='record')throw new Error('Next-beat boundary is only supported for record');
    if(requiresBoundary && c.boundary!=='next-loop')throw new Error('Operation requires next-loop boundary');
+   if(c.operation.type==='erase-event'&&c.boundary!=='immediate')throw new Error('Erase requires immediate boundary');
    if(c.operation.type==='commit-performance'&&c.operation.replacesCommandId){
     const replacesCommandId=c.operation.replacesCommandId;
     const index=this.pending.findIndex(queued=>queued.id===replacesCommandId);
@@ -83,8 +85,21 @@ export class EngineCore {
   if(c.expectedRevision!==this.session.revision)throw new Error('Stale revision');
   const state=copy(this.session);const op=c.operation;
   const target='target' in op?op.target:undefined;
-  if(target && ((target.trackId==='drums' && !target.lane && ['select','record'].includes(op.type)) || (target.trackId!=='drums' && target.lane)))throw new Error('Invalid lane for target');
+  if(target && ((target.trackId==='drums' && !target.lane && ['select','record','erase-event'].includes(op.type)) || (target.trackId!=='drums' && target.lane)))throw new Error('Invalid lane for target');
   switch(op.type){
+   case 'erase-event':{
+    const track=state.tracks.find(t=>t.id===op.target.trackId)!;
+    if(track.id==='drums'){
+     const before=track.hits.length;track.hits=track.hits.filter(h=>h.lane!==op.target.lane||h.step!==op.step);
+     if(track.hits.length===before)return state;
+    }else{
+     const removed=track.notes.filter(n=>(op.step-n.step+64)%64<n.duration);
+     if(!removed.length)return state;
+     if(!this.dsp.w.vs_erase_note)throw new Error('Rebuild engine assets for melodic erasure');
+     track.notes=track.notes.filter(n=>!removed.includes(n));
+    }
+    break;
+   }
    case 'select': state.selected=op.target;break;
    case 'play':if(op.playing&&this.recording?.endFrame===null)throw new Error('Stop recording before restarting playback');break;
    case 'edit-pattern':{
@@ -110,7 +125,7 @@ export class EngineCore {
     if(!this.recording)throw new Error('No recording window');
     if(op.recordingEpoch!==undefined&&op.recordingEpoch!==this.recordingEpoch)throw new Error('Capture epoch mismatch');
     const result=commitPerformance(state,op,this.recording,this.clockId,this.frame);
-    result.revision++;firmwareSnapshot(result,this.metadata);return result;
+    if(JSON.stringify(result.tracks)!==JSON.stringify(state.tracks))result.revision++;firmwareSnapshot(result,this.metadata);return result;
    }
    default:throw new Error('Operation not supported by this engine build');
   }
@@ -123,15 +138,15 @@ export class EngineCore {
   const old=this.session;
   firmwareSnapshot(state,this.metadata);
   if(c.operation.type==='undo'){if(!c.operation.discardCaptureOnly)this.history.pop();}
-  else if(!['select','play','record','stop-recording'].includes(c.operation.type)){this.history.push(old);if(this.history.length>64)this.history.shift();}
+  else if(state.revision!==old.revision&&!['select','play','record','stop-recording'].includes(c.operation.type)){this.history.push(old);if(this.history.length>64)this.history.shift();}
   if(state.tracks.some((track,i)=>JSON.stringify(track.patch)!==JSON.stringify(old.tracks[i].patch)))this.output.begin();
   this.session=state;
   if(c.operation.type==='load-session'){
-   this.recording=null;
+   this.recording=null;this.captureErasure=null;
    const playing=!!this.dsp.w.vs_playing();this.dsp.w.preview_panic();
    if(playing){this.dsp.w.preview_play(1);this.cycle=0;this.loopStart=this.frame;this.startRequested=true;}
   }
-  if(c.operation.type==='record'){this.recordingEpoch++;this.recording={startFrame:this.frame,captureStartFrame:this.frame,endFrame:null,loopStartFrame:this.loopStart,tempo:this.session.tempo,target:copy(c.operation.target)};}
+  if(c.operation.type==='record'){this.captureErasure=null;this.recordingEpoch++;this.recording={startFrame:this.frame,captureStartFrame:this.frame,endFrame:null,loopStartFrame:this.loopStart,tempo:this.session.tempo,target:copy(c.operation.target)};}
   if(c.operation.type==='stop-recording'){
    if(this.recording&&this.recording.endFrame===null)this.recording.endFrame=this.frame;
    this.pending=this.pending.filter(queued=>{if(queued.operation.type!=='record')return true;this.scheduledBeats.delete(queued.id);this.ack(queued,'rejected','Recording cancelled');return false;});
@@ -153,7 +168,7 @@ export class EngineCore {
   const clear=c.operation.type==='clear'?c.operation.target:null;
   const conflicts=clear&&this.recording&&clear.trackId===this.recording.target.trackId&&(!clear.lane||clear.lane===this.recording.target.lane);
   if(this.recording&&(c.operation.type==='undo'||conflicts)){
-   this.recordingEpoch++;
+   this.recordingEpoch++;this.captureErasure=null;this.recording.erasedThrough={};
    this.recording.captureStartFrame=this.frame+1;
    if(this.recording.tempo!==this.session.tempo){
     this.recording.tempo=this.session.tempo;
@@ -165,9 +180,38 @@ export class EngineCore {
    this.emit({type:'transport',transport:this.transport()});
    for(const queued of cancelled)this.ack(queued,'rejected','Capture discarded by live edit');
   }
+  if(c.operation.type==='erase-event'){
+   const operation=c.operation;
+   const window=this.recording;
+   if(window&&window.target.trackId===operation.target.trackId&&window.target.lane===operation.target.lane){
+    window.erasedThrough??={};window.erasedThrough[operation.step]=this.frame;
+    this.captureErasure={commandId:c.id,recordingEpoch:this.recordingEpoch,throughFrame:this.frame,target:copy(operation.target),step:operation.step};
+   }
+   // Notify input before any queued-batch acknowledgments or the new session snapshot.
+   this.emit({type:'transport',transport:this.transport()});
+   const cancelled:SessionCommand[]=[],retained:SessionCommand[]=[];
+   for(const queued of this.pending){
+    if(queued.operation.type==='edit-pattern'&&queued.operation.trackId===operation.target.trackId){cancelled.push(queued);continue;}
+    if(queued.operation.type==='commit-performance'&&queued.expectedRevision===old.revision&&window){
+     // Narrow exception: an already-valid input batch may cross THIS erase only.
+     // Other intervening mutations still make it stale. Keep the ID and unchanged surviving events.
+     const events=queued.operation.events.filter(event=>!performanceWasErased(event,window));
+     if(!events.length){cancelled.push(queued);continue;}
+     queued.operation.events=events;queued.expectedRevision=state.revision;retained.push(queued);
+    }
+   }
+   this.pending=this.pending.filter(q=>!cancelled.includes(q));
+   for(const queued of cancelled)this.ack(queued,'rejected',queued.operation.type==='commit-performance'?'Capture removed by targeted erase':'Pattern edit discarded by targeted erase');
+   for(const queued of retained)this.ack(queued,'queued');
+   if(operation.target.trackId!=='drums'&&this.dsp.w.vs_playing()){
+    const step=Math.floor((this.dsp.w.vs_beat()%16)*4+this.dsp.w.vs_phase()*4/(44100*60));
+    const removed=old.tracks.find(t=>t.id===operation.target.trackId)!.notes.filter(n=>(operation.step-n.step+64)%64<n.duration&&(step-n.step+64)%64<n.duration);
+    for(const note of removed)this.dsp.w.vs_erase_note!(['synth-1','synth-2','synth-3'].indexOf(operation.target.trackId),note.midi);
+   }
+  }
   const ack=this.ack(c,'applied');this.emit({type:'session',session:this.getSession()});return ack;
  }
- transport():Transport{const armed=this.pending.find(c=>c.operation.type==='record')?.operation;return {...(armed?.type==='record'?{armedTarget:armed.target}:{}),clockId:this.clockId,sampleRate:44100,currentFrame:this.frame,loopStartFrame:this.loopStart,playing:!!this.dsp.w.vs_playing(),recording:this.recording?.endFrame===null,recordingState:this.recording?.endFrame===null?'recording':this.pending.some(c=>c.operation.type==='record')?'armed':'idle',...(this.recording?{recordingStartFrame:this.recording.startFrame,recordingTarget:this.recording.target,recordingEpoch:this.recordingEpoch,captureStartFrame:this.recording.captureStartFrame??this.recording.startFrame,recordingLoopStartFrame:this.recording.loopStartFrame}:{}),pendingCommandIds:this.pending.map(c=>c.id)};}
+ transport():Transport{const armed=this.pending.find(c=>c.operation.type==='record')?.operation;return {...(this.captureErasure?{captureErasure:this.captureErasure}:{}),...(armed?.type==='record'?{armedTarget:armed.target}:{}),clockId:this.clockId,sampleRate:44100,currentFrame:this.frame,loopStartFrame:this.loopStart,playing:!!this.dsp.w.vs_playing(),recording:this.recording?.endFrame===null,recordingState:this.recording?.endFrame===null?'recording':this.pending.some(c=>c.operation.type==='record')?'armed':'idle',...(this.recording?{recordingStartFrame:this.recording.startFrame,recordingTarget:this.recording.target,recordingEpoch:this.recordingEpoch,captureStartFrame:this.recording.captureStartFrame??this.recording.startFrame,recordingLoopStartFrame:this.recording.loopStartFrame}:{}),pendingCommandIds:this.pending.map(c=>c.id)};}
  render(left:Float32Array,right:Float32Array,startFrame:number){
   this.frame=startFrame;
   for(let offset=0;offset<left.length;){
