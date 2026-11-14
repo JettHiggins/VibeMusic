@@ -16,8 +16,8 @@ python -m pytest services/agent
 python -m uvicorn groove_agent.app:app --app-dir services/agent --host 127.0.0.1 --port 8000
 ```
 
-These were run on Windows 11 with native Python 3.13. They have not yet been run under WSL2, macOS, or
-Python 3.11; the code avoids syntax newer than 3.10. `GET /healthz` reports service status.
+These were run on Windows 11 with native Python 3.13, and CI runs the tests on Linux with Python 3.11.
+They have not been run under WSL2 or macOS. `GET /healthz` reports service status.
 
 ## What works
 
@@ -58,28 +58,47 @@ Commands are answered while a search runs.
   request; silent, clipping or non-finite renders are rejected.
 - Candidate previews are WAV files at `GET /previews/<token>.wav`.
 
-By default no research backend is configured and every request answers `failed` with the reason. The only
-backend that exists is a mock, enabled explicitly:
+By default no research backend is configured and every request answers `failed` with the reason. Backends are
+chosen with environment variables when the service starts:
+
+| `GROOVE_RESEARCH` | `GROOVE_EMBEDDER` | Audio | Ranking |
+| --- | --- | --- | --- |
+| unset | | none | none: requests fail with the reason |
+| `sloop` | `clap` | real: the built `voicesynth.wasm`, run offline | LAION CLAP (general checkpoint), run locally |
+| `sloop` | `mock` | real | meaningless (hash embedder); for wiring tests |
+| `mock` | | toy synth, not SLOOP | meaningless |
 
 ```sh
-GROOVE_RESEARCH=mock python -m uvicorn groove_agent.app:app --app-dir services/agent --host 127.0.0.1 --port 8000
+python -m pip install -r services/agent/requirements-research.txt   # only for GROOVE_EMBEDDER=clap
+GROOVE_RESEARCH=sloop GROOVE_EMBEDDER=clap python -m uvicorn groove_agent.app:app --app-dir services/agent --host 127.0.0.1 --port 8000
 ```
 
-Mock mode needs the built `metadata.json` (or `GROOVE_ENGINE_METADATA=<path>`). Its candidates are valid,
-bounded patches for the real engine, but the audio comes from a toy synth and the ranking from a hash-based
-embedder, so the scores and previews mean nothing musically. Every mock candidate says "MOCK" in `provenance`.
-Mock mode was exercised here only with synthetic metadata from the test fixtures, not the real export.
+- `sloop` needs the engine assets in `apps/web/public/engine/` (`scripts/build-engine.py`, or the
+  `sloop-browser-engine` artifact from the firmware-parity CI job). The renderer loads the same WASM as the
+  browser and sets up the track the way `firmwareSnapshot` does. Notes are played through the engine's live
+  note input at its fixed velocity.
+- `clap` downloads the model weights (`laion/clap-htsat-unfused`, override with `GROOVE_CLAP_MODEL`) to the
+  Hugging Face cache on first start. No API key is used. Torch and transformers are not in the base requirements.
+- The corpus is built on the first request and cached in `artifacts/corpus/<embedder>/` (git-ignored). A cache
+  made with a different engine revision, renderer, embedder or recipe is ignored and rebuilt.
+- Patches never contain the parameters the browser engine owns (level, arp mode, sequence length, division,
+  swing, gate, mute); the engine rejects patches that set them.
+- Anything produced with a mock says "MOCK" in each candidate's `provenance`.
 
 ## Not done yet
 
 - Speech-to-text. The service consumes `utterance` transcripts; an audio/provider protocol needs a contract
   proposal and a credential decision first.
 - Deep Agents orchestration. `intents.interpret` is the seam a model-backed interpreter replaces; it needs API access.
-- Real sound research. It needs an offline renderer for the pinned SLOOP engine (Workstream 1) implementing
-  `research.audio.Renderer`, and a LAION CLAP embedder implementing `research.audio.Embedder` (model download and
-  a dependency decision). Until both exist, nothing here has been evaluated for musical quality.
-- Research evaluation against preset-only retrieval with blind listening.
-- Integration with a real browser client. Tested only against the shared fixtures and a scripted WebSocket client.
+- The CLAP *music* checkpoint named in PLAN.md. Its Hugging Face port (`laion/larger_clap_music`) loads but gives
+  degenerate embeddings with transformers 5.23, so the general checkpoint is the default and the service refuses a
+  degenerate model at start-up. The official `laion_clap` checkpoint route is untried.
+- The blind listening itself. `python -m groove_agent.research.evaluate` (run from `services/agent` with
+  `GROOVE_RESEARCH=sloop GROOVE_EMBEDDER=clap`) writes an A/B kit to `artifacts/evaluation/`: preset-only retrieval
+  versus retrieval plus search for eight fixed prompts, a listening sheet, a hidden answer key and latencies. All
+  three teammates still need to listen and fill in the sheet. Similarity scores are not a measure of musical quality.
+- Audition in the browser UI. The harness has no control that plays `previewUrl` or shows candidates.
+- Drum-track sound search (the engine has no drum-kit patch contract yet).
 
 ## Layout
 
@@ -90,3 +109,5 @@ Mock mode was exercised here only with synthetic metadata from the test fixtures
 - `groove_agent/research/space.py` reads engine metadata and produces bounded variations.
 - `groove_agent/research/corpus.py`, `search.py` hold retrieval and evolutionary refinement.
 - `groove_agent/research/service.py` runs cancellable jobs; `mock.py` is the labeled mock backend.
+- `groove_agent/research/sloop.py` renders with the real engine WASM; `clap.py` is the CLAP embedder.
+- `tests/integration/research-engine.test.ts` drives the real engine core through the production adapter.
