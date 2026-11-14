@@ -20,14 +20,6 @@ export interface RecorderDeps {
  dispatch(command: SessionCommand): ClientMessage;
  newId(): string;
 }
-export interface RecorderOptions {
- /**
-  * While a take is open, hold verified events and submit one batch this many seconds before
-  * the loop boundary. Batches apply only at boundaries and one is in flight at a time, so
-  * submitting early would delay everything performed later in the loop by a whole loop.
-  */
- batchLeadSeconds?: number;
-}
 export interface Span { startFrame: number; endFrame: number }
 /** step/duration are the expected quantized cells, for live feedback only; the engine quantizes authoritatively. */
 export interface ProvisionalEvent { event: PerformanceEvent; step: number; duration: number; status: 'provisional' | 'submitted' }
@@ -45,7 +37,7 @@ type Window = { clockId: string; startFrame: number; target: NonNullable<Transpo
 const MAX_EVENTS = 256, MAX_SPANS = 64, MAX_RETRIES = 4;
 /** The engine ignores events below this confidence (CONTRACTS.md); filter locally so counters stay honest. */
 export const MIN_CONFIDENCE = 0.6;
-const RETRYABLE = /Stale revision|Playback stopped/;
+const RETRYABLE = /Stale revision|Playback stopped|Performance batch no longer queued/;
 
 export class PerformanceRecorder {
  onChange: (status: RecorderStatus) => void = () => {};
@@ -65,11 +57,7 @@ export class PerformanceRecorder {
  private dropped = 0;
  private lastError: string | null = null;
 
- private readonly batchLead: number;
-
- constructor(private deps: RecorderDeps, private mode: VerificationMode = 'manual', options: RecorderOptions = {}) {
-  this.batchLead = options.batchLeadSeconds ?? 0.4;
- }
+ constructor(private deps: RecorderDeps, private mode: VerificationMode = 'manual') {}
 
  setMode(mode: VerificationMode) { this.mode = mode; this.speechVerifiedThrough = -1; this.changed(); }
  /** Speech mode: whether recognition is connected. Losing it stops new commits immediately. */
@@ -200,31 +188,24 @@ export class PerformanceRecorder {
  }
 
  private pump() {
-  if (this.inFlight || !this.session || !this.window || this.window.clockId !== this.transport?.clockId) { this.changed(); return; }
+  if (!this.session || !this.window || this.window.clockId !== this.transport?.clockId) { this.changed(); return; }
   if (this.mode === 'speech' && !this.speechAvailable) { this.changed(); return; }
   if (this.session.revision < this.minRevision) { this.changed(); return; }
-  if (!this.nearBoundary()) { this.changed(); return; }
   const mark = this.watermark();
-  const ready = this.events.filter(e => e.status === 'provisional' && endOf(e.event) <= mark).slice(0, MAX_EVENTS);
+  // A still-queued batch is replaced by a superset (replacesCommandId), so later verified events
+  // land at the same boundary instead of waiting a loop (CONTRACTS.md, verified batch replacement).
+  const submitted = this.inFlight ? this.events.filter(e => this.inFlight!.ids.has(e.event.id)) : [];
+  const ready = this.events.filter(e => e.status === 'provisional' && endOf(e.event) <= mark).slice(0, MAX_EVENTS - submitted.length);
   if (!ready.length) { this.changed(); return; }
-  this.submit(ready, mark);
+  this.submit([...submitted,...ready], mark, this.inFlight?.id);
  }
 
- /** True when a batch submitted now is the last chance to apply at the coming loop boundary. */
- private nearBoundary() {
-  const t = this.transport!;
-  if (!this.window!.open || !t.playing || !Number.isFinite(this.batchLead)) return true;
-  const loop = t.sampleRate * 60 / ((this.session?.tempo ?? 120) * 4) * 64;
-  const elapsed = ((t.currentFrame - t.loopStartFrame) % loop + loop) % loop;
-  return loop - elapsed <= this.batchLead * t.sampleRate;
- }
-
- private submit(batch: ProvisionalEvent[], mark: number) {
+ private submit(batch: ProvisionalEvent[], mark: number, replacesCommandId?: string) {
   const first = Math.min(...batch.map(e => e.event.captureFrame)), last = Math.max(...batch.map(e => endOf(e.event)));
   const excludedSpans = this.spans.filter(s => s.clockId === this.window!.clockId && s.startFrame <= last && s.endFrame >= first).slice(-MAX_SPANS).map(({ startFrame, endFrame }) => ({ startFrame, endFrame }));
   const command: SessionCommand = {
    id: this.deps.newId(), expectedRevision: this.session!.revision, boundary: 'next-loop',
-   operation: { type: 'commit-performance', events: batch.map(e => e.event), excludedSpans, verifiedThroughFrame: mark },
+   operation: { type: 'commit-performance', events: batch.map(e => e.event), excludedSpans, verifiedThroughFrame: mark, ...(replacesCommandId?{replacesCommandId}:{}) },
   };
   batch.forEach(e => { e.status = 'submitted'; });
   this.inFlight = { id: command.id, ids: new Set(batch.map(e => e.event.id)) };

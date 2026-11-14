@@ -33,8 +33,8 @@ export function InputPanel({ voice, session, transport, enabled, dispatch }: Pro
  useEffect(() => { voice.onChange = setState; return () => { voice.onChange = () => {}; }; }, [voice]);
 
  const recordingState = transport?.recordingState ?? 'idle';
- // While a take is armed or running, show the engine's recording target, not the UI selection.
- const target: Target = recordingState !== 'idle' && transport?.recordingTarget ? transport.recordingTarget : session.selected;
+ // Recording → the engine's window target; count-in → the armed target; otherwise the selection.
+ const target: Target = displayedTarget(session, transport);
  const track = session.tracks.find(t => t.id === target.trackId)!;
  const melodic = target.trackId !== 'drums';
  const label = labelOf(target);
@@ -48,6 +48,7 @@ export function InputPanel({ voice, session, transport, enabled, dispatch }: Pro
 
  return <section aria-label="Voice recording" style={{ border: '1px solid #8884', borderRadius: 8, padding: 16, marginTop: 24 }}>
   <h2 style={{ marginTop: 0 }}>Record with your voice</h2>
+  <p style={small}>Manual microphone takes: use the controls to start and stop. Speech recognition is not connected yet.</p>
   <div style={row}>
    <button disabled={!enabled || busy || state.microphone === 'starting'} onClick={() => run(() => voice.enableMicrophone())}>{micReady ? 'Restart microphone' : 'Enable microphone'}</button>
    <Meter db={state.levelDb} floor={state.calibration?.noiseFloorDb ?? -60} active={micReady} />
@@ -86,6 +87,16 @@ export function InputPanel({ voice, session, transport, enabled, dispatch }: Pro
   </p>
   {(state.message || state.recorder.lastError) && <p style={{ ...small, color: '#c33' }}>{state.recorder.lastError ?? state.message}</p>}
  </section>;
+}
+
+/** What the panel shows: the recording window's target, the armed target during count-in, else the selection. */
+export function displayedTarget(session: SessionState, transport: Transport | null): Target {
+ const target = transport?.recording ? transport.recordingTarget : transport?.recordingState === 'armed' ? transport.armedTarget : session.selected;
+ return target ?? session.selected;
+}
+/** Drum lane shown for drum targets (kept for the integration seam tests). */
+export function displayedLane(session: SessionState, transport: Transport | null): Lane {
+ return displayedTarget(session, transport).lane ?? session.selected.lane ?? 'kick';
 }
 
 function describePosition(t: Transport, tempo: number) {

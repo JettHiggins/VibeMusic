@@ -57,14 +57,23 @@ Meaning: every utterance that starts at or before `throughFrame` has been classi
 
 Integrator: review the `main.tsx` wiring, merge `ui-input` into `engine-integration`, and decide on the `speech-verified` proposal. Workstream 3: emit `command-span` for wake-phrase commands with measured capture-clock frames, plus the verification watermark once agreed.
 
+## Integrated engine/input corrections
 
-## Second batch (branch `ui-melody`, stacked on `ui-input`)
+The branch is merged into engine-integration. The speech-verified proposal is accepted and routed to PerformanceRecorder, with latency-corrected timestamp semantics in CONTRACTS.md; no fake watermark is generated from connectivity. Hands-free speech is still pending.
+
+Later verified hits now replace the still-queued batch so the complete take can land at the following loop. The superseded command is terminally rejected and the new command includes the older immutable events plus new events. Stopping capture no longer changes the saved session revision. Real-WASM tests now require the complete verified take by the following loop.
+
+Browser testing exposed double triggers on low kick chirps at different FFT-hop phases. Energy-rise detection now uses full-window RMS instead of sub-cycle hop RMS, and a six-phase regression reproduces the earlier failure. Diagnostic test buffers have zero round-trip compensation because they bypass microphone/speaker latency; actual microphone defaults and tap calibration are unchanged. The panel no longer pins a completed take's lane after selecting another lane.
+
+The Linux Chromium software-path diagnostic produced exactly steps [4, 8, 12, 20], four committed hits, continued playback after stop, and about 3.2 ms analysis p95. It injects synthetic audio after the microphone; it does not validate acoustic latency or real beatboxing. The reusable Playwright CLI function is tests/browser/input-pipeline.js.
+
+## Second batch (branch `ui-melody`, PR #5)
 
 | Piece | File | Notes |
 | --- | --- | --- |
 | Pitch | `input/pitch.ts` | YIN in the analysis worker: FFT cross-correlation difference function, CMND threshold 0.15, parabolic refinement, 75–1100 Hz, 1024-sample window, 256-sample hop. |
-| Notes | `input/pitch.ts` (`NoteSegmenter`) | Clarity ≥ 0.8 and level gate; 3-hop onset agreement; a pitch change must hold 4 hops at > 0.9 semitone (so vibrato never splits); octave errors folded; a 9 dB dip then 6 dB rise splits repeated pitches; minimum 70 ms; flushed when the take closes. No forced scale. |
-| Recorder | `input/recorder.ts` | Note events for melodic targets, watermark waits for note ends, notes still sounding at stop are clamped to the cut-off, analysis that arrives late (for audio before the cut-off) still counts after stop. **Batches are sent 0.4 s before each loop boundary while a take is open**, so everything performed in a loop lands on the following loop. |
+| Notes | `input/pitch.ts` (`NoteSegmenter`) | Clarity ≥ 0.8 and level gate; 3-hop onset agreement; a pitch change must hold 12 hops (~70 ms) at > 0.9 semitone, so ±0.6 semitone vibrato never splits; octave errors folded; a 9 dB dip then 6 dB rise splits repeated pitches; minimum 70 ms; flushed when the take closes. No forced scale. |
+| Recorder | `input/recorder.ts` | Note events for melodic targets, watermark waits for note ends, notes still sounding at stop are clamped to the cut-off, analysis that arrives late (for audio before the cut-off) still counts after stop. Uses Workstream 1's `replacesCommandId` batch replacement (below), so a whole take, notes included, lands on the following loop. |
 | Session UI | `ui/SessionPanel.tsx` | Save to this browser, list and load saves, export a file, import a file → `load-session` at the next loop (undo restores the previous session). |
 | Editor | `ui/pattern-edit.ts`, `ui/PatternEditor.tsx` | Drum lane toggles, synth note placement and removal (monophonic, wraps the loop edge), pitch/octave/length, audition keyboard (note-off on release or leave) and drum audition, per-track volume. `PatternEditQueue` merges clicks within a loop into one `edit-pattern`, and after a stale rejection re-applies the edits on top of the newer session instead of overwriting a take. |
 | Recording UI | `ui/InputPanel.tsx` | Targets Kick/Snare/Hats/Synth 1–3, a note grid with pitch names, and dashed provisional cells. |
@@ -73,10 +82,12 @@ Checks: `npm test` 84 pass, 1 skipped. New: `input-pitch` (accuracy within 0.2 s
 
 Browser (real WASM, test signal through the identical worklet → worker path): Record Synth 1 committed all 10 sung notes exactly, and the phrase landed on the loop after it was sung. A second take that sang only bar 3 replaced exactly those three notes and kept the other seven. The session panel saved, then after clearing Synth 1 loaded the save back. The editor placed E4 at steps 5 and 9 during playback with two clicks, both landing at the boundary, with other tracks untouched.
 
-Known behaviour: if Stop is pressed after a batch has been queued for the coming boundary, that batch goes stale (stop bumps the revision) and lands one loop later. Basic Pitch phrase refinement has not been benchmarked yet (optional per PLAN). Audition sound was not checked by ear.
+Audition sound was not checked by ear. Basic Pitch: see `docs/benchmarks/basic-pitch.md`.
 
 ## Compact groovebox layout (on `ui-melody`)
 
 `ui/Groovebox.tsx` replaces the harness page with an original, hardware-inspired layout: a status display (BPM, live bar.beat, transport, record/count-in state, transport/tempo/undo keys), a four-channel strip (select, engine · preset, note/hit count, mute, volume), and tabs for Record, Edit, Sound, Session and Agent. The agent/transcript harness is unchanged and moved into the Agent tab. `ui/SoundPanel.tsx` plus `ui/patch-edit.ts` add engine and factory preset selection, envelope/filter (ATK/DEC/REL/FLT) and the engine's named macros with firmware ranges, applied through `apply-patch` latest-wins (one in flight, stale resubmission). Drum kit sounds stay fixed until there is a drum-kit contract.
 
 Checks: `patch-edit` tests (controls and ranges from real metadata; three rapid changes during playback resolve to the last value through real WASM, with notes preserved). Browser: playback from the display with live bar.beat, select Synth 1 → Sound → preset WURLI applied at the loop boundary with its 4 notes kept, and the layout fits at 375 px wide. `npm test` 86 pass, 1 skipped.
+
+Merged with integration `18b9139`: the recorder keeps Workstream 1's batch replacement and speech-verified routing, the earlier 0.4 s boundary-timed batching was removed in favour of it, and the panel uses `displayedTarget` (window target while recording, `armedTarget` during count-in) for synth targets too.

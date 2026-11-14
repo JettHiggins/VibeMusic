@@ -75,9 +75,7 @@ test('beatboxed kick take lands on the grid in the real engine and playback cont
  recorder.verifyThrough('clock', frame - 1);
  core.dispatch(command('stop', { type: 'stop-recording' }));
  // Let the verified batch apply at the next loop boundary while playback keeps running.
- run(Math.ceil(loop), []);
- recorder.verifyThrough('clock', frame - 1);
- run(Math.ceil(loop), []);
+ run(Math.ceil(loop), []); // the complete verified take must land by the following loop
  const kicks = core.getSession().tracks[3].hits.filter(h => h.lane === 'kick').map(h => h.step).sort((a, b) => a - b);
  assert.deepEqual(kicks, intended);
  assert.equal(core.transport().playing, true, 'playback continues after Groove stop');
@@ -151,8 +149,8 @@ test('a sung melody records, and a re-sung phrase replaces only that phrase', { 
   recorder.addNotes(segmenter.flush(frame), latency, 'clock', frame);
   recorder.handle({ type: 'transport', transport: core.transport() });
   singing = { notes: [], origin: 0 };
-  // A batch queued just before Stop goes stale (stop bumps the revision) and lands one loop later.
-  run(Math.ceil(loop * 2.2));
+  // Stop no longer changes the revision, so the complete take lands by the following loop.
+  run(Math.ceil(loop * 1.2));
  };
  const melody: Sung[] = [[60, 0, 6], [62, 8, 12], [64, 12, 16], [67, 16, 24], [65, 24, 30], [64, 32, 36], [62, 36, 40], [60, 40, 46], [62, 48, 56], [60, 56, 62.5]].map(([midi, from, to]) => ({ midi, from, to }));
  take('first', melody);

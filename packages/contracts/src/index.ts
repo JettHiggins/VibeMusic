@@ -27,12 +27,12 @@ const Operation = z.discriminatedUnion('type', [
  z.strictObject({ type: z.literal('edit-pattern'), trackId: TrackId, notes: z.array(Note).max(64), hits: z.array(Hit).max(192) }),
  z.strictObject({ type: z.literal('volume'), trackId: TrackId, volume: unit }),
  z.strictObject({ type: z.literal('load-session'), session: SessionState }),
- z.strictObject({ type: z.literal('commit-performance'), events: z.array(PerformanceEvent).min(1).max(256), excludedSpans: z.array(SpeechSpan).max(64), verifiedThroughFrame: frame }),
+ z.strictObject({ type: z.literal('commit-performance'), events: z.array(PerformanceEvent).min(1).max(256), excludedSpans: z.array(SpeechSpan).max(64), verifiedThroughFrame: frame, replacesCommandId: id.optional() }),
  z.strictObject({ type: z.literal('apply-patch'), trackId: TrackId, patch: Patch })
 ]);
 export const SessionCommand = z.strictObject({ id, expectedRevision: frame, boundary: z.enum(['immediate', 'next-loop']), operation: Operation });
 export const PatchCandidate = z.strictObject({ id, patch: Patch, provenance: id, previewUrl: z.string(), score: z.number().finite() });
-export const Transport = z.strictObject({ clockId: id, sampleRate: z.number().int().positive(), currentFrame: frame, loopStartFrame: frame, playing: z.boolean(), recording: z.boolean(), pendingCommandIds: z.array(id), recordingState: z.enum(['idle','armed','recording']).optional(), recordingStartFrame: frame.optional(), recordingTarget: Target.optional() });
+export const Transport = z.strictObject({ clockId: id, sampleRate: z.number().int().positive(), currentFrame: frame, loopStartFrame: frame, playing: z.boolean(), recording: z.boolean(), pendingCommandIds: z.array(id), recordingState: z.enum(['idle','armed','recording']).optional(), recordingStartFrame: frame.optional(), recordingTarget: Target.optional(), armedTarget: Target.optional() });
 export const ClientMessage = z.discriminatedUnion('type', [
  z.strictObject({ type: z.literal('session'), session: SessionState }),
  z.strictObject({ type: z.literal('transport'), transport: Transport }),
@@ -43,6 +43,7 @@ export const ClientMessage = z.discriminatedUnion('type', [
 ]);
 export const ServerMessage = z.discriminatedUnion('type', [
  z.strictObject({ type: z.literal('command'), command: SessionCommand }),
+ z.strictObject({ type: z.literal('speech-verified'), clockId: id, throughFrame: frame }),
  z.strictObject({ type: z.literal('command-span'), utteranceId: id, clockId: id, startFrame: frame, endFrame: frame }),
  z.strictObject({ type: z.literal('research'), jobId: id, status: z.enum(['running','complete','cancelled','failed']), progress: unit, candidates: z.array(PatchCandidate), error: z.string().optional() }),
  z.strictObject({ type: z.literal('error'), requestId: id, message: id })

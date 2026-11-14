@@ -43,6 +43,23 @@ export class EngineCore {
    this.propose(c);
    const requiresBoundary=['record','tempo','clear','undo','apply-patch','commit-performance','edit-pattern','load-session'].includes(c.operation.type);
    if(requiresBoundary && c.boundary!=='next-loop')throw new Error('Operation requires next-loop boundary');
+   if(c.operation.type==='commit-performance'&&c.operation.replacesCommandId){
+    const replacesCommandId=c.operation.replacesCommandId;
+    const index=this.pending.findIndex(queued=>queued.id===replacesCommandId);
+    const previous=this.pending[index];
+    if(!previous||previous.operation.type!=='commit-performance')throw new Error('Performance batch no longer queued');
+    const before=previous.operation,after=c.operation;
+    if(after.verifiedThroughFrame<before.verifiedThroughFrame)throw new Error('Verification watermark cannot move backward');
+    for(const event of before.events){
+     const replacement=after.events.find(candidate=>candidate.id===event.id);
+     if(!replacement||JSON.stringify(replacement)!==JSON.stringify(event))throw new Error('Replacement must preserve previously queued events');
+    }
+    const spans=[...before.excludedSpans,...after.excludedSpans];
+    after.excludedSpans=spans.filter((span,i)=>spans.findIndex(other=>other.startFrame===span.startFrame&&other.endFrame===span.endFrame)===i);
+    if(after.excludedSpans.length>64)throw new Error('Too many command spans in replacement');
+    this.pending[index]=c;this.ack(previous,'rejected','Performance batch superseded');
+    return this.ack(c,'queued');
+   }
    if(c.operation.type==='record'&&!this.dsp.w.vs_playing()){
     this.dsp.w.preview_play(1);this.cycle=0;this.loopStart=this.frame;this.startRequested=true;
    }
@@ -86,7 +103,7 @@ export class EngineCore {
     result.revision++;firmwareSnapshot(result,this.metadata);return result;
    }
   }
-  state.revision++;firmwareSnapshot(state,this.metadata);return state;
+  if(op.type!=='stop-recording')state.revision++;firmwareSnapshot(state,this.metadata);return state;
  }
  private apply(c:SessionCommand){
   const state=this.propose(c);
@@ -113,7 +130,7 @@ export class EngineCore {
   this.sync();
   const ack=this.ack(c,'applied');this.emit({type:'session',session:this.getSession()});return ack;
  }
- transport():Transport{return {clockId:this.clockId,sampleRate:44100,currentFrame:this.frame,loopStartFrame:this.loopStart,playing:!!this.dsp.w.vs_playing(),recording:this.recording?.endFrame===null,recordingState:this.recording?.endFrame===null?'recording':this.pending.some(c=>c.operation.type==='record')?'armed':'idle',...(this.recording?{recordingStartFrame:this.recording.startFrame,recordingTarget:this.recording.target}:{}),pendingCommandIds:this.pending.map(c=>c.id)};}
+ transport():Transport{const armed=this.pending.find(c=>c.operation.type==='record')?.operation;return {...(armed?.type==='record'?{armedTarget:armed.target}:{}),clockId:this.clockId,sampleRate:44100,currentFrame:this.frame,loopStartFrame:this.loopStart,playing:!!this.dsp.w.vs_playing(),recording:this.recording?.endFrame===null,recordingState:this.recording?.endFrame===null?'recording':this.pending.some(c=>c.operation.type==='record')?'armed':'idle',...(this.recording?{recordingStartFrame:this.recording.startFrame,recordingTarget:this.recording.target}:{}),pendingCommandIds:this.pending.map(c=>c.id)};}
  render(left:Float32Array,right:Float32Array,startFrame:number){
   this.frame=startFrame;
   for(let offset=0;offset<left.length;){

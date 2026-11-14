@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { performance } from 'node:perf_hooks';
 import { OnsetDetector, type Onset } from '../apps/web/src/input/onset.ts';
-import { estimateLatency, measureNoiseFloor } from '../apps/web/src/input/calibration.ts';
+import { defaultCalibration, estimateLatency, measureNoiseFloor } from '../apps/web/src/input/calibration.ts';
 
 const SR = 44100;
 function rng(seed: number) { return () => { seed |= 0; seed = seed + 0x6d2b79f5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
@@ -141,4 +141,22 @@ test('detected onsets drive tap-along latency end to end', () => {
  const onsets = run(buffer, 0, 128).map(o => o.frame);
  const estimate = estimateLatency(clicks, onsets, { sampleRate: SR });
  assert.ok(Math.abs(estimate.latencyFrames - latency) <= 0.003 * SR, `latency ${estimate.latencyFrames} vs ${latency}`);
+});
+
+test('decaying kick chirps do not retrigger at different capture-hop phases',()=>{
+ for(const offset of [0,23,79,127,255,511]){
+  const buffer=new Float32Array(3*SR),truth=[0.5,1,1.5,2.5].map(seconds=>Math.round(seconds*SR)+offset);
+  for(const at of truth)for(let n=0;n<0.2*SR&&at+n<buffer.length;n++){
+   const t=n/SR;
+   buffer[at+n]+=0.5*Math.sin(2*Math.PI*(60+100*Math.exp(-30*t))*t)*Math.exp(-14*t)*Math.min(1,t/0.002)*Math.min(1,(0.2-t)/0.05);
+  }
+  const found=run(buffer,1000,1024);
+  assert.equal(found.length,truth.length,`phase ${offset}: ${found.map(onset=>onset.frame-1000)}`);
+ }
+});
+
+test('diagnostic buffers bypass round-trip latency while real microphone defaults retain it',()=>{
+ const context={sampleRate:44100,baseLatency:0.02,outputLatency:0.2};
+ assert.equal(defaultCalibration(context,0.01,'real-device').latencyFrames,10143);
+ assert.equal(defaultCalibration(context,0,'test-signal').latencyFrames,0);
 });

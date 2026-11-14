@@ -318,6 +318,32 @@
                 "trackId"
               ],
               "additionalProperties": false
+            },
+            "armedTarget": {
+              "type": "object",
+              "properties": {
+                "trackId": {
+                  "type": "string",
+                  "enum": [
+                    "synth-1",
+                    "synth-2",
+                    "synth-3",
+                    "drums"
+                  ]
+                },
+                "lane": {
+                  "type": "string",
+                  "enum": [
+                    "kick",
+                    "snare",
+                    "closed-hat"
+                  ]
+                }
+              },
+              "required": [
+                "trackId"
+              ],
+              "additionalProperties": false
             }
           },
           "required": [

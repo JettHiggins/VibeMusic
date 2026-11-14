@@ -9,7 +9,7 @@ Milestone 0 is available on `engine-integration` (foundation a19badd). Build ins
 - Real pinned SLOOP audio, four-bar demo, transport and boundary-scheduled tempo/clear/undo work in the browser harness.
 - Workstream 3's deterministic transcript service (3a62724) is merged into this branch. No provider credentials or live AI calls are configured.
 - The production WebSocket adapter and coordinator connect that service to the real engine. Browser selection via transcript and live Python/WASM revision feedback have been exercised.
-- Validation: upstream native/WASM parity for all 12 engines; engine contracts/clock tests including a ten-minute offline render; 62 backend tests; dedicated live-service integration test; TypeScript and production web build. Offline clock tests do not establish ten-minute glitch-free browser audio or cross-platform hardware latency.
+- Validation: upstream native/WASM parity for all 12 engines; engine contracts/clock tests including a ten-minute offline render; backend suites and live-service integration; TypeScript and production web build. Offline clock tests do not establish ten-minute glitch-free browser audio or cross-platform hardware latency.
 
 ## Workstream 2 next integration
 
@@ -21,7 +21,7 @@ Rebase/merge the updated engine-integration contracts before further backend cha
 
 ## Remaining product gates
 
-Full editable/persistent groovebox UI, microphone timing/calibration and recognition, actual microphone-to-engine recording, speech-span buffering and verification, Deep Agents, patch retrieval/optimization/audition, cross-platform validation, and the complete hands-free acceptance session. The active goal remains the full product integration, not just the pieces verified above.
+Full editable/persistent groovebox UI, microphone timing/calibration and recognition, physical microphone validation, real speech classification and its verification watermark, Deep Agents, patch retrieval/optimization/audition, cross-platform validation, and the complete hands-free acceptance session. The active goal remains the full product integration, not just the pieces verified above.
 
 Recording engine validation now includes WASM count-in/downbeat activation, canceling armed takes, quantized selected-lane commits, stop-recording preserving playback, and pure timing/phrase-replacement tests. Actual microphone latency, recognition, and count-in audibility on each teammate laptop still need verification.
 
@@ -36,3 +36,9 @@ Research update 6c6ab89 is integrated. Its service/cache configuration and tests
 The live research integration test passed after reconciliation: real corpus rendering, retrieval progress, WAV downloads, candidate acceptance on an existing melody, and undo. The cold test took approximately 73 seconds on this Linux machine (factory corpus plus bounded refinement); it uses the explicitly MOCK embedder and does not establish semantic ranking or CLAP latency. Run `npm run test:research-integration` with the virtualenv active.
 
 Connection race fixes: record requests are tracked before armed transport feedback, so immediate disconnect can cancel them. Replaced socket callbacks cannot disconnect or inject messages into a new connection. Tests cover both races and cancellation before any audio callback. Vite hot reload now disposes audio/socket resources.
+
+## Microphone/input integration
+
+ui-input (3426bee) is merged: manual microphone drum takes, onset worker, calibration, provisional recorder, input panel, and session-file helpers. Review found/fixed retained lane selection, kick chirp double triggers, synthetic latency compensation, and delayed per-hit batches. The browser diagnostic now commits four synthetic kicks by the following loop through real worklets/workers/WASM, with continued playback and about 3.2 ms analysis p95. Physical microphones, real performers, speech recognition, melody/YIN, full editor/save-load UI, and hands-free acceptance still need completion. speech-verified is accepted as a schema/consumer seam; no backend emits it without real classification.
+
+Platform CI at ff44fd5 passed Linux firmware parity, macOS and Windows integration/engine tests, and browser builds (GitHub run 43577262985). This precedes the microphone merge; its new CI run must be checked separately. General CLAP opt-in feature tests passed locally from cached real weights. The music checkpoint probe was rejected with unrelated-text cosine about 0.999; no music-checkpoint or blind-listening success is claimed.

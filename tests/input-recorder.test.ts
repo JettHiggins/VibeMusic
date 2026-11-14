@@ -18,7 +18,13 @@ class FakeEngine {
  dispatch = (input: SessionCommand): ClientMessage => {
   const c = CommandSchema.parse(input); this.sent.push(c);
   if (c.expectedRevision !== this.session.revision) return this.ack(c, 'rejected', 'Stale revision');
-  this.queued.push(c); return this.ack(c, 'queued');
+  if(c.operation.type==='commit-performance'&&c.operation.replacesCommandId){
+   const replaces=c.operation.replacesCommandId;
+   const index=this.queued.findIndex(queued=>queued.id===replaces);
+   if(index<0)return this.ack(c,'rejected','Performance batch no longer queued');
+   const old=this.queued[index];this.queued[index]=c;this.ack(old,'rejected','Performance batch superseded');
+  }else this.queued.push(c);
+  return this.ack(c, 'queued');
  };
  ack(c: SessionCommand, status: 'queued' | 'applied' | 'rejected', reason?: string): ClientMessage {
   const m: ClientMessage = { type: 'ack', commandId: c.id, status, revision: this.session.revision, ...(reason ? { reason } : {}) };
@@ -39,11 +45,10 @@ class FakeEngine {
   return { type: 'transport', transport: { clockId: CLOCK, sampleRate: 44100, currentFrame: this.frame, loopStartFrame: START, playing: true, recording: this.window.endFrame === null, recordingState: this.window.endFrame === null ? 'recording' : 'idle', recordingStartFrame: START, recordingTarget: this.window.target, pendingCommandIds: this.queued.map(c => c.id), ...overrides } };
  }
 }
-function setup(mode: 'manual' | 'speech' = 'manual', batchLeadSeconds = Infinity) {
+function setup(mode: 'manual' | 'speech' = 'manual') {
  const engine = new FakeEngine();
  let n = 0;
- // Most tests submit immediately; boundary-timed batching has its own test.
- const recorder = new PerformanceRecorder({ dispatch: engine.dispatch, newId: () => `id-${++n}` }, mode, { batchLeadSeconds });
+ const recorder = new PerformanceRecorder({ dispatch: engine.dispatch, newId: () => `id-${++n}` }, mode);
  engine.listeners.push(m => recorder.handle(m));
  recorder.handle({ type: 'session', session: engine.session });
  const advance = (frames: number) => { engine.frame += frames; recorder.handle(engine.transport()); };
@@ -67,16 +72,16 @@ test('manual takes commit latency-compensated hits once, quantized to sixteenths
  assert.equal(recorder.status().provisional.length, 0);
 });
 
-test('only one batch is in flight; later hits wait for the authoritative acknowledgment', () => {
+test('later verified hits replace the queued batch before the same loop boundary', () => {
  const { engine, recorder, advance, hit } = setup();
  advance(20 * STEP);
  recorder.addOnsets([hit(1)], 0, CLOCK, engine.frame);
  recorder.addOnsets([hit(3)], 0, CLOCK, engine.frame);
- assert.equal(engine.sent.length, 1);
- assert.deepEqual(recorder.status().provisional.map(p => p.status), ['submitted', 'provisional']);
- engine.boundary();
  assert.equal(engine.sent.length, 2);
+ assert.equal(engine.queued.length,1);
+ assert.deepEqual(recorder.status().provisional.map(p => p.status), ['submitted', 'submitted']);
  engine.boundary();
+ assert.equal(recorder.status().committed,2);
  assert.deepEqual(kicks(engine.session), [1, 3]);
 });
 
@@ -242,26 +247,17 @@ test('a note still sounding at stop is clamped to the cut-off; notes overlapping
  assert.deepEqual(engine.session.tracks[0].notes.map(n => n.midi), [60, 64]);
 });
 
-test('during a take, verified events are batched just before the loop boundary', () => {
- const { engine, recorder, advance, hit } = setup('manual', 0.4);
- const loop = 64 * STEP, lead = 0.4 * 44100;
+test('sung notes verified later in a loop replace the queued batch and land at the same boundary', () => {
+ const { engine, recorder, advance } = melodic();
  advance(10 * STEP);
- recorder.addOnsets([hit(2)], 0, CLOCK, engine.frame);
+ recorder.addNotes([note(0, 4, 60)], 0, CLOCK, engine.frame);
  advance(20 * STEP);
- recorder.addOnsets([hit(25)], 0, CLOCK, engine.frame);
- assert.equal(engine.sent.length, 0, 'held while the loop has time left');
- advance(loop - 30 * STEP - lead + 100);
- recorder.addOnsets([], 0, CLOCK, engine.frame);
- assert.equal(engine.sent.length, 1, 'one batch inside the lead window');
- const op = engine.sent[0].operation;
- assert.ok(op.type === 'commit-performance' && op.events.length === 2);
+ recorder.addNotes([note(8, 12, 62), note(16, 24, 67)], 0, CLOCK, engine.frame);
+ const last = engine.sent.at(-1)!.operation;
+ assert.ok(last.type === 'commit-performance' && last.events.length === 3 && last.replacesCommandId === engine.sent[0].id, 'superset replaces the queued batch');
+ assert.equal(engine.queued.length, 1);
  engine.boundary();
- assert.deepEqual(kicks(engine.session), [2, 25]);
- // Once the take closes, remaining events are sent without waiting.
- advance(5 * STEP);
- recorder.addOnsets([hit(65)], 0, CLOCK, engine.frame);
- assert.equal(engine.sent.length, 1);
- engine.window.endFrame = engine.frame;
- recorder.handle(engine.transport({ recording: false, recordingState: 'idle' }));
- assert.equal(engine.sent.length, 2);
+ assert.deepEqual(engine.session.tracks[0].notes.map(x => [x.step, x.duration, x.midi]), [[0, 4, 60], [8, 4, 62], [16, 8, 67]]);
+ assert.equal(recorder.status().committed, 3);
+ assert.equal(recorder.status().lastError, null);
 });
