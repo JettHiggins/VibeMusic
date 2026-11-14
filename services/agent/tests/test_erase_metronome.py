@@ -183,3 +183,24 @@ def test_single_clear_targets_still_erase():
     assert op("erase the kick bar one beat two")["target"] == {"trackId": "drums", "lane": "kick"}
     assert op("erase bar one beat two on synth three")["target"] == {"trackId": "synth-3"}
     assert op("erase the snare on the drums bar 2 beat 1")["target"] == {"trackId": "drums", "lane": "snare"}
+
+
+
+MIXED_ERASES = ["erase snare and synth two bar one beat two",  # WS1 re-review repro: erased snare
+                "erase kick and synth three bar 2 beat 1", "erase synth one and the hats bar 1 beat 1",
+                "erase kick and synth bar 1 beat 2", "erase the snare and melody bar 3 beat 3"]
+
+
+@pytest.mark.parametrize("text", MIXED_ERASES)
+def test_mixed_drum_and_synth_erases_never_mutate(text):
+    for selected in ("synth-1", "synth-2", "synth-3", "drums"):
+        for take in (None, {"trackId": "synth-2"}, {"trackId": "drums", "lane": "kick"}):
+            result = op(text, recording_target=take, selected=selected)
+            assert isinstance(result, NotUnderstood) and "one track" in result.reason, (text, selected, take, result)
+
+
+def test_mixed_spoken_erase_through_the_connection_issues_no_command():
+    conn = connection(target={"trackId": "synth-1"})
+    out = say(conn, "Groove, erase snare and synth two bar one beat two")
+    assert [m["type"] for m in out] == ["command-span", "error"]
+    assert conn._language.jobs == [] and conn.pending_command_ids == []
