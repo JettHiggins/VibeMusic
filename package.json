@@ -14,11 +14,16 @@
     "build": "npm run build -w @voicesynth/web",
     "check": "tsc --noEmit && node --import tsx scripts/export-contracts.ts && python3 scripts/check_contracts.py",
     "test": "node --import tsx --test tests/*.test.ts",
-    "contracts:export": "node --import tsx scripts/export-contracts.ts"
+    "contracts:export": "node --import tsx scripts/export-contracts.ts",
+    "worklet:build": "node --import tsx scripts/build-worklet.ts",
+    "predev": "npm run worklet:build",
+    "prebuild": "npm run worklet:build",
+    "test:integration": "VOICESYNTH_INTEGRATION=1 node --import tsx --test tests/service-integration.test.ts"
   },
   "devDependencies": {
-    "typescript": "^5.9.3",
+    "@types/node": "^22.0.0",
+    "esbuild": "^0.28.2",
     "tsx": "^4.21.0",
-    "@types/node": "^22.0.0"
+    "typescript": "^5.9.3"
   }
 }
