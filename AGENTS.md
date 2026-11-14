@@ -2,6 +2,8 @@
 
 Read PLAN.md before work. It defines the product, workstream ownership, milestone gates, and acceptance criteria.
 
+Read docs/STATUS.md at startup, before starting a capability, and before opening a PR. WS1 owns that current assignment/dependency ledger; HANDOFF.md and older issues contain history and may be stale. At these checkpoints fetch remote updates and read the coordination issue titled "Team restart: recording usability and real-device fixes". Preserve local work before integrating changes. Independent laptop sessions do not receive live instructions automatically; GitHub mentions notify people, not agent conversations. Do not dependency-poll.
+
 - Workstream 1 owns engine, integration, root build configuration, CI, vendored upstream, and shared contracts.
 - Workstream 2 owns UI, persistence, microphone capture, and performance analysis.
 - Workstream 3 owns backend, speech/agent orchestration, and sound research.

@@ -24,6 +24,25 @@ export interface PitchOptions {
 }
 
 export const hzToMidi = (hz: number) => 69 + 12 * Math.log2(hz / 440);
+/** Segmenter defaults: a voiced frame needs this clarity and this many dB above the noise floor. */
+export const PITCH_GATE_DB = 15;
+export const MIN_PITCH_CLARITY = 0.8;
+
+/**
+ * Live pitch diagnosis for one analysis block, so a singer can see why no notes appear:
+ * silent / too quiet for the gate / pitch unclear (speech, breath, noise) / a usable pitch.
+ */
+export type PitchState = 'silent' | 'quiet' | 'unclear' | 'pitch';
+export interface PitchReading { state: PitchState; midi: number | null; clarity: number; levelDb: number; gateDb: number; holding: boolean }
+export function readPitch(frames: PitchFrame[], noiseFloorDb: number, holding: boolean, gateDb = PITCH_GATE_DB, minClarity = MIN_PITCH_CLARITY): PitchReading | null {
+ if (!frames.length) return null;
+ // The loudest frame represents the block; its pitch is the one a singer would expect to see.
+ const f = frames.reduce((a, b) => (b.rmsDb > a.rmsDb ? b : a));
+ const gate = noiseFloorDb + gateDb;
+ const midi = f.f0 ? Math.round(hzToMidi(f.f0)) : null;
+ const state: PitchState = f.rmsDb < noiseFloorDb + 6 ? 'silent' : f.rmsDb < gate ? 'quiet' : !f.f0 || f.clarity < minClarity ? 'unclear' : 'pitch';
+ return { state, midi, clarity: f.clarity, levelDb: f.rmsDb, gateDb: gate, holding };
+}
 
 export class YinTracker {
  readonly hop: number;
@@ -137,8 +156,8 @@ export class NoteSegmenter {
   this.hopFrames = options.hop;
   this.minFrames = Math.round((options.minNoteMs ?? 70) * options.sampleRate / 1000);
   this.noiseFloorDb = options.noiseFloorDb ?? -60;
-  this.gate = options.gateDb ?? 15;
-  this.minClarity = options.minClarity ?? 0.8;
+  this.gate = options.gateDb ?? PITCH_GATE_DB;
+  this.minClarity = options.minClarity ?? MIN_PITCH_CLARITY;
  }
 
  setNoiseFloor(db: number) { this.noiseFloorDb = db; }

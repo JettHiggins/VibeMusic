@@ -140,3 +140,16 @@ test('verified hits replace a queued performance batch and survive stop-recordin
  assert.deepEqual(s.core.getSession().tracks[3].hits.filter(h=>h.lane==='snare').map(h=>h.step).sort((a,b)=>a-b),[1,2]);
  assert.ok(s.messages.some(m=>m.type==='ack'&&m.commandId==='expanded'&&m.status==='applied'));assert.equal(s.core.transport().playing,true);
 });
+
+test('actual SLOOP patch transitions preserve notes and sample continuity at the downbeat', {skip:!ready},async()=>{
+ const s=await setup(120);
+ s.core.dispatch(s.command('melody',{type:'edit-pattern',trackId:'synth-1',notes:[{id:'held',step:0,duration:64,midi:60,velocity:.8}],hits:[]},'next-loop'));
+ const notes=s.core.getSession().tracks[0].notes;
+ s.core.dispatch(s.command('play',{type:'play',playing:true}));s.render(128);
+ s.core.dispatch(s.command('sound',{type:'apply-patch',trackId:'synth-1',patch:{...s.core.getSession().tracks[0].patch,engine:1}},'next-loop'));
+ const before=s.render(352800-128),after=s.render(512);
+ assert.equal(after[0],before.at(-1),'first transitioned sample joins the last old output sample');
+ assert.equal(s.core.transport().loopStartFrame,352800);
+ assert.deepEqual(s.core.getSession().tracks[0].notes,notes);
+ assert.ok(after.every(Number.isFinite));assert.ok(after.some(v=>v!==0));
+});
