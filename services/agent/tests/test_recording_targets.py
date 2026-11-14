@@ -26,8 +26,8 @@ def test_noisy_room_spellings_reach_the_named_synth(phrase, track):
         assert interpret(phrase, session(selected), False).operation == {"type": "record", "target": {"trackId": track}}
 
 
-@pytest.mark.parametrize("phrase", ["record two", "record sent", "record since", "clear two", "clear bar two",
-                                    "clear beat three", "mute sent", "groove record 2"])
+@pytest.mark.parametrize("phrase", ["record two", "record sent", "record since", "clear two", "mute sent",
+                                    "groove record 2"])
 def test_track_words_that_name_no_track_are_refused_not_guessed(phrase):
     result = interpret(phrase, session("synth-1"), phrase.startswith("groove"))
     assert isinstance(result, NotUnderstood) and "which track" in result.reason
@@ -64,6 +64,12 @@ def test_successive_takes_on_synths_one_two_three_each_target_the_named_track():
     refused = connection.handle(utter("r4", "record sent", False), 0.0)
     assert [m["type"] for m in refused] == ["error"] and "which track" in refused[0]["message"]
 
+
+
+@pytest.mark.parametrize("phrase", ["clear bar two", "clear beat three"])
+def test_partial_positions_are_refused_by_the_erase_parser_without_mutation(phrase):
+    result = interpret(phrase, session("synth-1"), False)
+    assert isinstance(result, NotUnderstood) and "bar and beat" in result.reason
 
 
 # -- WS1 review of #34: invalid or conflicting specifications never fall back -------------

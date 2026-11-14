@@ -34,6 +34,9 @@ BOUNDARY = {
     "clear": "immediate",
     "undo": "immediate",
     "apply-patch": "next-loop",
+    # Playtest repair (docs/PLAYTEST-REPAIR-CONTRACT.md): both are immediate-only.
+    "metronome": "immediate",
+    "erase-event": "immediate",
 }
 
 _LANE_PHRASES = (
@@ -210,6 +213,75 @@ def _target_or_selected(rest: Sequence[str], session: Mapping[str, Any]) -> tupl
     return (resolution.target or _selected(session)), None
 
 
+_METRONOME_WORDS = frozenset({"metronome", "click", "clicks", "metronomes"})
+_ON_WORDS = frozenset({"on", "enable", "unmute", "start", "resume"})
+_OFF_WORDS = frozenset({"off", "disable", "mute", "stop", "silence", "kill"})
+
+
+def _metronome(tokens: Sequence[str]) -> Optional[Interpretation]:
+    """"metronome on/off", "turn the click off", "mute the metronome"; never a toggle guess."""
+    if not any(token in _METRONOME_WORDS for token in tokens):
+        return None
+    on, off = any(t in _ON_WORDS for t in tokens), any(t in _OFF_WORDS for t in tokens)
+    if on == off:  # neither, or contradictory ("unmute ... off")
+        return NotUnderstood("say metronome on or metronome off")
+    return _command({"type": "metronome", "enabled": on})
+
+
+_ERASE_VERBS = frozenset({"erase", "delete", "remove", "clear", "wipe"})
+_POSITION_WORDS = {"bar": "bar", "bars": "bar", "measure": "bar", "beat": "beat", "beats": "beat",
+                   "subdivision": "subdivision", "sixteenth": "subdivision", "sub": "subdivision"}
+_POSITION_NUMBERS = {"1": 1, "one": 1, "won": 1, "first": 1, "2": 2, "two": 2, "to": 2, "too": 2, "second": 2,
+                     "3": 3, "three": 3, "tree": 3, "third": 3, "4": 4, "four": 4, "for": 4, "fore": 4, "fourth": 4}
+_ERASE_HELP = "say erase, then bar and beat 1 to 4 (optionally subdivision 1 to 4), for example: erase bar 2 beat 3"
+
+
+def _erase_event(rest: Sequence[str], session: Mapping[str, Any],
+                 recording_target: Optional[Mapping[str, Any]]) -> Interpretation:
+    """erase-event at one-based bar/beat/subdivision: step = (bar-1)*16 + (beat-1)*4 + (subdivision-1).
+
+    Numbers follow their word ("bar 2 beat 3") or an ordinal precedes it ("the third beat of the
+    second bar"). Anything missing, repeated, out of 1..4 or left over is refused: an ambiguous
+    erase never mutates and never falls through to the language model.
+    """
+    found: dict[str, int] = {}
+    used: set[int] = set()
+    for index, token in enumerate(rest):
+        kind = _POSITION_WORDS.get(token)
+        if kind is None:
+            continue
+        value = None
+        after = rest[index + 1] if index + 1 < len(rest) else None
+        before = rest[index - 1] if index > 0 else None
+        if after is not None and (after.isdigit() or after in _POSITION_NUMBERS):
+            value, position = _POSITION_NUMBERS.get(after), index + 1
+            if value is None:
+                return NotUnderstood(f"{kind} must be 1 to 4; {_ERASE_HELP}")
+        elif before in ("first", "second", "third", "fourth"):
+            value, position = _POSITION_NUMBERS[before], index - 1
+        if value is None or kind in found:
+            return NotUnderstood(_ERASE_HELP)
+        found[kind] = value
+        used |= {index, position}
+    if "bar" not in found or "beat" not in found:
+        return NotUnderstood(_ERASE_HELP)
+    # The track part goes through the shared resolver with the position words already used:
+    # an invalid synth ("synth four"), two targets ("kick and snare") or a leftover number
+    # ("beat two and three") is refused, never resolved to the first or selected candidate.
+    resolution = resolve_target(rest, session, ignore=frozenset(used))
+    if resolution.problem is not None:
+        leftover_numbers = any(index not in resolution.used and _number(token) is not None
+                               for index, token in enumerate(rest))
+        return NotUnderstood(_ERASE_HELP if leftover_numbers else resolution.problem)
+    target = resolution.target
+    if target is None:
+        target = dict(recording_target) if recording_target else _selected(session)
+    if target["trackId"] == "drums" and "lane" not in target:
+        return NotUnderstood("say which drum to erase: kick, snare, or hats")
+    step = (found["bar"] - 1) * 16 + (found["beat"] - 1) * 4 + (found.get("subdivision", 1) - 1)
+    return _command({"type": "erase-event", "target": target, "step": step})
+
+
 def _needs_lane(target: Mapping[str, Any]) -> Optional[str]:
     if target["trackId"] == "drums" and "lane" not in target:
         return "say which drum: kick, snare, or hats"
@@ -237,11 +309,14 @@ def _tempo(tokens: Sequence[str], session: Mapping[str, Any]) -> Interpretation:
     return _command({"type": "tempo", "bpm": int(bpm) if float(bpm).is_integer() else bpm})
 
 
-def interpret(text: str, session: Mapping[str, Any], during_recording: bool, take_armed: bool = False) -> Interpretation:
+def interpret(text: str, session: Mapping[str, Any], during_recording: bool, take_armed: bool = False,
+              recording_target: Optional[Mapping[str, Any]] = None) -> Interpretation:
     """Map one utterance transcript to a command, using the browser's latest session snapshot.
 
     `take_armed`: a Record is counting in (not yet capturing). "Stop recording" then cancels
     the armed take with stop-recording, which keeps playback (RECORDING-USABILITY.md, Issue #3 e).
+    `recording_target`: the take that was capturing when this was said; erase defaults to it
+    before the ordinary selection (PLAYTEST-REPAIR-CONTRACT.md).
     """
     tokens = tokenize(text)
     while tokens and tokens[0] in _POLITE:
@@ -258,6 +333,15 @@ def interpret(text: str, session: Mapping[str, Any], during_recording: bool, tak
     if not tokens:
         return NotUnderstood("no command heard")
     verb, rest = tokens[0], tokens[1:]
+
+    # Deterministic, no model: checked before stop/mute so "stop the metronome" or "mute the
+    # click" never reaches the transport or track mute.
+    metronome = _metronome(tokens)
+    if metronome is not None:
+        return metronome
+
+    if verb in _ERASE_VERBS and any(token in _POSITION_WORDS for token in rest):
+        return _erase_event(rest, session, recording_target)
 
     if verb == "undo":
         return _command({"type": "undo"})
@@ -368,4 +452,9 @@ def validate_operation(operation: Mapping[str, Any]) -> Optional[str]:
             return "drum selection and recording require a lane"
     if target is not None and target["trackId"] != "drums" and "lane" in target:
         return "melodic targets must not have a lane"
+    if kind == "erase-event":
+        if target["trackId"] == "drums" and "lane" not in target:
+            return "drum erasure requires a lane"
+        if not 0 <= operation.get("step", -1) <= 63:
+            return "erase step must be 0..63"
     return None
