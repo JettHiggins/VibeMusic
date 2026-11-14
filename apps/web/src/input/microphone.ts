@@ -1,8 +1,9 @@
 import captureUrl from './capture-worklet.ts?worker&url';
 import type { AnalysisRequest, AnalysisResult } from './analysis-worker.ts';
 import type { Onset } from './onset.ts';
+import type { SungNote } from './pitch.ts';
 
-export interface AnalysisFrame { onsets: Onset[]; analysedThrough: number; levelDb: number; analysisMs: number }
+export interface AnalysisFrame { onsets: Onset[]; notes: SungNote[]; analysedThrough: number; levelDb: number; analysisMs: number }
 
 /**
  * Connects an input (the microphone, or a diagnostic test signal) to the capture worklet on the
@@ -73,6 +74,9 @@ export class MicrophoneInput {
   source.connect(this.node!); source.start(when);
   this.source = source; this.inputLatencySeconds = 0; this.deviceId = 'test-signal';
  }
+
+ /** End any open sung note at a raw capture frame. */
+ flush(frame: number) { this.request({ type: 'flush', frame }); }
 
  configure(noiseFloorDb: number, sensitivity?: number) { this.request({ type: 'configure', noiseFloorDb, ...(sensitivity ? { sensitivity } : {}) }); }
 

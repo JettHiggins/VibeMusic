@@ -35,7 +35,12 @@ export class VoiceInput {
   this.state = { microphone: 'off', levelDb: -120, calibration: null, calibrating: null, recorder: this.recorder.status(), analysisP95Ms: null, message: null };
   this.recorder.onChange = recorder => this.update({ recorder });
   this.unsubscribe = engine.subscribe(message => {
-   if (message.type === 'transport') this.transport = message.transport;
+   if (message.type === 'transport') {
+    const was = this.transport?.recordingState;
+    this.transport = message.transport;
+    // When a take closes, finish the note being sung so it is kept (clamped to the cut-off).
+    if (was === 'recording' && message.transport.recordingState !== 'recording') this.mic?.flush(message.transport.currentFrame + (this.state.calibration?.latencyFrames ?? 0));
+   }
    this.recorder.handle(message);
   });
  }
@@ -79,7 +84,11 @@ export class VoiceInput {
  private onAnalysis(frame: AnalysisFrame) {
   this.timings.push(frame.analysisMs); if (this.timings.length > 400) this.timings.shift();
   if (this.collector) { this.collector.push(...frame.onsets.map(o => o.frame)); }
-  else if (this.transport && this.state.calibration) this.recorder.addOnsets(frame.onsets, this.state.calibration.latencyFrames, this.transport.clockId, frame.analysedThrough);
+  else if (this.transport && this.state.calibration) {
+   const { latencyFrames } = this.state.calibration, clock = this.transport.clockId;
+   if (frame.notes.length) this.recorder.addNotes(frame.notes, latencyFrames, clock, frame.analysedThrough);
+   this.recorder.addOnsets(frame.onsets, latencyFrames, clock, frame.analysedThrough);
+  }
   const sorted = [...this.timings].sort((a, b) => a - b);
   this.update({ levelDb: frame.levelDb, analysisP95Ms: sorted[Math.floor(sorted.length * 0.95)] ?? null });
  }

@@ -90,3 +90,80 @@ test('beatboxed kick take lands on the grid in the real engine and playback cont
  assert.ok(l.every(Number.isFinite) && l.some(v => v !== 0));
  assert.ok(mic.length > 0);
 });
+
+/**
+ * Milestone 3 acceptance against real SLOOP WASM: sing a four-bar melody onto synth-1, then sing
+ * a corrected phrase in bar 3 only. Untouched notes survive; the corrected phrase replaces bar 3.
+ */
+test('a sung melody records, and a re-sung phrase replaces only that phrase', { skip: !ready }, async () => {
+ const { YinTracker, NoteSegmenter } = await import('../apps/web/src/input/pitch.ts');
+ const module = await WebAssembly.compile(readFileSync(`${dir}/voicesynth.wasm`));
+ const { FirmwareAudio } = await import(pathToFileURL(resolve(`${dir}/preview-worklet.js`)).href);
+ const metadata = JSON.parse(readFileSync(`${dir}/metadata.json`, 'utf8'));
+ const listeners: ((m: ClientMessage) => void)[] = [];
+ const core: EngineCore = new EngineCore(new FirmwareAudio(module), metadata, createSession(), 'clock', m => listeners.forEach(l => l(m)));
+ let n = 0;
+ const recorder = new PerformanceRecorder({ dispatch: c => core.dispatch(c), newId: () => `m${++n}` }, 'manual');
+ listeners.push(m => recorder.handle(m));
+ recorder.handle({ type: 'session', session: core.getSession() });
+ const yin = new YinTracker({ sampleRate: SR });
+ const segmenter = new NoteSegmenter({ sampleRate: SR, hop: yin.hop, noiseFloorDb: -60 });
+ const latency = 0.07 * SR, stepFrames = SR * 60 / (120 * 4), loop = stepFrames * 64;
+ let frame = 0;
+ type Sung = { midi: number; from: number; to: number };
+ let singing: { notes: Sung[]; origin: number } = { notes: [], origin: 0 };
+ const phases = new Map<Sung, number>();
+ /** Voice-like tone with ±0.3 semitone vibrato; phase is integrated per sample (no chirp). */
+ const voice = (f: number) => {
+  let s = Math.sin(f * 12.9898) * 43758.5453 % 1 * 0.0005;
+  for (const note of singing.notes) {
+   const a = singing.origin + note.from * stepFrames + latency, b = singing.origin + note.to * stepFrames + latency;
+   if (f < a || f >= b) continue;
+   const t = (f - a) / SR, env = Math.min(1, t / 0.02, (b - f) / SR / 0.02), hz = 440 * 2 ** ((note.midi - 69 + 0.3 * Math.sin(2 * Math.PI * 5.5 * t)) / 12);
+   const phase = (phases.get(note) ?? 0) + 2 * Math.PI * hz / SR; phases.set(note, phase);
+   for (let h = 1; h <= 5; h++) s += Math.sin(h * phase) / (h * h) * 0.15 * env;
+  }
+  return s;
+ };
+ const run = (frames: number) => {
+  for (let done = 0; done < frames; done += 128) {
+   const l = new Float32Array(128), r = new Float32Array(128);
+   core.render(l, r, frame);
+   const block = new Float32Array(128);
+   for (let i = 0; i < 128; i++) block[i] = voice(frame + i);
+   const notes = segmenter.push(yin.process(block, frame));
+   frame += 128;
+   const open = segmenter.openStart;
+   recorder.addNotes(notes, latency, 'clock', open === null ? frame : Math.min(frame, open));
+   if (frame % 2048 === 0) recorder.handle({ type: 'transport', transport: core.transport() });
+  }
+ };
+ const command = (id: string, operation: SessionCommand['operation'], boundary: SessionCommand['boundary'] = 'immediate'): SessionCommand => ({ id, expectedRevision: core.getSession().revision, boundary, operation });
+ const take = (id: string, notes: Sung[]) => {
+  core.dispatch(command(`${id}-rec`, { type: 'record', target: { trackId: 'synth-1' } }, 'next-loop'));
+  run(128);
+  while (core.transport().recordingState !== 'recording') run(128);
+  const start = core.transport().recordingStartFrame!;
+  singing = { notes, origin: start };
+  run(Math.ceil(start + loop - frame));
+  recorder.handle({ type: 'transport', transport: core.transport() });
+  core.dispatch(command(`${id}-stop`, { type: 'stop-recording' }));
+  recorder.addNotes(segmenter.flush(frame), latency, 'clock', frame);
+  recorder.handle({ type: 'transport', transport: core.transport() });
+  singing = { notes: [], origin: 0 };
+  // A batch queued just before Stop goes stale (stop bumps the revision) and lands one loop later.
+  run(Math.ceil(loop * 2.2));
+ };
+ const melody: Sung[] = [[60, 0, 6], [62, 8, 12], [64, 12, 16], [67, 16, 24], [65, 24, 30], [64, 32, 36], [62, 36, 40], [60, 40, 46], [62, 48, 56], [60, 56, 62.5]].map(([midi, from, to]) => ({ midi, from, to }));
+ take('first', melody);
+ const notes = () => core.getSession().tracks[0].notes.map(x => [x.step, x.duration, x.midi]).sort((a, b) => a[0] - b[0]);
+ assert.deepEqual(notes(), melody.map(m => [Math.round(m.from), Math.round(m.to) - Math.round(m.from), m.midi]), 'first take');
+ assert.equal(recorder.status().lastError, null);
+ // Correct bar 3 only: a different three-note phrase.
+ const fix: Sung[] = [[67, 32, 36], [69, 36, 40], [71, 40, 46]].map(([midi, from, to]) => ({ midi, from, to }));
+ take('fix', fix);
+ const expected = [...melody.filter(m => m.from < 32 || m.from >= 48), ...fix].map(m => [Math.round(m.from), Math.round(m.to) - Math.round(m.from), m.midi]).sort((a, b) => a[0] - b[0]);
+ assert.deepEqual(notes(), expected, 'only bar 3 replaced');
+ assert.equal(core.transport().playing, true, 'playback continues');
+ assert.equal(recorder.status().lastError, null);
+});

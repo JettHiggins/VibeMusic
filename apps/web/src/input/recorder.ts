@@ -1,5 +1,6 @@
 import type { ClientMessage, PerformanceEvent, SessionCommand, SessionState, Transport } from '@voicesynth/contracts';
 import type { Onset } from './onset.ts';
+import type { SungNote } from './pitch.ts';
 
 /**
  * Turns analysed microphone onsets into verified, atomic `commit-performance` batches.
@@ -19,8 +20,17 @@ export interface RecorderDeps {
  dispatch(command: SessionCommand): ClientMessage;
  newId(): string;
 }
+export interface RecorderOptions {
+ /**
+  * While a take is open, hold verified events and submit one batch this many seconds before
+  * the loop boundary. Batches apply only at boundaries and one is in flight at a time, so
+  * submitting early would delay everything performed later in the loop by a whole loop.
+  */
+ batchLeadSeconds?: number;
+}
 export interface Span { startFrame: number; endFrame: number }
-export interface ProvisionalEvent { event: Extract<PerformanceEvent, { kind: 'onset' }>; step: number; status: 'provisional' | 'submitted' }
+/** step/duration are the expected quantized cells, for live feedback only; the engine quantizes authoritatively. */
+export interface ProvisionalEvent { event: PerformanceEvent; step: number; duration: number; status: 'provisional' | 'submitted' }
 export interface RecorderStatus {
  mode: VerificationMode;
  capturing: boolean;
@@ -55,7 +65,11 @@ export class PerformanceRecorder {
  private dropped = 0;
  private lastError: string | null = null;
 
- constructor(private deps: RecorderDeps, private mode: VerificationMode = 'manual') {}
+ private readonly batchLead: number;
+
+ constructor(private deps: RecorderDeps, private mode: VerificationMode = 'manual', options: RecorderOptions = {}) {
+  this.batchLead = options.batchLeadSeconds ?? 0.4;
+ }
 
  setMode(mode: VerificationMode) { this.mode = mode; this.speechVerifiedThrough = -1; this.changed(); }
  /** Speech mode: whether recognition is connected. Losing it stops new commits immediately. */
@@ -77,7 +91,7 @@ export class PerformanceRecorder {
   this.spans.push(span);
   if (this.spans.length > MAX_SPANS * 4) this.spans.splice(0, this.spans.length - MAX_SPANS * 4);
   const before = this.events.length;
-  this.events = this.events.filter(e => e.status === 'submitted' || e.event.clockId !== span.clockId || !overlaps(e.event.captureFrame, span));
+  this.events = this.events.filter(e => e.status === 'submitted' || e.event.clockId !== span.clockId || !overlaps(e.event.captureFrame, endOf(e.event), span));
   this.dropped += before - this.events.length;
   this.changed();
  }
@@ -93,18 +107,45 @@ export class PerformanceRecorder {
   * analysedThrough is the raw frame up to which analysis is complete.
   */
  addOnsets(onsets: Onset[], latencyFrames: number, clockId: string, analysedThrough: number) {
-  // Contract frames are integers: round events, floor watermarks (never claim a partial frame).
-  this.analysedThrough = Math.max(this.analysedThrough, Math.floor(analysedThrough - latencyFrames));
-  const w = this.window;
   for (const onset of onsets) {
    const frame = Math.round(onset.frame - latencyFrames);
-   if (!w || clockId !== w.clockId || !this.capturing || w.target.trackId !== 'drums' || !w.target.lane) { this.dropped++; continue; }
-   if (frame < w.startFrame || frame > w.cutoff && !w.open || onset.confidence < MIN_CONFIDENCE || onset.velocity <= 0) { this.dropped++; continue; }
-   if (this.spans.some(s => s.clockId === clockId && overlaps(frame, s))) { this.dropped++; continue; }
-   const event = { kind: 'onset' as const, id: this.deps.newId(), target: { trackId: w.target.trackId, lane: w.target.lane }, captureFrame: frame, clockId, confidence: onset.confidence, velocity: onset.velocity };
-   this.events.push({ event, step: this.stepOf(frame), status: 'provisional' });
+   this.accept(clockId, 'drums', frame, frame, onset.confidence, onset.velocity, target => ({ kind: 'onset', id: this.deps.newId(), target, captureFrame: frame, clockId, confidence: onset.confidence, velocity: onset.velocity }));
   }
+  this.analysed(analysedThrough, latencyFrames);
+ }
+
+ /** Sung notes from the pitch segmenter, same frame conventions as addOnsets. */
+ addNotes(notes: SungNote[], latencyFrames: number, clockId: string, analysedThrough: number) {
+  for (const note of notes) {
+   const start = Math.round(note.startFrame - latencyFrames);
+   let end = Math.round(note.endFrame - latencyFrames);
+   // A note still sounding when the take closed is kept up to the cut-off.
+   if (this.window && !this.window.open) end = Math.min(end, this.window.cutoff);
+   if (end <= start) { this.dropped++; continue; }
+   this.accept(clockId, 'melodic', start, end, note.confidence, note.velocity, target => ({ kind: 'note', id: this.deps.newId(), target, captureFrame: start, endFrame: end, clockId, confidence: note.confidence, velocity: note.velocity, midi: note.midi }));
+  }
+  this.analysed(analysedThrough, latencyFrames);
+ }
+
+ private analysed(analysedThrough: number, latencyFrames: number) {
+  // Contract frames are integers: round events, floor watermarks (never claim a partial frame).
+  this.analysedThrough = Math.max(this.analysedThrough, Math.floor(analysedThrough - latencyFrames));
   this.pump();
+ }
+
+ private accept(clockId: string, kind: 'drums' | 'melodic', start: number, end: number, confidence: number, velocity: number, make: (target: Transport['recordingTarget'] & {}) => PerformanceEvent) {
+  const w = this.window;
+  const fits = w && (kind === 'drums' ? w.target.trackId === 'drums' && !!w.target.lane : w.target.trackId !== 'drums' && !w.target.lane);
+  // Both analysers always run; events of the other kind are irrelevant to this take, not "ignored".
+  if (w && !fits) return;
+  // Late analysis results for audio before the cut-off still count after the take closes.
+  if (!w || clockId !== w.clockId || (this.mode === 'speech' && !this.speechAvailable)) { this.dropped++; return; }
+  if (start < w.startFrame || (!w.open && start > w.cutoff) || confidence < MIN_CONFIDENCE || velocity <= 0) { this.dropped++; return; }
+  if (this.spans.some(s => s.clockId === clockId && overlaps(start, end, s))) { this.dropped++; return; }
+  const event = make({ ...w.target });
+  const step = this.stepOf(start);
+  const duration = kind === 'drums' ? 1 : Math.max(1, Math.min(64, this.stepOf(end, false) - this.stepOf(start, false)));
+  this.events.push({ event, step, duration, status: 'provisional' });
  }
 
  get capturing() {
@@ -116,10 +157,11 @@ export class PerformanceRecorder {
   return { mode: this.mode, capturing: this.capturing, provisional: this.events.map(e => ({ ...e })), committed: this.committed, dropped: this.dropped, lastError: this.lastError, inFlight: this.inFlight?.id ?? null };
  }
 
- private stepOf(frame: number) {
+ private stepOf(frame: number, wrap = true) {
   const w = this.window!;
   const stepFrames = (this.transport?.sampleRate ?? 44100) * 60 / (w.tempo * 4);
-  return ((Math.round((frame - w.startFrame) / stepFrames) % 64) + 64) % 64;
+  const step = Math.round((frame - w.startFrame) / stepFrames);
+  return wrap ? ((step % 64) + 64) % 64 : step;
  }
 
  private onTransport(t: Transport) {
@@ -140,6 +182,8 @@ export class PerformanceRecorder {
    this.window.open = false;
    const cutoff = this.window.cutoff, before = this.events.length;
    this.events = this.events.filter(e => e.status === 'submitted' || e.event.captureFrame <= cutoff);
+   this.events.forEach(e => { if (e.status === 'provisional' && e.event.kind === 'note' && e.event.endFrame > cutoff) e.event = { ...e.event, endFrame: cutoff }; });
+   this.events = this.events.filter(e => endOf(e.event) > e.event.captureFrame || e.event.kind === 'onset');
    this.dropped += before - this.events.length;
   }
   this.pump();
@@ -159,14 +203,24 @@ export class PerformanceRecorder {
   if (this.inFlight || !this.session || !this.window || this.window.clockId !== this.transport?.clockId) { this.changed(); return; }
   if (this.mode === 'speech' && !this.speechAvailable) { this.changed(); return; }
   if (this.session.revision < this.minRevision) { this.changed(); return; }
+  if (!this.nearBoundary()) { this.changed(); return; }
   const mark = this.watermark();
-  const ready = this.events.filter(e => e.status === 'provisional' && e.event.captureFrame <= mark).slice(0, MAX_EVENTS);
+  const ready = this.events.filter(e => e.status === 'provisional' && endOf(e.event) <= mark).slice(0, MAX_EVENTS);
   if (!ready.length) { this.changed(); return; }
   this.submit(ready, mark);
  }
 
+ /** True when a batch submitted now is the last chance to apply at the coming loop boundary. */
+ private nearBoundary() {
+  const t = this.transport!;
+  if (!this.window!.open || !t.playing || !Number.isFinite(this.batchLead)) return true;
+  const loop = t.sampleRate * 60 / ((this.session?.tempo ?? 120) * 4) * 64;
+  const elapsed = ((t.currentFrame - t.loopStartFrame) % loop + loop) % loop;
+  return loop - elapsed <= this.batchLead * t.sampleRate;
+ }
+
  private submit(batch: ProvisionalEvent[], mark: number) {
-  const first = Math.min(...batch.map(e => e.event.captureFrame)), last = Math.max(...batch.map(e => e.event.captureFrame));
+  const first = Math.min(...batch.map(e => e.event.captureFrame)), last = Math.max(...batch.map(e => endOf(e.event)));
   const excludedSpans = this.spans.filter(s => s.clockId === this.window!.clockId && s.startFrame <= last && s.endFrame >= first).slice(-MAX_SPANS).map(({ startFrame, endFrame }) => ({ startFrame, endFrame }));
   const command: SessionCommand = {
    id: this.deps.newId(), expectedRevision: this.session!.revision, boundary: 'next-loop',
@@ -215,4 +269,5 @@ export class PerformanceRecorder {
  private changed() { this.onChange(this.status()); }
 }
 
-function overlaps(frame: number, span: Span) { return frame >= span.startFrame && frame <= span.endFrame; }
+function overlaps(start: number, end: number, span: Span) { return start <= span.endFrame && end >= span.startFrame; }
+function endOf(event: PerformanceEvent) { return event.kind === 'note' ? event.endFrame : event.captureFrame; }
