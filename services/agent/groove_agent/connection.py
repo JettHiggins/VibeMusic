@@ -11,6 +11,7 @@ it only reads the revision to fill `expectedRevision`.
 """
 from __future__ import annotations
 
+import re
 from collections import OrderedDict, deque
 from copy import deepcopy
 import json
@@ -88,6 +89,15 @@ class _Search:
     description: str
     status: str = "running"
     candidates: Sequence[dict] = ()
+
+
+_WAKE_SPLIT = re.compile(r"(?<=\S)\s+(?=(?:%s)\b)" % "|".join(sorted(WAKE_WORDS)), re.IGNORECASE)
+
+
+def split_commands(text: str) -> list[str]:
+    """One segment can hold several commands when the pause between them is short:
+    "Groove, record kick. Groove, stop." -> ["Groove, record kick.", "Groove, stop."]"""
+    return [piece.strip() for piece in _WAKE_SPLIT.split(text) if piece.strip()]
 
 
 def _bare_wake(text: str) -> bool:
@@ -231,13 +241,20 @@ class Connection:
         return out
 
     def _speech_utterance(self, job: SpeechJob, text: str, now: float, end: Optional[int] = None) -> list[dict]:
+        """Every command in the segment, in spoken order; the segment's span is sent once, first."""
         segment = job.segment
         window = self._window_at(segment.start_frame)  # capture-time context of the first word spoken
-        return self._on_utterance({
-            "type": "utterance", "id": job.job_id, "text": text, "clockId": job.clock_id,
-            "startFrame": segment.start_frame, "endFrame": segment.last_frame if end is None else end,
-            "duringRecording": window is not None and window.kind == "recording"}, now,
-            take_armed=window is not None and window.kind == "armed", obsolete=self._obsolete(window))
+        out: list[dict] = []
+        for index, command in enumerate(split_commands(text)):
+            out.extend(self._on_utterance({
+                "type": "utterance", "id": job.job_id if index == 0 else f"{job.job_id}:{index}", "text": command,
+                "clockId": job.clock_id, "startFrame": segment.start_frame,
+                "endFrame": segment.last_frame if end is None else end,
+                "duringRecording": window is not None and window.kind == "recording"}, now,
+                take_armed=(window is not None and window.kind == "armed") or (index > 0 and self._take_armed()),
+                obsolete=self._obsolete(window),
+                emit_span=not any(m["type"] == "command-span" for m in out)))
+        return out
 
     def _wake_join_frames(self) -> int:
         return round(WAKE_JOIN_SECONDS * (self.transport or {}).get("sampleRate", 44100))
@@ -386,7 +403,7 @@ class Connection:
     # -- utterances --------------------------------------------------------------
 
     def _on_utterance(self, message: Mapping[str, Any], now: float, take_armed: Optional[bool] = None,
-                      obsolete: bool = False) -> list[dict]:
+                      obsolete: bool = False, emit_span: bool = True) -> list[dict]:
         utterance_id = message["id"]
         if utterance_id in self._utterances:
             return []  # already handled; never issue a second command for the same utterance
@@ -410,7 +427,7 @@ class Connection:
         # from the take even when the command is not understood or is refused (Issue #3 d), and
         # it is sent first so the browser can exclude it before any command or watermark.
         out: list[dict] = []
-        if during_recording:
+        if during_recording and emit_span:
             out.append({"type": "command-span", "utteranceId": utterance_id, "clockId": message["clockId"],
                         "startFrame": message["startFrame"], "endFrame": message["endFrame"]})
         if obsolete:

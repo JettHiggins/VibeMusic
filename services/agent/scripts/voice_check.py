@@ -22,7 +22,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from groove_agent.connection import WAKE_JOIN_SECONDS, _bare_wake  # noqa: E402
+from groove_agent.connection import WAKE_JOIN_SECONDS, _bare_wake, split_commands  # noqa: E402
 from groove_agent.contracts import load_fixture  # noqa: E402
 from groove_agent.intents import Command, interpret  # noqa: E402
 from groove_agent.speech import Chunk  # noqa: E402
@@ -110,8 +110,16 @@ def main() -> None:
         i += 1
         if not text.strip():
             continue
-        print(f"  {text!r}\n      during a take:   {describe(interpret(text, session, True))}\n"
-              f"      outside a take:  {describe(interpret(text, session, False))}")
+        armed = False
+        for command in split_commands(text):
+            outside = interpret(command, session, False, take_armed=armed)
+            print(f"  {command!r}\n      during a take:   {describe(interpret(command, session, True))}\n"
+                  f"      outside a take:  {describe(outside)}")
+            if isinstance(outside, Command):
+                if outside.operation["type"] == "record":
+                    armed = True
+                elif outside.operation["type"] == "stop-recording":
+                    armed = False
 
 
 if __name__ == "__main__":
