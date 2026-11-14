@@ -14,7 +14,7 @@ export function InputInspector({ voice, state, transport, enabled, melodic }: { 
  const [deviceId, setDeviceId] = useState('');
  const micReady = state.microphone === 'on' || state.microphone === 'test-signal';
  const recording = (transport?.recordingState ?? 'idle') !== 'idle';
- const run = (task: () => Promise<void>) => { setBusy(true); task().catch(() => {}).finally(() => setBusy(false)); };
+ const run = (task: () => Promise<unknown>) => { setBusy(true); task().catch(() => {}).finally(() => setBusy(false)); };
  useEffect(() => { if (state.microphone === 'on') listAudioInputs().then(setDevices).catch(() => setDevices([])); }, [state.microphone]);
  const heard = state.recorder.provisional.filter(p => p.status === 'provisional').length;
  const queued = state.recorder.provisional.filter(p => p.status === 'submitted').length;

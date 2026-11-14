@@ -1,4 +1,4 @@
-import type { ClientMessage, ServerMessage, SessionCommand, Transport } from '@voicesynth/contracts';
+import type { BrowserAction, BrowserActionAck, BrowserActionAdapter, BrowserStatus, ClientMessage, ServerMessage, SessionCommand, Transport } from '@voicesynth/contracts';
 import { calibrationProgress, calibrationStatus, clickPlan, defaultCalibration, effectiveLatencyFrames, estimateLatency, timingCheck, type CalibrationProgress, type CalibrationStatus, type InputCalibration } from './calibration.ts';
 import { MicCheck, type MicCheckState } from './mic-check.ts';
 import { buildMicTestReport, type CaptureSettings, type MicTestReport } from './diagnostics.ts';
@@ -39,7 +39,16 @@ export interface VoiceInputOptions {
  createMic?: (context: AudioContext) => MicLike | Promise<MicLike>;
  timers?: RunTimers;
  tickMs?: number;
+ /** How long an agent input action waits for restarted speech to report ready (default 8 s). */
+ speechResumeMs?: number;
 }
+/** How a guided calibration ended. Only `complete` means new measurements were applied (or, for a check, measured). */
+export interface CalibrationOutcome { status: 'complete' | 'cancelled' | 'rejected'; text: string }
+type InputActionKind = NonNullable<BrowserStatus['activeAction']>['kind'];
+type InputActionPhase = NonNullable<BrowserStatus['activeAction']>['phase'];
+interface AgentInputAction { id: string; kind: InputActionKind; phase: InputActionPhase; cancelled: boolean; done: Promise<void> }
+const MAX_ACTION_RECORDS = 4096;
+type MutatingInputOperation = Exclude<BrowserAction['operation'], { type: 'cancel-input-action' }>;
 /** Silence measurement: a quiet preparation countdown, then the measurement itself (no clicks). */
 export type SilenceProgress = { phase: 'countdown'; countdownLeft: number } | { phase: 'measuring' };
 export interface VoiceInputState {
@@ -68,7 +77,7 @@ export interface VoiceInputState {
 const SILENCE_COUNTDOWN = 3, SILENCE_SECONDS = 1.5;
 
 /** Owns the microphone → onset → verified performance path for one engine AudioContext. */
-export class VoiceInput {
+export class VoiceInput implements BrowserActionAdapter {
  onChange: (state: VoiceInputState) => void = () => {};
  readonly recorder: PerformanceRecorder;
  onBeforeLiveEdit: (operation: SessionCommand['operation']) => void = () => {};
@@ -90,6 +99,15 @@ export class VoiceInput {
  private run: TimedRun | null = null;
  private unsubscribe: () => void;
  private createMic: (context: AudioContext) => MicLike | Promise<MicLike>;
+ // Browser-action executor (agent-owned input work). See docs/MUSICAL-CONTROL-CONTRACT.md.
+ private inputRevision = 0;
+ private inputClock: string | null = null;
+ private agentAction: AgentInputAction | null = null;
+ private actionRecords = new Map<string, { payload: string; last: BrowserActionAck }>();
+ private actionListeners = new Set<(message: BrowserStatus | BrowserActionAck) => void>();
+ private lastEmittedStatus: string | null = null;
+ /** Set while an agent action has ended the speech stream; it is restarted on the same socket afterwards. */
+ private speechPaused = false;
 
  constructor(private engine: EngineLike, mode: VerificationMode = 'manual', private options: VoiceInputOptions = {}) {
   this.createMic = options.createMic ?? (async context => new (await import('./microphone.ts')).MicrophoneInput(context));
@@ -101,6 +119,11 @@ export class VoiceInput {
    if(message.type==='ack')this.latestRevision=Math.max(this.latestRevision,message.revision);
    if (message.type === 'transport') {
     if(this.transport&&this.transport.clockId!==message.transport.clockId)this.failSpeech('Audio clock changed; restart hands-free capture');
+    if(this.inputClock!==message.transport.clockId){
+     // A new audio clock starts a new input revision sequence; work bound to the old clock ends.
+     if(this.inputClock!==null)this.cancelBrowserActions('Audio clock changed');
+     this.inputClock=message.transport.clockId;this.inputRevision=0;this.lastEmittedStatus=null;
+    }
     const was = this.transport?.recordingState;
     const epochChanged = message.transport.recordingEpoch !== undefined && message.transport.recordingEpoch !== this.transport?.recordingEpoch;
     this.transport = message.transport;
@@ -108,6 +131,7 @@ export class VoiceInput {
     if (epochChanged) this.mic?.reset((message.transport.captureStartFrame ?? message.transport.recordingStartFrame ?? message.transport.currentFrame) + (this.state.calibration ? effectiveLatencyFrames(this.state.calibration) : 0));
     // When a take closes, finish the note being sung so it is kept (clamped to the cut-off).
     if (!epochChanged && was === 'recording' && message.transport.recordingState !== 'recording') this.mic?.flush(message.transport.currentFrame + (this.state.calibration ? effectiveLatencyFrames(this.state.calibration) : 0));
+    this.emitStatus();
    }
    this.recorder.handle(message);
   });
@@ -122,10 +146,18 @@ export class VoiceInput {
 
  getState() { return this.state; }
  private update(patch: Partial<VoiceInputState>) {
-  if ('calibration' in patch && this.state.speech.enabled) this.failSpeech('Calibration changed; restart hands-free capture');
+  if ('calibration' in patch && this.state.speech.enabled && !this.speechPaused) this.failSpeech('Calibration changed; restart hands-free capture');
+  const before = this.configKey();
   this.state = { ...this.state, ...patch };
   if ('calibration' in patch) this.state.readiness = calibrationStatus(this.state.calibration);
+  // Device/connection, profile and applied calibration/offset changes advance the input revision; progress does not.
+  if (this.configKey() !== before) this.inputRevision++;
   this.onChange(this.state);
+  this.emitStatus();
+ }
+ private configKey() {
+  const c = this.state.calibration;
+  return JSON.stringify([this.state.microphone, this.state.processingProfile, c?.deviceId, c?.noiseFloorDb, c?.noiseSource, c?.latencyFrames, c?.latencySource, c?.offsetAdjustMs]);
  }
 
  /** Server messages from the agent coordinator; command spans exclude speech from takes. */
@@ -144,7 +176,8 @@ export class VoiceInput {
  private engineSessionRevision() {return this.engine.getSession?.().revision??this.latestRevision;}
  private latestRevision=0;
  private failSpeech(reason:string) {
-  if(!this.state.speech.enabled||this.state.speech.status==='unavailable')return;
+  // A paused stream has already ended; the action that paused it restarts or reports speech afterwards.
+  if(this.speechPaused||!this.state.speech.enabled||this.state.speech.status==='unavailable')return;
   this.recorder.setSpeechAvailable(false);this.recorder.resetPendingCapture();this.mic?.stopSpeech?.();this.speechSession=null;
   this.update({speech:{enabled:true,status:'unavailable',message:reason}});
   this.endSpeechTake();this.resetSpeechConnection();
@@ -255,30 +288,32 @@ export class VoiceInput {
   * Guided silence measurement: a visible preparation countdown ("stay quiet"), then 1.5 s of
   * measurement. Cancel (or losing the mic) keeps the previous noise floor. No clicks are played.
   */
- async calibrateNoise(countdown = SILENCE_COUNTDOWN) {
+ async calibrateNoise(countdown = SILENCE_COUNTDOWN): Promise<CalibrationOutcome> {
   const context = this.context();
   const blocked = !this.mic || !this.state.calibration ? 'Enable the microphone first.' : this.run ? 'A calibration is already running.' : null;
-  if (blocked) { this.update({ calibrationResult: { ok: false, text: blocked } }); return; }
+  if (blocked) { this.update({ calibrationResult: { ok: false, text: blocked } }); return { status: 'rejected', text: blocked }; }
   const mic = this.mic!, previous = this.state.calibration!;
   // Nothing writes the calibration until a run succeeds, so "keeping" it means leaving it untouched
   // (restoring a snapshot could undo a trim made meanwhile, or apply one device's values to another).
-  const keep = (text: string) => this.update({ calibrationResult: { ok: false, text } });
+  const keep = (text: string, status: CalibrationOutcome['status'] = 'cancelled'): CalibrationOutcome => { this.update({ calibrationResult: { ok: false, text } }); return { status, text }; };
   this.update({ calibrating: 'noise', silenceRun: { phase: 'countdown', countdownLeft: countdown }, calibrationResult: null, message: null });
   try {
    const prepEnd = context.currentTime + countdown;
    const prep = this.startRun(context, prepEnd, () => this.update({ silenceRun: { phase: 'countdown', countdownLeft: Math.max(1, Math.min(countdown, Math.ceil(prepEnd - context.currentTime))) } }));
-   if (await prep.settled === 'cancelled') { keep('Silence measurement cancelled; the previous noise floor was kept.'); return; }
+   if (await prep.settled === 'cancelled') return keep('Silence measurement cancelled; the previous noise floor was kept.');
    this.update({ silenceRun: { phase: 'measuring' } });
    // The measurement promise cannot be aborted, so a parallel run lets Cancel win the race.
    const measuring = this.startRun(context, Number.POSITIVE_INFINITY, () => {});
    const outcome = await Promise.race([mic.measureNoiseFloor(SILENCE_SECONDS).then(db => ({ db }), (error: unknown) => ({ error })), measuring.settled.then(() => null)]);
    const cancelled = !measuring.active; measuring.cancel();
-   if (cancelled || outcome === null) { keep('Silence measurement cancelled; the previous noise floor was kept.'); return; }
-   if ('error' in outcome) { keep(`${outcome.error instanceof Error ? outcome.error.message : String(outcome.error)}. The previous noise floor was kept.`); return; }
+   if (cancelled || outcome === null) return keep('Silence measurement cancelled; the previous noise floor was kept.');
+   if ('error' in outcome) return keep(`${outcome.error instanceof Error ? outcome.error.message : String(outcome.error)}. The previous noise floor was kept.`, 'rejected');
    const calibration: InputCalibration = { ...(this.state.calibration ?? previous), noiseFloorDb: outcome.db, noiseSource: 'measured' };
    mic.configure(outcome.db); saveCalibration(calibration, undefined, this.state.processingProfile);
    this.check?.reset();
-   this.update({ calibration, calibrationResult: { ok: true, text: `Noise floor ${outcome.db.toFixed(1)} dBFS${outcome.db > -45 ? ' (noisy room: quiet hits may be missed)' : ''}` } });
+   const text = `Noise floor ${outcome.db.toFixed(1)} dBFS${outcome.db > -45 ? ' (noisy room: quiet hits may be missed)' : ''}`;
+   this.update({ calibration, calibrationResult: { ok: true, text } });
+   return { status: 'complete', text };
   } finally { this.update({ calibrating: null, silenceRun: null }); }
  }
 
@@ -289,10 +324,10 @@ export class VoiceInput {
   * losing the microphone, changing device, disposing, or the AudioContext closing) keeps the
   * previous valid calibration and stops any scheduled clicks.
   */
- async calibrateLatency(options: { countdown?: number; practice?: number; measured?: number; interval?: number; verify?: boolean } = {}) {
+ async calibrateLatency(options: { countdown?: number; practice?: number; measured?: number; interval?: number; verify?: boolean } = {}): Promise<CalibrationOutcome> {
   const context = this.context();
   const blocked = !this.mic || !this.state.calibration ? 'Enable the microphone first.' : this.transport?.playing ? 'Stop playback before calibrating timing.' : this.run ? 'A calibration is already running.' : null;
-  if (blocked) { this.update({ calibrationResult: { ok: false, text: blocked } }); return; }
+  if (blocked) { this.update({ calibrationResult: { ok: false, text: blocked } }); return { status: 'rejected', text: blocked }; }
   const previous = this.state.calibration!;
   const plan = clickPlan(context.currentTime + 0.05, options);
   const run = this.startRun(context, plan.end + 0.4, () => this.update({ calibrationRun: calibrationProgress(plan, context.currentTime) }));
@@ -310,24 +345,30 @@ export class VoiceInput {
   const onsets = this.collector ?? []; this.collector = null;
   try {
    if (outcome === 'cancelled') {
-    this.update({ calibrationResult: { ok: false, text: 'Calibration cancelled; the previous timing was kept.' } });
-    return;
+    const text = 'Calibration cancelled; the previous timing was kept.';
+    this.update({ calibrationResult: { ok: false, text } });
+    return { status: 'cancelled', text };
    }
    const sr = context.sampleRate;
    const estimate = estimateLatency(plan.measured.map(t => Math.round(t * sr)), onsets, { sampleRate: sr });
    if (options.verify) {
     // Tap test against the current settings: report the residual, keep the calibration.
     const check = timingCheck(estimate.latencyFrames, previous);
-    this.update({ calibrationResult: { ok: check.verdict === 'on-time', text: `${check.text} (${estimate.matched}/${plan.measured.length} taps matched)`, ...(check.verdict === 'on-time' ? {} : { suggestTrimMs: check.suggestedTrimMs }) } });
-    return;
+    const text = `${check.text} (${estimate.matched}/${plan.measured.length} taps matched)`;
+    this.update({ calibrationResult: { ok: check.verdict === 'on-time', text, ...(check.verdict === 'on-time' ? {} : { suggestTrimMs: check.suggestedTrimMs }) } });
+    // The check measured successfully even when it reports a late/early residual; nothing was changed.
+    return { status: 'complete', text };
    }
    const calibration: InputCalibration = { ...(this.state.calibration ?? previous), latencyFrames: estimate.latencyFrames, latencySpreadFrames: estimate.spreadFrames, latencySource: 'tap-along' };
    saveCalibration(calibration, undefined, this.state.processingProfile);
    const latencyMs = estimate.latencyFrames / sr * 1000, spreadMs = estimate.spreadFrames / sr * 1000;
-   this.update({ calibration, calibrationResult: { ok: true, latencyMs, spreadMs, matched: estimate.matched, of: plan.measured.length,
-    text: `Offset ${latencyMs.toFixed(0)} ms, consistency ±${spreadMs.toFixed(0)} ms, ${estimate.matched}/${plan.measured.length} taps matched` } });
+   const text = `Offset ${latencyMs.toFixed(0)} ms, consistency ±${spreadMs.toFixed(0)} ms, ${estimate.matched}/${plan.measured.length} taps matched`;
+   this.update({ calibration, calibrationResult: { ok: true, latencyMs, spreadMs, matched: estimate.matched, of: plan.measured.length, text } });
+   return { status: 'complete', text };
   } catch (error) {
-   this.update({ calibrationResult: { ok: false, text: `${error instanceof Error ? error.message : String(error)}. The previous timing was kept.` } });
+   const text = `${error instanceof Error ? error.message : String(error)}. The previous timing was kept.`;
+   this.update({ calibrationResult: { ok: false, text } });
+   return { status: 'rejected', text };
   } finally { this.update({ calibrating: null, calibrationRun: null }); }
  }
 
@@ -355,6 +396,178 @@ export class VoiceInput {
   });
  }
 
+ // ---- BrowserActionAdapter: agent-requested calibration, profile and offset changes ----
+
+ /** Null until the audio clock exists. `available` means the executor exists, not that every action is allowed now. */
+ getBrowserStatus(): BrowserStatus | null {
+  if (!this.transport) return null;
+  const c = this.state.calibration, a = this.agentAction;
+  const guidance = [a ? null : this.state.calibrationResult?.text, this.state.readiness.ready ? null : this.state.readiness.advice, this.state.speech.enabled ? this.state.speech.message : null]
+   .filter((x): x is string => !!x).join(' ').slice(0, 500);
+  return {
+   type: 'browser-status', clockId: this.transport.clockId, inputRevision: this.inputRevision, available: true,
+   microphone: this.state.microphone, profile: this.state.processingProfile,
+   calibration: c ? { noiseMeasured: c.noiseSource === 'measured', noiseFloorDb: c.noiseFloorDb, latencySource: c.latencySource,
+    latencyMs: Math.max(0, Math.round(c.latencyFrames / c.sampleRate * 10000) / 10), offsetAdjustMs: c.offsetAdjustMs ?? 0 } : null,
+   activeAction: a ? { id: a.id, kind: a.kind, phase: this.actionPhase(a) } : null,
+   ...(guidance ? { guidance } : {}),
+  };
+ }
+
+ subscribeBrowserActions(listener: (message: BrowserStatus | BrowserActionAck) => void): () => void {
+  this.actionListeners.add(listener);
+  return () => { this.actionListeners.delete(listener); };
+ }
+
+ /** Disconnect/disposal: cancels only agent-owned work. A calibration started from the UI keeps running. */
+ cancelBrowserActions(_reason: string) {
+  const action = this.agentAction;
+  if (!action || action.cancelled) return;
+  action.cancelled = true;
+  this.run?.cancel(); // While an agent action is active, the only run is the agent's: manual starts are refused.
+ }
+
+ /** Validates and starts one action. Outcomes arrive through subscribeBrowserActions; refusals never throw. */
+ handleBrowserAction(action: BrowserAction) {
+  const payload = JSON.stringify(action), known = this.actionRecords.get(action.id);
+  if (known) {
+   // Identical duplicates replay the latest acknowledgment without rerunning any work.
+   if (known.payload === payload) this.emitAction(known.last);
+   else this.emitAction(this.ack(action, 'rejected', 'Input action ID was reused with a different request'));
+   return;
+  }
+  if (this.actionRecords.size >= MAX_ACTION_RECORDS) { this.emitAction(this.ack(action, 'rejected', 'Input request limit reached; reload before starting another input action')); return; }
+  const record = { payload, last: this.ack(action, 'rejected', 'Not started') };
+  this.actionRecords.set(action.id, record);
+  const send = (status: BrowserActionAck['status'], reason?: string) => { record.last = this.ack(action, status, reason); this.emitAction(record.last); };
+  const op = action.operation;
+
+  if (!this.transport || action.clockId !== this.transport.clockId) { send('rejected', 'The audio clock changed; read the current input status and retry'); return; }
+  if (op.type === 'cancel-input-action') {
+   // Cancellation names an exact action; it is not bound to the revision that action may have advanced.
+   const target = this.agentAction;
+   if (!target || target.id !== op.actionId) { send('rejected', 'No agent input action with that ID is running; nothing was cancelled'); return; }
+   this.cancelBrowserActions('Cancelled by request');
+   void target.done.then(() => send('complete', 'Cancellation requested; see the cancelled action for what was kept'));
+   return;
+  }
+  if (action.expectedInputRevision !== this.inputRevision) { send('rejected', `Input settings changed (now revision ${this.inputRevision}); read the current input status and retry`); return; }
+  const blocked = this.actionBlockedReason(op);
+  if (blocked) { send('rejected', blocked); return; }
+
+  let finish!: () => void;
+  const current: AgentInputAction = { id: action.id, kind: op.type, phase: 'starting', cancelled: false, done: new Promise<void>(resolve => { finish = resolve; }) };
+  this.agentAction = current;
+  this.emitStatus();
+  send('running');
+  void this.runAction(op, current).then(
+   outcome => this.settleAction(current, outcome, send, finish),
+   (error: unknown) => this.settleAction(current, { status: 'rejected', text: `Input action failed: ${error instanceof Error ? error.message : String(error)}` }, send, finish));
+ }
+
+ private settleAction(action: AgentInputAction, outcome: CalibrationOutcome, send: (status: BrowserActionAck['status'], reason?: string) => void, finish: () => void) {
+  if (this.agentAction === action) this.agentAction = null;
+  this.emitStatus(); // Status first, so the terminal acknowledgment never precedes the configuration it reports.
+  send(outcome.status, outcome.text);
+  finish();
+ }
+
+ private actionBlockedReason(op: MutatingInputOperation): string | null {
+  const t = this.transport;
+  if (this.agentAction) return 'Another input action is running; cancel it or wait for it to finish';
+  if (this.run) return 'A calibration started from the screen is running; wait for it or cancel it there';
+  if (t?.recording || t?.recordingState === 'armed' || t?.recordingState === 'recording') return 'Recording is armed or active; stop recording before changing input settings';
+  if (this.recorder.hasPendingCapture || this.heldCaptureStart !== null) return 'Captured input is still being committed; wait for it to settle before changing input settings';
+  if (op.type === 'calibrate-input') {
+   if (this.state.microphone !== 'on') return 'Enable the microphone before calibrating';
+   if (t?.playing) return 'Stop playback before calibrating; calibration needs a stopped transport';
+  }
+  if (op.type === 'set-input-offset' && !this.state.calibration) return 'Enable the microphone before setting the input offset';
+  return null;
+ }
+
+ private async runAction(op: MutatingInputOperation, action: AgentInputAction): Promise<CalibrationOutcome> {
+  const paused = this.pauseSpeech();
+  try {
+   const outcome = await this.applyAction(op, action);
+   if (!paused) return outcome;
+   await this.resumeSpeech(action);
+   const speech = this.state.speech;
+   return outcome.status !== 'complete' || speech.status === 'ready' ? outcome
+    : { ...outcome, text: `${outcome.text}. Hands-free speech is not ready yet: ${speech.message ?? speech.status}` };
+  } finally {
+   if (this.speechPaused) await this.resumeSpeech(action);
+  }
+ }
+
+ private async applyAction(op: MutatingInputOperation, action: AgentInputAction): Promise<CalibrationOutcome> {
+  switch (op.type) {
+   case 'set-input-profile': {
+    if (op.profile === this.state.processingProfile) return { status: 'complete', text: `Already using the ${op.profile} profile` };
+    await this.setProcessingProfile(op.profile);
+    if (this.state.processingProfile !== op.profile) return { status: 'rejected', text: 'The profile could not be applied' };
+    return { status: 'complete', text: `Using the ${op.profile} profile${this.state.microphone === 'on' ? ' with its saved calibration for this microphone' : ''}` };
+   }
+   case 'set-input-offset': {
+    if ((this.state.calibration?.offsetAdjustMs ?? 0) === op.milliseconds) return { status: 'complete', text: `Input offset is already ${op.milliseconds} ms` };
+    this.setOffsetAdjust(op.milliseconds);
+    return { status: 'complete', text: `Input offset set to ${op.milliseconds} ms; the measured latency is unchanged` };
+   }
+   case 'calibrate-input': {
+    if (op.mode === 'timing' || op.mode === 'check-timing') return this.calibrateLatency({ verify: op.mode === 'check-timing' });
+    const noise = await this.calibrateNoise();
+    if (op.mode === 'noise' || noise.status !== 'complete') return noise;
+    if (action.cancelled) return { status: 'cancelled', text: `${noise.text} was applied. Timing calibration was cancelled before it started; the previous timing was kept` };
+    const timing = await this.calibrateLatency();
+    return timing.status === 'complete' ? { status: 'complete', text: `${noise.text}. ${timing.text}` } : { ...timing, text: `${noise.text} was applied. ${timing.text}` };
+   }
+  }
+ }
+
+ private actionPhase(action: AgentInputAction): InputActionPhase {
+  if (action.phase === 'reconnecting') return 'reconnecting';
+  if (this.state.silenceRun) return this.state.silenceRun.phase;
+  if (this.state.calibrationRun) return this.state.calibrationRun.phase;
+  return action.phase;
+ }
+
+ /** Ends the speech stream without dropping the agent socket (dropping it would cancel this very action). */
+ private pauseSpeech(): boolean {
+  if (!this.state.speech.enabled || this.state.speech.status === 'unavailable') return false;
+  this.speechPaused = true;
+  this.mic?.stopSpeech?.(); this.speechSession = null;
+  // Unverified capture from the old stream is discarded; the new stream can never verify it.
+  this.recorder.setSpeechAvailable(false); this.recorder.resetPendingCapture();
+  this.update({ speech: { enabled: true, status: 'waiting', message: 'Speech paused while input settings change' } });
+  return true;
+ }
+
+ /** Starts a fresh stream with the current latency/profile and waits briefly for the recognizer to report. */
+ private async resumeSpeech(action: AgentInputAction) {
+  if (!this.speechPaused) return;
+  this.speechPaused = false;
+  if (!this.state.speech.enabled) return;
+  action.phase = 'reconnecting'; this.emitStatus();
+  this.setHandsFree(true);
+  const deadline = Date.now() + (this.options.speechResumeMs ?? 8000);
+  while (this.state.speech.enabled && this.state.speech.status === 'waiting' && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 50));
+ }
+
+ private ack(action: BrowserAction, status: BrowserActionAck['status'], reason?: string): BrowserActionAck {
+  return { type: 'browser-action-ack', id: action.id, clockId: action.clockId, inputRevision: this.inputRevision, status, ...(reason ? { reason } : {}) };
+ }
+ private emitAction(message: BrowserStatus | BrowserActionAck) { for (const listener of [...this.actionListeners]) listener(message); }
+ /** Emits only when the snapshot changes (configuration or action progress), not on every audio block. */
+ private emitStatus() {
+  if (!this.actionListeners.size) return;
+  const status = this.getBrowserStatus();
+  if (!status) return;
+  const serialized = JSON.stringify(status);
+  if (serialized === this.lastEmittedStatus) return;
+  this.lastEmittedStatus = serialized;
+  this.emitAction(status);
+ }
+
  stopMicrophone() { this.failSpeech('Microphone stopped; restart hands-free capture');this.cancelCalibration(); this.mic?.stop(); this.update({ microphone: 'off', levelDb: -120 }); }
- dispose() { this.mic?.stopSpeech?.();this.speechSession=null;this.cancelCalibration(); this.unsubscribe(); this.mic?.dispose(); this.mic = null; }
+ dispose() { this.cancelBrowserActions('Input disposed');this.actionListeners.clear();this.mic?.stopSpeech?.();this.speechSession=null;this.cancelCalibration(); this.unsubscribe(); this.mic?.dispose(); this.mic = null; }
 }
