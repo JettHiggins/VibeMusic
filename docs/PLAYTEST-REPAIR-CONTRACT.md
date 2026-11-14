@@ -1,0 +1,31 @@
+# Playtest repair interfaces — approved WS1 publication
+
+Schema source is packages/contracts/src/index.ts; generated schemas and fixtures/PlaytestRepair.json are committed together. Existing payloads remain valid. New producers require coordinated current browser/service schemas (restart cached service validators); old strict parsers are not promised to accept new fields. This is interface publication. STATUS.md separately identifies whether engine/consumer/producer implementation is integrated.
+
+## Operations
+
+- `{type:'metronome', enabled:boolean}`, boundary immediate only. Transport-only: no SessionState revision, Undo entry, note/hit, saved pattern or research-render change. Fresh browser engine defaults enabled; explicit session loads do not change that transport preference. Clicks sound only during playback, including count-in/capture; disabling mutes count-in clicks too but not the visible four-beat countdown. Root engine uses its sample/musical clock, not UI timers or an LLM.
+- `{type:'erase-event', target:Target, step:0..63}`, boundary immediate only. Drum targets REQUIRE a lane; melodic targets prohibit it. Remove that exact lane/grid hit, or the entire melodic note whose occupied cells contain step (wrap modulo 64). No match is a musical no-op but still fences affected pending capture. Reject stale expectedRevision; no automatic rebase/re-issue. One-based bar/beat/subdivision speech maps to step=(bar-1)*16+(beat-1)*4+(subdivision-1).
+
+Erasure preserves other tracks/lanes/events and unrelated provisional input. A committed removal increments revision once and adds one Undo entry. Erasure with only provisional/no committed matches does neither. Undo retains existing pending-input-first behavior; do not restore unverified audio as a musical history entry. Releasing an erased sounding note must not panic unrelated tracks. Affected older queued whole-pattern replacements are cancelled; stale performance retries must retain unaffected events but not restore erased ones.
+
+## Transport feedback
+
+All fields below are additive/optional for older payloads:
+
+- `metronomeEnabled:boolean`: actual current engine toggle.
+- `armedStartFrame:nonnegative integer`: fixed recording deadline in this Transport clock. Present while armed; clear on activation/cancellation. Next-beat from stopped is current audio frame + ceil(4*sampleRate*60/BPM); while already playing it is the next beat derived from current firmware phase. Explicit legacy next-loop recording still targets the next four-bar boundary. New Record while armed/active rejects without extending the deadline; duplicate IDs replay their receipt.
+- `countInBeatsRemaining:integer 0..4`: only for the stopped, next-beat four-beat count-in. Derive from pinned deadline and the same audio clock/armed tempo. Disappear on recording/cancellation. For an ordinary playing next-beat arm, show Next beat instead of manufacturing a four-beat countdown. Ordinary tempo changes and Undo that would change tempo during count-in reject; unrelated edits keep the deadline/target.
+- `captureErasure:{commandId,recordingEpoch,throughFrame,target,step}`: targeted input fence scoped to this Transport clock and recording epoch. Emit immediately before related batch-rejection acks, then retain the latest fence in transport snapshots until epoch/window reset. throughFrame is the INCLUSIVE actual audio-frame cutoff of the erase application; it is not receipt wall time. Deduplicate by commandId and ignore a fence from a foreign epoch/clock.
+
+For a matching active/retained recording window, the engine retains bounded per-target/grid fences through that window. Pre-edit events whose captureFrame <= throughFrame and quantized occupied cells contain the erased step cannot commit; notes are removed as whole events, not truncated into a different melody. Fresh events starting AFTER the cutoff may intentionally fill that step again. New recording epochs clear old fences. Unrelated events and verification coverage remain valid; do NOT increment/reset the whole capture epoch or discard every provisional event for one erasure.
+
+The browser removes only matching provisional/held/queued input and prevents matching delayed worker results from returning, while preserving other verified/provisional input. The engine is the final guard even if consumer results race the transport notice. A batch containing affected and unaffected events must not lose all unaffected events solely because an erase occurred. Existing Clear/Undo global resets remain unchanged.
+
+## Consumer / producer assignments
+
+WS2 handles UI toggle/countdown and occupied-cell deletion through the shared operations, plus input-fence consumption. Root main/worklet integration and engine guards remain WS1. New operations must not be routed through the old next-loop full-pattern replacement path. Metronome label/control reflects transport, not an optimistic local toggle.
+
+WS3 extends BOUNDARY/semantic validation, deterministic parser and typed tool descriptions. Commands use explicit bar/beat/subdivision ranges 1..4, default subdivision 1, active recording target before ordinary selection, and no mutation for ambiguous text. Exclude recognized Groove instruction spans before classified coverage even when a command rejects. Include captureErasure.commandId in stale-language context so provisional-only erasure invalidates an older model intention despite unchanged revision. Metronome does not require model inference.
+
+Until the engine capability is published, real EngineCore and MockEngine reject unsupported new operations rather than falsely acking completion. WS2/WS3 can build/test with the examples and explicit mocks but must not claim working integrated repairs yet.

@@ -95,3 +95,7 @@ Until a recognizer is configured, the service validates and drops `speech-audio`
 ## Voice research and candidate preview (approved proposal #28)
 
 See VOICE-RESEARCH.md for the normative coordinated rollout, ordering, stale-intent and preview lifecycle requirements. New ServerMessage variants are research-context (voice request/job/original melodic track/description) and candidate-preview (request/job/exact candidate IDs only). New ClientMessage preview-ack reports started/ended/rejected separately from musical acknowledgments. No URLs, patches or revision fields are permitted on preview messages. Examples: fixtures/VoiceResearch.json. Structural schemas do not establish candidate membership or playback success. Producers stay disabled until the matching consumer is integrated; old strict clients do not accept the new variants.
+
+## Playtest repair publication
+
+PLAYTEST-REPAIR-CONTRACT.md defines immediate metronome/erase-event operations, fixed armedStartFrame/countInBeatsRemaining and targeted captureErasure feedback. The examples in fixtures/PlaytestRepair.json validate in TypeScript and Python. The new targeted fence preserves unrelated input; it is not the Clear/Undo global epoch reset. Consult STATUS.md for engine/consumer readiness before enabling producers.

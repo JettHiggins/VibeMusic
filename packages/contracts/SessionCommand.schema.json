@@ -26,6 +26,69 @@
           "properties": {
             "type": {
               "type": "string",
+              "const": "metronome"
+            },
+            "enabled": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "type",
+            "enabled"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "erase-event"
+            },
+            "target": {
+              "type": "object",
+              "properties": {
+                "trackId": {
+                  "type": "string",
+                  "enum": [
+                    "synth-1",
+                    "synth-2",
+                    "synth-3",
+                    "drums"
+                  ]
+                },
+                "lane": {
+                  "type": "string",
+                  "enum": [
+                    "kick",
+                    "snare",
+                    "closed-hat"
+                  ]
+                }
+              },
+              "required": [
+                "trackId"
+              ],
+              "additionalProperties": false
+            },
+            "step": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 63
+            }
+          },
+          "required": [
+            "type",
+            "target",
+            "step"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
               "const": "select"
             },
             "target": {

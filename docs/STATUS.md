@@ -16,7 +16,7 @@ Jett chose mouse+voice individual erasure; metronome while playing and recording
 | WS2 / Leo / @leoAndrade2332 | Aggressive Noisy room profile, reference/calibration per device/profile, avoid learning foreground as noise, all-synth diagnostics, intuitive committed/provisional erasure and timing/click feedback. | Can reproduce independently now; wait for WS1's published metronome/erase interfaces before wiring. Read WORKSTREAM-2.md. |
 | WS3 / Lenny / @lennyyanza | Noisy-room classification/coverage and target continuity; deterministic spoken erase/metronome; offline-test review. | Can reproduce independently now; wait for published shared command interfaces. Read WORKSTREAM-3.md. |
 
-**Repair command contracts are not published yet.** Do not invent them. Existing foundation/speech/voice-research contracts remain available. WS1 will replace this marker with an exact approved commit. Plan publication is not implementation completion.
+**Repair interfaces are published on ws1/playtest-repair** in PLAYTEST-REPAIR-CONTRACT.md, exported schemas and fixtures/PlaytestRepair.json. Engine support remains pending; unsupported new operations reject rather than fake completion. WS2/WS3 may implement against these exact interfaces/examples, but integrated enablement waits for the engine capability. No competing wire shapes. Shared checks and Node 170 passed/one optional skip; no human repair pass claimed.
 
 ## Baseline and preserved work
 
@@ -31,3 +31,5 @@ Previous synthetic evidence: combined backend 234 passed/six optional skips; bro
 New Record from stopped must become recording after four beats, while continuous click is labeled distinctly. Erase one committed/provisional event without global reset or stale return. All synths must accept normal-volume singing with room conversation or provide honest foreground/noise guidance. Default launch is empty; explicit saved load remains. Verify quiet/noisy track orders 1-2-3 and 3-1-2, profiling raw capture/targets/pitch/provisional/coverage/commits without saving audio by default.
 
 WS1 merges reviewed repair PRs and publishes one frozen commit. Test ten minutes on Lenny's device with no code changes during play; assess timing/corrections/usability/fun. All-three-device acceptance, original module-load reproduction, blind listening and complete hands-free sound design remain larger unfinished gates. Do not mark the whole project complete when this repair passes.
+
+WS1 reproduced a count-in clock-reset defect: after play/stop at firmware beat 80, Record stays armed after four beats because the pending target was compared with the reset counter. Fresh stopped count-in passed, so the exact first-press laptop sequence still needs browser confirmation. WS1 is implementing fixed audio-frame deadlines.
