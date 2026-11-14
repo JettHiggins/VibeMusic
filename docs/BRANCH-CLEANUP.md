@@ -1,6 +1,6 @@
 # Integrated branch retirement
 
-The following old remote branch tips are included in the reviewed integration ancestry. Retire these refs after this ledger is published, using exact-SHA leases so a teammate's newer push is never deleted. All commits remain reachable through engine-integration. Local branches/worktrees are not deleted. Current ws3 capability/validation/proposal branches, ws1/speech-capture, main/integration and all nonancestor tips remain intact. ui-input-fixes is retained because its exact tip is not an ancestor, even though equivalent fixes/tests are present.
+The following old remote branch tips are included in the reviewed integration ancestry. These 20 refs were retired atomically after ledger publication at 7ca2e74, using exact-SHA leases so a teammate's newer push could not be deleted. All commits remain reachable through engine-integration. Local branches/worktrees are not deleted. Current ws3 capability/validation/proposal branches, ws1/speech-capture, main/integration and all nonancestor tips remain intact. ui-input-fixes is retained because its exact tip is not an ancestor, even though equivalent fixes/tests are present.
 
 | Retired remote branch | Preserved tip |
 | --- | --- |

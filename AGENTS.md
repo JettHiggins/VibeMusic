@@ -15,4 +15,4 @@ When blocked, state the exact dependency, the agent/workstream responsible, and 
 - Keep real audio timing independent of backend/agent response time. Do not mark mock-only features complete.
 - Handoffs include commit/PR, behavior, validation, limitations, and next integration step.
 - Never commit secrets, raw microphone recordings, downloaded models, or large generated corpora.
-- Setup and verified foundation commands are in docs/SETUP.md; protocol and directory ownership are in docs/CONTRACTS.md. API access is deferred. No live API calls or key setup without a new credential decision.
+- Setup and verified foundation commands are in docs/SETUP.md; protocol and directory ownership are in docs/CONTRACTS.md. OpenRouter free-model access is authorized by Jett; credentials stay backend-local and must never be printed or committed. Other provider access requires a new credential decision.

@@ -9,6 +9,6 @@ Fresh declared install: backend 234 passed / six optional skips, Node 162 passed
 - WS3: implement voice research producers/tools after shared contracts; live provider evaluation with WS4 corpus. Existing Deep Agents refusal of unsupported voice audition is correct until rollout.
 - WS4: frozen #17 corpus first, #18 listening summarizer and #19 rubric next.
 
-Keys: distinct revocable per-person keys through encrypted sharing; backend .env only. Easy setup: docs/TEAM-API-SETUP.md. Old integrated remote branch tips are being retired with ancestry/tips recorded in docs/BRANCH-CLEANUP.md; current ws3 work and speech/review branches stay intact. Preserve local work, fetch/prune and start new capability branches from integration rather than resurrecting a retired branch.
+Keys: distinct revocable per-person keys through encrypted sharing; backend .env only. Easy setup: docs/TEAM-API-SETUP.md. Old integrated remote branch tips were retired atomically with exact-tip leases with ancestry/tips recorded in docs/BRANCH-CLEANUP.md; current ws3 work and speech/review branches stay intact. Preserve local work, fetch/prune and start new capability branches from integration rather than resurrecting a retired branch.
 
 Remaining gates: voice sound jobs visible in browser and non-mutating voice audition, real-device mic/loading/timing/phrase correction, live model corpus/latency, three-listener evaluation, full hands-free session and ten-minute audible playback. docs/STATUS.md is authoritative; independent sessions must read it at their next checkpoint.
