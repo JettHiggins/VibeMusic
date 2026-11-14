@@ -109,39 +109,102 @@ _SYNTH_MISHEARINGS = frozenset({"synths", "syn", "sin", "sent", "send", "cent", 
 _TRACK_NUMBERS = {**_ORDINALS, "tree": 3}
 
 
-def find_target(tokens: Sequence[str], session: Mapping[str, Any]) -> Optional[dict]:
-    """Return the Target named in tokens, or None when no target is named."""
-    for lane, phrases in _LANE_PHRASES:
-        if any(_contains(tokens, phrase) for phrase in phrases):
-            return {"trackId": "drums", "lane": lane}
-    for index, token in enumerate(tokens[:-1]):
-        if token in _SYNTH_WORDS | _SYNTH_MISHEARINGS and tokens[index + 1] in _TRACK_NUMBERS:
-            return {"trackId": f"synth-{_TRACK_NUMBERS[tokens[index + 1]]}"}
-        if token in ("first", "second", "third") and tokens[index + 1] in _SYNTH_WORDS:  # "the second synth"
-            return {"trackId": f"synth-{_ORDINALS[token]}"}
-    if "drums" in tokens or _contains(tokens, "drum track"):
-        return {"trackId": "drums"}
-    if "melody" in tokens or "synth" in tokens:
-        current = session["selected"]["trackId"]
-        return {"trackId": current if current in MELODIC_TRACKS else "synth-1"}
-    return None
-
-
+# Number words that only ever mean a number. "to"/"too"/"for"/"won" count as numbers only
+# right after a synth word ("synth to"), so "switch to synth two" keeps its "to".
+_PLAIN_NUMBERS = {"zero": 0, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7,
+                  "eight": 8, "nine": 9, "ten": 10}
 _UNRESOLVED_TARGET = "didn't catch which track; say synth one, two or three, or kick, snare or hats"
+_INVALID_SYNTH = "there are only synths one, two and three"
+_SEVERAL_TARGETS = "say one track at a time"
+
+
+def _number(token: str, after_synth: bool = False) -> Optional[int]:
+    if token.isdigit():
+        return int(token)
+    if token in _PLAIN_NUMBERS:
+        return _PLAIN_NUMBERS[token]
+    return _TRACK_NUMBERS.get(token) if after_synth else None
+
+
+@dataclass(frozen=True)
+class TargetResolution:
+    target: Optional[dict]  # None: nothing track-like was said (callers may use the selection)
+    problem: Optional[str] = None  # set: invalid, conflicting or unresolved; never mutate
+    used: frozenset = frozenset()  # token indices that named the target
+
+
+def resolve_target(tokens: Sequence[str], session: Mapping[str, Any], ignore: frozenset = frozenset()) -> TargetResolution:
+    """Every track mention in `tokens` (except indices in `ignore`), checked together.
+
+    Invalid numbered synths ("synth four"), two different targets ("kick and snare", "synth two
+    and synth three") and leftover numbers are problems, so the caller refuses instead of
+    falling back to the selection. A bare "synth"/"melody" still means the current synth.
+    """
+    used: set[int] = set(ignore)
+    found: list[dict] = []
+    for lane, phrases in _LANE_PHRASES:
+        for phrase in phrases:  # longest first within a lane
+            words = phrase.split()
+            for i in range(len(tokens) - len(words) + 1):
+                span = set(range(i, i + len(words)))
+                if list(tokens[i:i + len(words)]) == words and not span & used:
+                    used |= span
+                    found.append({"trackId": "drums", "lane": lane})
+    for i, token in enumerate(tokens):
+        if i in used:
+            continue
+        following = tokens[i + 1] if i + 1 < len(tokens) and i + 1 not in used else None
+        if token in _SYNTH_WORDS | _SYNTH_MISHEARINGS and following is not None:
+            number = _number(following, after_synth=True)
+            if number is not None:
+                if number not in (1, 2, 3):
+                    return TargetResolution(None, _INVALID_SYNTH, frozenset(used))
+                used |= {i, i + 1}
+                found.append({"trackId": f"synth-{number}"})
+                continue
+        if token in ("first", "second", "third") and following in _SYNTH_WORDS:  # "the second synth"
+            used |= {i, i + 1}
+            found.append({"trackId": f"synth-{_ORDINALS[token]}"})
+    for i, token in enumerate(tokens):
+        if i not in used and (token == "drums" or (token == "drum" and list(tokens[i + 1:i + 2]) == ["track"])):
+            used.add(i)
+            found.append({"trackId": "drums"})
+    if any("lane" in target for target in found):
+        found = [target for target in found if "lane" in target]  # "the snare on the drums" is one target
+    distinct = list({tuple(sorted(t.items())): t for t in found}.values())
+    if len(distinct) > 1:
+        return TargetResolution(None, _SEVERAL_TARGETS, frozenset(used))
+    leftover = [t for i, t in enumerate(tokens) if i not in used]
+    if any(_number(token) is not None for token in leftover):
+        return TargetResolution(None, _UNRESOLVED_TARGET, frozenset(used))  # "record synth two three"
+    if distinct:
+        return TargetResolution(dict(distinct[0]), None, frozenset(used))
+    if any(token in _SYNTH_MISHEARINGS for token in leftover):
+        return TargetResolution(None, _UNRESOLVED_TARGET, frozenset(used))  # "record sent"
+    if "melody" in leftover or "synth" in leftover:
+        current = session["selected"]["trackId"]
+        return TargetResolution({"trackId": current if current in MELODIC_TRACKS else "synth-1"}, None,
+                                frozenset(used))
+    return TargetResolution(None, None, frozenset(used))
+
+
+def find_target(tokens: Sequence[str], session: Mapping[str, Any]) -> Optional[dict]:
+    """Return the Target named in tokens, or None when none (or no single valid one) is named."""
+    return resolve_target(tokens, session).target
 
 
 def names_unresolved_target(tokens: Sequence[str]) -> bool:
-    """Track-like words are present but name no track: refuse instead of using the selection.
-    A misheard "record sent two" must not record over synth one."""
-    return any(token in _TRACK_NUMBERS or token.isdigit() or token in _SYNTH_MISHEARINGS for token in tokens)
+    """Track-like words are present but name no single valid track."""
+    return resolve_target(tokens, {"selected": {"trackId": "synth-1"}}).problem is not None
 
 
-def _target_or_selected(rest: Sequence[str], session: Mapping[str, Any]) -> Optional[dict]:
-    """The named target; the selection only when nothing track-like was said; None when unclear."""
-    target = find_target(rest, session)
-    if target is not None:
-        return target
-    return None if names_unresolved_target(rest) else _selected(session)
+def _target_or_selected(rest: Sequence[str], session: Mapping[str, Any]) -> tuple:
+    """(target, None), or (None, reason) when what was said is invalid, conflicting or unclear.
+    The selection is used only when nothing track-like was said at all."""
+    resolution = resolve_target(rest, session)
+    if resolution.problem is not None:
+        return None, resolution.problem
+    return (resolution.target or _selected(session)), None
 
 
 _METRONOME_WORDS = frozenset({"metronome", "click", "clicks", "metronomes"})
@@ -196,11 +259,16 @@ def _erase_event(rest: Sequence[str], session: Mapping[str, Any],
         used |= {index, position}
     if "bar" not in found or "beat" not in found:
         return NotUnderstood(_ERASE_HELP)
-    remaining = [token for index, token in enumerate(rest) if index not in used]
-    target = find_target(remaining, session)
+    # The track part goes through the shared resolver with the position words already used:
+    # an invalid synth ("synth four"), two targets ("kick and snare") or a leftover number
+    # ("beat two and three") is refused, never resolved to the first or selected candidate.
+    resolution = resolve_target(rest, session, ignore=frozenset(used))
+    if resolution.problem is not None:
+        leftover_numbers = any(index not in resolution.used and _number(token) is not None
+                               for index, token in enumerate(rest))
+        return NotUnderstood(_ERASE_HELP if leftover_numbers else resolution.problem)
+    target = resolution.target
     if target is None:
-        if names_unresolved_target(remaining):
-            return NotUnderstood(_UNRESOLVED_TARGET)
         target = dict(recording_target) if recording_target else _selected(session)
     if target["trackId"] == "drums" and "lane" not in target:
         return NotUnderstood("say which drum to erase: kick, snare, or hats")
@@ -286,9 +354,9 @@ def interpret(text: str, session: Mapping[str, Any], during_recording: bool, tak
         return _command({"type": "play", "playing": False})
 
     if verb == "record" or (verb in ("start", "begin") and ("recording" in rest or "record" in rest)):
-        target = _target_or_selected(rest, session)
+        target, refusal = _target_or_selected(rest, session)
         if target is None:
-            return NotUnderstood(_UNRESOLVED_TARGET)
+            return NotUnderstood(refusal)
         problem = _needs_lane(target)
         return NotUnderstood(problem) if problem else _command({"type": "record", "target": target})
 
@@ -301,23 +369,24 @@ def interpret(text: str, session: Mapping[str, Any], during_recording: bool, tak
         return _tempo(tokens, session)
 
     if verb in ("clear", "erase", "delete", "wipe"):
-        target = _target_or_selected(rest, session)
+        target, refusal = _target_or_selected(rest, session)
         if target is None:
-            return NotUnderstood(_UNRESOLVED_TARGET)  # never erase a guessed track
+            return NotUnderstood(refusal)  # never erase a guessed track
         return _command({"type": "clear", "target": target})
 
     if verb in ("mute", "unmute", "silence"):
-        target = _target_or_selected(rest, session)
+        target, refusal = _target_or_selected(rest, session)
         if target is None:
-            return NotUnderstood(_UNRESOLVED_TARGET)
+            return NotUnderstood(refusal)
         if "lane" in target and rest:
             return NotUnderstood("single drums cannot be muted; say mute drums")
         return _command({"type": "mute", "trackId": target["trackId"], "muted": verb != "unmute"})
 
     if verb in ("select", "choose", "pick") or (verb in ("switch", "go", "change") and rest[:1] == ["to"]):
-        target = find_target(rest, session)
+        resolution = resolve_target(rest, session)
+        target = resolution.target
         if target is None:
-            return NotUnderstood("say what to select: kick, snare, hats, or synth one, two, or three")
+            return NotUnderstood(resolution.problem or "say what to select: kick, snare, hats, or synth one, two, or three")
         problem = _needs_lane(target)
         return NotUnderstood(problem) if problem else _command({"type": "select", "target": target})
 

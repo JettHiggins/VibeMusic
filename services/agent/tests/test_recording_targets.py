@@ -70,3 +70,45 @@ def test_successive_takes_on_synths_one_two_three_each_target_the_named_track():
 def test_partial_positions_are_refused_by_the_erase_parser_without_mutation(phrase):
     result = interpret(phrase, session("synth-1"), False)
     assert isinstance(result, NotUnderstood) and "bar and beat" in result.reason
+
+
+# -- WS1 review of #34: invalid or conflicting specifications never fall back -------------
+
+SELECTIONS = ("synth-1", "synth-2", "synth-3", "drums")
+
+
+@pytest.mark.parametrize("phrase, reason", [
+    ("record synth four", "only synths"), ("record synth 4", "only synths"), ("record synth nine", "only synths"),
+    ("clear synth 4", "only synths"), ("clear synth four", "only synths"), ("mute synth 9", "only synths"),
+    ("mute synth zero", "only synths"), ("select synth five", "only synths"),
+    ("record synth two and synth three", "one track"), ("clear kick and snare", "one track"),
+    ("mute synth one and synth two", "one track"), ("select kick and hats", "one track"),
+    ("record synth two three", "which track"), ("clear synth one 2", "which track"),
+])
+def test_invalid_or_conflicting_targets_refuse_for_every_selection(phrase, reason):
+    for selected in SELECTIONS:
+        result = interpret(phrase, session(selected), False)
+        assert isinstance(result, NotUnderstood) and reason in result.reason, (phrase, selected, result)
+
+
+def test_deliberate_fallbacks_are_kept():
+    assert interpret("record", session("synth-3"), False).operation["target"] == {"trackId": "synth-3"}
+    assert interpret("clear", session("synth-2"), False).operation["target"] == {"trackId": "synth-2"}
+    assert interpret("record synth", session("synth-3"), False).operation["target"] == {"trackId": "synth-3"}
+    assert interpret("record melody", session("drums"), False).operation["target"] == {"trackId": "synth-1"}
+    assert interpret("switch to synth two", session("synth-1"), False).operation["target"] == {"trackId": "synth-2"}
+    assert interpret("clear the snare on the drums", session("synth-1"), False).operation["target"] == {
+        "trackId": "drums", "lane": "snare"}
+    assert interpret("record kick drum", session("synth-1"), False).operation["target"] == {"trackId": "drums",
+                                                                                          "lane": "kick"}
+
+
+def test_conflicting_spoken_record_issues_no_command_through_the_connection():
+    connection = Connection()
+    connection.handle({"type": "session", "session": session("synth-1")}, 0.0)
+    for uid, phrase in (("a", "record synth four"), ("b", "record synth two and synth three"),
+                        ("c", "clear synth 4"), ("d", "mute synth 9")):
+        out = connection.handle({"type": "utterance", "id": uid, "text": phrase, "clockId": "c", "startFrame": 0,
+                                 "endFrame": 9, "duringRecording": False}, 0.0)
+        assert [m["type"] for m in out] == ["error"], phrase
+    assert connection.pending_command_ids == []
