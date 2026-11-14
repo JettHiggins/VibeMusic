@@ -91,3 +91,11 @@ Audition sound was not checked by ear. Basic Pitch: see `docs/benchmarks/basic-p
 Checks: `patch-edit` tests (controls and ranges from real metadata; three rapid changes during playback resolve to the last value through real WASM, with notes preserved). Browser: playback from the display with live bar.beat, select Synth 1 → Sound → preset WURLI applied at the loop boundary with its 4 notes kept, and the layout fits at 375 px wide. `npm test` 86 pass, 1 skipped.
 
 Merged with integration `18b9139`: the recorder keeps Workstream 1's batch replacement and speech-verified routing, the earlier 0.4 s boundary-timed batching was removed in favour of it, and the panel uses `displayedTarget` (window target while recording, `armedTarget` during count-in) for synth targets too.
+
+### After merging `18b9139` (batch replacement)
+
+- Race fixed in `recorder.ts`: acks cross a MessagePort, so a batch can apply on the audio thread after the recorder sent its replacement. The replaced batch's `applied` ack now counts its events as committed, and the retry resends only the new events. Covered by a test with deferred, out-of-order acknowledgments.
+- When a new take starts, an in-flight batch that the engine no longer lists in `pendingCommandIds` is dropped and reported instead of being chained onto.
+- Browser, with a freshly built worklet: a 7-note sung take with vibrato landed in full at the boundary right as the phrase ended, through successive replacements, with no errors.
+- Pitfall: `public/engine-runtime.js` is built when the dev server starts. After pulling engine/contract changes, restart `npm run dev`. A stale worklet rejects new contract fields before its acknowledgment path, so commands get no ack (the recorder now recovers at the next take).
+- `npm test`: 94 pass, 1 skipped. `npm run check` needs the project virtualenv's `jsonschema` (SETUP.md), which wasn't installed on this laptop; CI runs it.
