@@ -52,7 +52,12 @@ jobs:
               const reviews = JSON.parse(fs.readFileSync('docs/PR-REVIEWS.json', 'utf8'));
               for (const review of reviews) {
                 core.info(`Inspecting reviewed PR ${review.pullRequest}`);
-                const pull = (await github.rest.pulls.get({owner, repo, pull_number: review.pullRequest})).data;
+                let pull = (await github.rest.pulls.get({owner, repo, pull_number: review.pullRequest})).data;
+                if (pull.state === 'open' && pull.head.sha === review.headSha && review.retargetBase && pull.base.ref !== review.retargetBase) {
+                  const comparison = (await github.rest.repos.compareCommitsWithBasehead({owner, repo, basehead: `${review.retargetBase}...${review.headSha}`})).data;
+                  if (!['behind', 'identical'].includes(comparison.status)) throw new Error(`PR ${review.pullRequest} is not already integrated; refusing metadata retarget`);
+                  pull = (await github.rest.pulls.update({owner, repo, pull_number: review.pullRequest, base: review.retargetBase})).data;
+                }
                 if (pull.state !== 'open' || pull.head.sha !== review.headSha) {
                   core.notice(`Review ${review.pullRequest} skipped: head changed or PR closed`);
                   continue;
