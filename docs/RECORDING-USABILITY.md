@@ -42,3 +42,7 @@ Patch-output smoothing is a separate preceding commit (`735f122`), blending the 
 Review does not establish calibrated microphone performance on Lenny's laptop or the complete hands-free acceptance scenario. Those remain explicit human/device gates in STATUS.md.
 
 PR publication limitation: this repository currently disallows GitHub Actions from creating PRs. The published review link is https://github.com/JettHiggins/VoiceSynthesizer/compare/engine-integration...ws1/recording-usability and coordination issue #9 contains the notification. A collaborator with authenticated PR access must open the PR, or repository settings must explicitly permit that action. No review or merge is claimed.
+
+## WS2 consumer review clarifications
+
+WS2 reviewed bd1428b with its calibration/workspace stack and reported clean TypeScript checks and 141 passing tests (one opt-in test skipped). The applied acknowledgment deliberately has the existing shape: it does not distinguish discard-only from musical-history Undo. The input/UI consumer knows whether it requested discardCaptureOnly or had queued/provisional input and should label that result accordingly. discardCaptureOnly requires an existing retained/current recording window; without one it rejects with `No capture to discard`. Tempo remains next-loop and is rejected during active capture; keep those tempo controls disabled during a take. These clarify the tested behavior and add no interface changes.
