@@ -70,3 +70,12 @@ the actual browser capture worklet and YIN worker after next-beat Record. It req
 composition steps 20/24/28 (durations 3/3/4), three committed notes, no input error and continuing
 playback. This passed on the WS1 Linux Chromium setup (~8.1 ms p95 analysis). It narrows the software
 path under test; it does not reproduce or resolve Lenny's reported physical-device loading error.
+
+`tests/browser/live-capture-edits.js` covers the cross-port live-edit race with continuous generated
+sustained tones through the actual capture and analysis workers. Undo occurs while C4 is held inside
+the worker, before any completed note event exists: discard-only Undo keeps the musical revision.
+Clear then occurs while E4 is held and completed C4 is provisional. Capture/playback continue; every
+subsequent submitted event must use the new epoch and begin at/after the reset cutoff. Only fresh E4
+remains in the real engine, with no old C4 or rejected-input error. This passed in WS1 Chromium
+(~8.6 ms p95 analysis). Run this isolated diagnostic on the consumer branch with Vite and staged WASM
+assets; no microphone permission, provider or raw audio persistence is involved.
