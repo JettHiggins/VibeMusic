@@ -1,0 +1,7 @@
+{
+  "type": "speech-verified",
+  "clockId": "audio-context-1",
+  "streamId": "mic-take-1",
+  "fromFrame": 352800,
+  "throughFrame": 353681
+}

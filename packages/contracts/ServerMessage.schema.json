@@ -915,6 +915,15 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 9007199254740991
+        },
+        "streamId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fromFrame": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
         }
       },
       "required": [
@@ -1082,6 +1091,36 @@
         "type",
         "requestId",
         "message"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "speech-status"
+        },
+        "streamId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "available": {
+          "type": "boolean"
+        },
+        "provider": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "streamId",
+        "available",
+        "provider"
       ],
       "additionalProperties": false
     }
