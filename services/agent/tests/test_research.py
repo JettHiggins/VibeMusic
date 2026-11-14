@@ -27,7 +27,7 @@ def test_presets_are_complete_valid_contract_patches():
     assert len(presets) == 12
     for label, patch in presets:
         assert s.problem(patch) is None, label
-        assert len(patch["parameters"]) == 20
+        assert len(patch["parameters"]) == 19 and "0" not in patch["parameters"]  # LVL is session-owned
         validate("PatchCandidate", {"id": "x", "patch": patch, "provenance": label, "previewUrl": "", "score": 0})
 
 
@@ -60,6 +60,7 @@ def test_patch_problems_are_detected():
     assert s.problem({**patch, "engine": 99}) == "unknown engine"
     assert "outside" in s.problem({**patch, "parameters": {**patch["parameters"], "1": 500}})
     assert "unknown parameter" in s.problem({**patch, "parameters": {"999": 1}})
+    assert "owned by the session" in s.problem({**patch, "parameters": {"0": 100}})
 
 
 def test_bad_metadata_is_refused():

@@ -20,6 +20,11 @@ DEFAULT_TONE_LABELS: tuple[tuple[str, int], ...] = (
 )
 
 
+# Parameter IDs the browser engine owns (level, arp mode, sequence length/division/swing/gate, mute).
+# `firmwareSnapshot` in apps/web/src/engine/snapshot.ts rejects any patch that sets them.
+SESSION_OWNED: frozenset[int] = frozenset({0, 17, 29, 30, 31, 32, 40})
+
+
 class MetadataError(ValueError):
     """Engine metadata is missing or not shaped like the firmware export."""
 
@@ -45,7 +50,8 @@ def _bound(index: int, descriptor: Mapping[str, Any]) -> Bound:
 
 class ParameterSpace:
     def __init__(self, metadata: Mapping[str, Any], engine_revision: str,
-                 tone_labels: Sequence[tuple[str, int]] = DEFAULT_TONE_LABELS) -> None:
+                 tone_labels: Sequence[tuple[str, int]] = DEFAULT_TONE_LABELS,
+                 session_owned: frozenset[int] = SESSION_OWNED) -> None:
         try:
             offset = int(metadata["engineParamOffset"])
             common = [_bound(i, d) for i, d in enumerate(metadata["parameters"])]
@@ -56,6 +62,7 @@ class ParameterSpace:
             raise MetadataError("engine metadata parameter count does not match engineParamOffset")
         self.engine_revision = engine_revision
         self.offset = offset
+        self.session_owned = frozenset(i for i in session_owned if i < offset)
         self._common = common
         self._engines: list[dict] = []
         for number, engine in enumerate(engines):
@@ -73,7 +80,7 @@ class ParameterSpace:
         for bound in common:
             occurrence = seen.get(bound.name, 0)
             seen[bound.name] = occurrence + 1
-            if (bound.name, occurrence) in wanted and bound.lo < bound.hi:
+            if (bound.name, occurrence) in wanted and bound.lo < bound.hi and bound.index not in self.session_owned:
                 self._tone.append(bound)
 
     @property
@@ -92,12 +99,13 @@ class ParameterSpace:
         return self._tone + [b for b in self._engines[engine]["edit"] if b.lo < b.hi]
 
     def preset_patches(self) -> list[tuple[str, dict]]:
-        """Every factory preset as (label, complete Patch)."""
+        """Every factory preset as (label, Patch) with every parameter the session does not own."""
         out = []
         for number, engine in enumerate(self._engines):
             for index, preset in enumerate(engine["presets"]):
                 patch = {"engine": number, "preset": index, "engineRevision": self.engine_revision,
-                         "parameters": {str(i): v for i, v in enumerate(preset["values"])}}
+                         "parameters": {str(i): v for i, v in enumerate(preset["values"])
+                                        if i not in self.session_owned}}
                 out.append((f"{engine['name']} / {preset['name']}", patch))
         return out
 
@@ -114,6 +122,8 @@ class ParameterSpace:
         for key, value in patch.get("parameters", {}).items():
             if not key.isdigit() or int(key) >= len(bounds):
                 return f"unknown parameter {key}"
+            if int(key) in self.session_owned:
+                return f"parameter {key} is owned by the session, not the patch"
             bound = bounds[int(key)]
             if not bound.lo <= value <= bound.hi:
                 return f"parameter {key} ({bound.name}) outside {bound.lo}..{bound.hi}"
