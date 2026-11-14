@@ -23,7 +23,7 @@ PR #8 speech-capture requirements are reviewed and merged. They do not approve a
 
 **WS2 / Leo / @leoAndrade2332:** PR #7 microphone-test support, #10 guided calibration/fixes, and #11 monochrome workspace/piano roll are reviewed and integrated. Integrate the approved PR #12 merge now: next-beat Record, immediate Clear/Undo, exact epoch/cutoff reset in recorder/worker, discard-only provisional Undo and epoch-tagged batches. Remove automatic Record re-issue. Send final combined tests/limitations and main.tsx wiring notes in the PR. WS1 reviews before merging. Preserve input picker, granted-processing diagnostics and measurements-only reporting.
 
-**WS3 / Lenny / @lennyyanza:** PR #13 adds native-parity preprocessing, retrieval ranking and reproducible listening kits; WS1 review pending. Adopt PR #12 in backend proposals (Record next-beat, Clear/Undo immediate) with tests. Coordinate speech-transport proposal with WS2; no provider has been selected. Keep real-time audio independent of inference. Do not substitute the parser for completion of Deep Agents.
+**WS3 / Lenny / @lennyyanza:** PR #13 adds native-parity preprocessing, retrieval ranking and reproducible listening kits; WS1 review pending. PR #16 backend proposals are integrated (Record next-beat, Clear/Undo immediate), with 106 base backend tests and a tightened live-service/WASM test passing. Coordinate speech-transport proposal with WS2; no provider has been selected. Keep real-time audio independent of inference. Do not substitute the parser for completion of Deep Agents.
 
 ## Real-device findings and accepted UI direction
 
@@ -53,3 +53,7 @@ WS1 reviewed PR #13 at ed57bff and ran the isolated base backend suite (113 pass
 ## Speech proposal review (not approved)
 
 PR #14 proposes audio transport and #15 a provider-independent pipeline. WS1 reproduced acceptance of a six-second 8 kHz chunk and a mid-stream payload-rate change. Requested one-second bounds, fixed per-stream rate/initial sequence, streamId-scoped status and streamId/fromFrame coverage on new watermarks. Same-clock gap recovery must not verify old pending audio or silently enable manual commits. Requested recognized wake-span exclusion even when the command fails interpretation. WS2 must wait for the approved revised contract; real STT/Deep Agents remain absent.
+
+## Backend recording integration
+
+Reviewed PR #16 is integrated. Live WebSocket/WASM validation now requires the exact firmware next-beat start, commits a captured hit, clears and undoes it immediately via Groove transcripts while recording/playback continue, then verifies stop/disconnect behavior. This is the transcript-level seam with a synthetic musical event, not microphone speech recognition.
