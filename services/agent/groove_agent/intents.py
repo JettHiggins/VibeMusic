@@ -63,12 +63,29 @@ class NotUnderstood:
     reason: str
 
 
-Interpretation = Union[Command, Ignored, NotUnderstood]
+@dataclass(frozen=True)
+class SoundSearch:
+    """A spoken sound description. `refine` builds on the candidates of the previous search."""
+    description: str
+    refine: bool = False
+
+
+@dataclass(frozen=True)
+class AcceptCandidate:
+    index: int  # 1-based position in the latest candidate list
+
+
+@dataclass(frozen=True)
+class CancelSearch:
+    pass
+
+
+Interpretation = Union[Command, Ignored, NotUnderstood, SoundSearch, AcceptCandidate, CancelSearch]
 
 
 def tokenize(text: str) -> list[str]:
     text = text.lower().replace("-", " ").replace("'", "")
-    return re.findall(r"[a-z]+|\d+(?:\.\d+)?", text)
+    return re.findall(r"\d+\.\d+|[a-z0-9]+", text)
 
 
 def _contains(tokens: Sequence[str], phrase: str) -> bool:
@@ -186,7 +203,46 @@ def interpret(text: str, session: Mapping[str, Any], during_recording: bool) -> 
         problem = _needs_lane(target)
         return NotUnderstood(problem) if problem else _command({"type": "select", "target": target})
 
-    return NotUnderstood("command not recognized")
+    return _sound_intent(verb, rest) or NotUnderstood("command not recognized")
+
+
+_CANDIDATE_ORDINALS = {"first": 1, "second": 2, "third": 3, "fourth": 4, "fifth": 5}
+_DESCRIPTION_LEADS = (("make", "it", "sound", "like"), ("make", "this", "sound", "like"), ("sound", "like"),
+                      ("sounds", "like"), ("i", "want"), ("i", "need"), ("id", "like"), ("give", "me"),
+                      ("find", "me"), ("find",), ("search", "for"), ("look", "for"))
+
+
+def _describe(tokens: Sequence[str]) -> str:
+    words = list(tokens)
+    while words and words[0] in ("a", "an", "the", "some", "something", "like"):
+        words = words[1:]
+    while words and words[-1] in ("sound", "sounds", "patch", "tone"):
+        words = words[:-1]
+    return " ".join(words)
+
+
+def _sound_intent(verb: str, rest: Sequence[str]) -> Optional[Interpretation]:
+    tokens = [verb, *rest]
+    if verb == "cancel":
+        return CancelSearch()
+    if verb in ("accept", "keep", "use", "take", "apply"):
+        for token in rest:
+            if token in _CANDIDATE_ORDINALS:
+                return AcceptCandidate(_CANDIDATE_ORDINALS[token])
+        number = find_number(rest)
+        if number is not None and (number < 1 or not float(number).is_integer()):
+            return NotUnderstood("say which candidate, for example: use number two")
+        return AcceptCandidate(int(number) if number is not None else 1)
+    for lead in _DESCRIPTION_LEADS:
+        if tuple(tokens[:len(lead)]) == lead:
+            description = _describe(tokens[len(lead):])
+            return SoundSearch(description) if description else NotUnderstood("describe the sound you want")
+    if verb == "refine" or (verb == "make" and list(rest[:1]) in (["it"], ["this"], ["that"])):
+        description = _describe(rest if verb == "refine" else rest[1:])
+        return SoundSearch(description, refine=True) if description else NotUnderstood("say how to change the sound")
+    if verb in ("more", "less", "brighter", "darker", "warmer", "softer", "harder", "punchier"):
+        return SoundSearch(" ".join(tokens), refine=True)
+    return None
 
 
 def validate_operation(operation: Mapping[str, Any]) -> Optional[str]:

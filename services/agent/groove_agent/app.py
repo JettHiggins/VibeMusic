@@ -9,26 +9,46 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import time
 from typing import Any, Optional
 from urllib.parse import urlsplit
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request, Response, WebSocket, WebSocketDisconnect
 
 from . import __version__
 from .connection import Connection
-from .contracts import ContractError, validate
+from .contracts import ContractError, contracts_dir, validate
+from .research.service import ResearchService, backend_from_env
 
 log = logging.getLogger("groove_agent")
 TICK_SECONDS = 1.0
 LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 
 app = FastAPI(title="VoiceSynthesizer agent service", version=__version__)
+# No research backend unless GROOVE_RESEARCH is set; a misconfigured one fails at startup, not mid-session.
+research_service = ResearchService(backend_from_env(contracts_dir().parents[1]),
+                                     os.environ.get("GROOVE_PUBLIC_URL", "http://127.0.0.1:8000"))
 
 
 @app.get("/healthz")
 def healthz() -> dict:
-    return {"status": "ok", "version": __version__, "contract": 1}
+    backend = research_service.backend
+    return {"status": "ok", "version": __version__, "contract": 1,
+            "research": backend.label if backend else "not configured"}
+
+
+@app.get("/previews/{token}.wav")
+def preview(token: str, request: Request) -> Response:
+    """Audio of one research candidate, rendered by the configured renderer."""
+    audio = research_service.preview(token)
+    if audio is None:
+        return Response(status_code=404)
+    headers = {"Cache-Control": "no-store"}
+    origin = request.headers.get("origin")
+    if origin and origin_allowed(origin):
+        headers["Access-Control-Allow-Origin"] = origin  # lets the local page decode previews with Web Audio
+    return Response(audio, media_type="audio/wav", headers=headers)
 
 
 def origin_allowed(origin: Optional[str]) -> bool:
@@ -74,18 +94,49 @@ async def session_socket(websocket: WebSocket) -> None:
         await websocket.close(code=1008)
         return
     await websocket.accept()
-    connection = Connection()
+    loop = asyncio.get_running_loop()
+    outbox: "asyncio.Queue[dict]" = asyncio.Queue()
+
+    def from_worker(message: dict) -> None:
+        """Called on research worker threads; hands the message to the event loop."""
+        def deliver() -> None:
+            connection.observe_research(message)
+            outbox.put_nowait(message)
+        try:
+            loop.call_soon_threadsafe(deliver)
+        except RuntimeError:
+            pass  # loop already closed during shutdown
+
+    port = research_service.port(from_worker)
+    connection = Connection(research=port)
+
+    async def tick() -> None:
+        while True:
+            await asyncio.sleep(TICK_SECONDS)
+            for reply in connection.tick(time.monotonic()):
+                outbox.put_nowait(reply)
+
+    async def write() -> None:
+        while True:
+            await websocket.send_text(json.dumps(checked(await outbox.get())))
+
+    def finished(task: "asyncio.Task[None]") -> None:
+        if not task.cancelled() and task.exception() is not None:
+            log.warning("connection task ended: %r", task.exception())
+
+    tasks = [asyncio.ensure_future(job()) for job in (tick, write)]
+    for task in tasks:
+        task.add_done_callback(finished)
     try:
         while True:
-            try:
-                text = await asyncio.wait_for(websocket.receive_text(), timeout=TICK_SECONDS)
-            except asyncio.TimeoutError:
-                replies = connection.tick(time.monotonic())
-            else:
-                message, error = decode(text)
-                replies = [error] if message is None else connection.handle(message, time.monotonic())
+            message, error = decode(await websocket.receive_text())
+            replies = [error] if message is None else connection.handle(message, time.monotonic())
             for reply in replies:
-                await websocket.send_text(json.dumps(checked(reply)))
+                outbox.put_nowait(reply)
     except WebSocketDisconnect:
-        # Pending proposals die with the connection; nothing is replayed after a reconnect.
-        return
+        pass
+    finally:
+        # Pending proposals and research jobs die with the connection; nothing is replayed after a reconnect.
+        port.close()
+        for task in tasks:
+            task.cancel()
