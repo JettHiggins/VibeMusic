@@ -4,11 +4,13 @@ A synthetic take is written to disk as a 16 kHz WAV: beatboxed hits (short noise
 and one voiced segment standing in for "Groove, stop". It is read back and streamed in
 20 ms speech-audio chunks on a 44.1 kHz capture clock through the real Connection.
 
-The transcriber is SCRIPTED: it returns fixed text for each segment in order. These tests
-prove segmentation timing, command-span frame math and speech-verified ordering; they do
-not test speech recognition, which needs the pending STT provider decision.
+Transcription goes through a SpeechWorker, as in the service, but the worker here is
+SCRIPTED: it returns fixed text for each segment in order, when the test chooses. These
+tests prove segmentation timing, command-span frame math, stream-scoped coverage and
+ordering; they do not test speech recognition. Energy segmentation is experimental.
 """
 import base64
+import threading
 import wave
 
 import numpy as np
@@ -16,6 +18,7 @@ import pytest
 
 from groove_agent.connection import Connection
 from groove_agent.contracts import load_fixture, validate
+from groove_agent.speech_pipeline import ThreadedSpeechWorker
 
 CONTEXT_RATE, PAYLOAD_RATE = 44100, 16000
 CHUNK = 320  # 20 ms at 16 kHz
@@ -24,16 +27,26 @@ TAKE_START = 352800  # recording window opens at the second loop at 120 BPM
 WINDOW_FRAMES = CHUNK_FRAMES  # segmenter resolution is one 20 ms window
 
 
-class ScriptedTranscriber:
+class ScriptedWorker:
+    """Queues jobs like a background worker; `finish` delivers SCRIPTED results in order."""
     name = "SCRIPTED test transcriber (not speech recognition)"
 
-    def __init__(self, texts):
-        self.texts = list(texts)
-        self.calls = []
+    def __init__(self, texts=(), fail=False):
+        self.texts, self.fail, self.jobs, self.transcribed = list(texts), fail, [], []
 
-    def transcribe(self, samples, sample_rate):
-        self.calls.append(len(samples) / sample_rate)
-        return self.texts.pop(0) if self.texts else ""
+    def submit(self, job):
+        self.jobs.append(job)
+
+    def finish(self, connection):
+        replies = []
+        while self.jobs:
+            job = self.jobs.pop(0)
+            self.transcribed.append(job)
+            if self.fail:
+                replies += connection.speech_result(job, None, "RuntimeError: model crashed", 0.0)
+            else:
+                replies += connection.speech_result(job, self.texts.pop(0) if self.texts else "", None, 0.0)
+        return replies
 
 
 def synth_take(path, hits=(0.5, 1.0, 1.5), speech=(2.0, 2.7), seconds=4.0):
@@ -57,20 +70,20 @@ def synth_take(path, hits=(0.5, 1.0, 1.5), speech=(2.0, 2.7), seconds=4.0):
     return path
 
 
-def chunks_from_wav(path, start_frame=TAKE_START, stream="take-1", clock="ctx"):
+def chunks_from_wav(path, start_frame=TAKE_START, stream="take-1", clock="ctx", first_seq=0):
     with wave.open(str(path)) as source:
         assert source.getframerate() == PAYLOAD_RATE and source.getnchannels() == 1
         pcm = source.readframes(source.getnframes())
-    for seq, offset in enumerate(range(0, len(pcm) // 2 - CHUNK + 1, CHUNK)):
+    for index, offset in enumerate(range(0, len(pcm) // 2 - CHUNK + 1, CHUNK)):
         data = pcm[offset * 2:(offset + CHUNK) * 2]
-        begin = start_frame + seq * CHUNK_FRAMES
-        yield {"type": "speech-audio", "streamId": stream, "seq": seq, "clockId": clock, "startFrame": begin,
-               "endFrame": begin + CHUNK_FRAMES, "sampleRate": PAYLOAD_RATE, "encoding": "pcm-s16le",
-               "data": base64.b64encode(data).decode()}
+        begin = start_frame + index * CHUNK_FRAMES
+        yield {"type": "speech-audio", "streamId": stream, "seq": first_seq + index, "clockId": clock,
+               "startFrame": begin, "endFrame": begin + CHUNK_FRAMES, "sampleRate": PAYLOAD_RATE,
+               "encoding": "pcm-s16le", "data": base64.b64encode(data).decode()}
 
 
-def connect(transcriber, recording=True, clock="ctx"):
-    connection = Connection(transcriber=transcriber)
+def connect(worker, recording=True, clock="ctx"):
+    connection = Connection(speech=worker)
     session = load_fixture("SessionState")
     transport = {"clockId": clock, "sampleRate": CONTEXT_RATE, "currentFrame": TAKE_START, "loopStartFrame": TAKE_START,
                  "playing": True, "recording": recording, "pendingCommandIds": []}
@@ -83,16 +96,26 @@ def connect(transcriber, recording=True, clock="ctx"):
     return connection
 
 
-def stream(connection, chunks):
-    """Returns [(chunk, replies)] after validating every frame in both directions."""
+def stream(connection, worker, chunks, transcribe_each_chunk=True):
+    """Returns [(chunk, replies)]. With transcribe_each_chunk, results arrive right after each chunk."""
     log = []
     for chunk in chunks:
         validate("ClientMessage", chunk)
         replies = connection.handle(chunk, 0.0)
+        if transcribe_each_chunk:
+            replies += worker.finish(connection)
         for reply in replies:
             validate("ServerMessage", reply)
         log.append((chunk, replies))
     return log
+
+
+def flat(log):
+    return [r for _, rs in log for r in rs]
+
+
+def marks(replies):
+    return [r for r in replies if r["type"] == "speech-verified"]
 
 
 def frame_at(seconds):
@@ -105,70 +128,137 @@ def take(tmp_path):
 
 
 def test_groove_stop_during_recording_gets_a_measured_span_then_a_command_then_the_watermark(take):
-    transcriber = ScriptedTranscriber(["Groove, stop"])
-    log = stream(connect(transcriber), chunks_from_wav(take))
-    replies = [r for _, rs in log for r in rs]
-    assert replies[0] == {"type": "speech-status", "available": True, "provider": transcriber.name}
+    worker = ScriptedWorker(["Groove, stop"])
+    replies = flat(stream(connect(worker), worker, chunks_from_wav(take)))
+    assert replies[0] == {"type": "speech-status", "streamId": "take-1", "available": True, "provider": worker.name}
     spans = [r for r in replies if r["type"] == "command-span"]
-    assert len(spans) == 1 and len(transcriber.calls) == 1  # the three hits were never sent to the transcriber
+    assert len(spans) == 1 and len(worker.transcribed) == 1  # the three hits were never transcribed
     span = spans[0]
     assert abs(span["startFrame"] - frame_at(2.0)) <= WINDOW_FRAMES
     assert abs(span["endFrame"] - frame_at(2.7)) <= WINDOW_FRAMES
     commands = [r["command"] for r in replies if r["type"] == "command"]
     assert [c["operation"]["type"] for c in commands] == ["stop-recording"]
-    # Ordering: span, then command, then the first watermark that covers the span.
     order = [r["type"] for r in replies]
     covering = next(i for i, r in enumerate(replies) if r["type"] == "speech-verified" and r["throughFrame"] >= span["startFrame"])
     assert order.index("command-span") < order.index("command") < covering
 
 
-def test_watermark_is_monotonic_never_ahead_of_audio_and_held_during_speech(take):
-    log = stream(connect(ScriptedTranscriber(["Groove, stop"])), chunks_from_wav(take))
-    marks, received = [], []
+def test_watermark_is_stream_scoped_monotonic_never_ahead_of_audio_and_held_during_speech(take):
+    worker = ScriptedWorker(["Groove, stop"])
+    log = stream(connect(worker), worker, chunks_from_wav(take))
+    seen, received = [], []
     for chunk, replies in log:
-        for reply in replies:
-            if reply["type"] == "speech-verified":
-                assert reply["clockId"] == "ctx"
-                assert reply["throughFrame"] <= chunk["endFrame"] - 1  # never past received audio
-                marks.append(reply["throughFrame"])
-                received.append(chunk["endFrame"] - 1)
-    assert marks == sorted(set(marks))  # strictly increasing
+        for reply in marks(replies):
+            assert reply["clockId"] == "ctx" and reply["streamId"] == "take-1" and reply["fromFrame"] == TAKE_START
+            assert reply["throughFrame"] <= chunk["endFrame"] - 1  # never past received audio
+            seen.append(reply["throughFrame"])
+            received.append(chunk["endFrame"] - 1)
+    assert seen == sorted(set(seen))  # strictly increasing
     speech_start = frame_at(2.0)
-    held = [m for m, r in zip(marks, received) if speech_start <= r < frame_at(2.7)]
-    assert all(m < speech_start for m in held)  # nothing during the open segment covers it
-    # Hits resolve quickly (burst + 300 ms hangover); the take ends verified up to the trailing hangover.
-    assert any(frame_at(0.56) <= m <= frame_at(1.0) for m in marks)
-    assert marks[-1] >= frame_at(4.0) - round(0.36 * CONTEXT_RATE)
+    assert all(m < speech_start for m, r in zip(seen, received) if speech_start <= r < frame_at(2.7))
+    assert any(frame_at(0.56) <= m <= frame_at(1.0) for m in seen)  # hits resolve after burst + hangover
+    assert seen[-1] >= frame_at(4.0) - round(0.36 * CONTEXT_RATE)
+
+
+def test_watermark_waits_for_a_slow_transcription_then_follows_its_span(take):
+    worker = ScriptedWorker(["Groove, stop"])
+    connection = connect(worker)
+    log = stream(connection, worker, chunks_from_wav(take), transcribe_each_chunk=False)
+    early = marks(flat(log))
+    assert worker.jobs and max(m["throughFrame"] for m in early) < frame_at(2.0)  # held at the pending segment
+    late = worker.finish(connection)
+    assert [r["type"] for r in late] == ["command-span", "command", "speech-verified"]
+    assert late[-1]["throughFrame"] > frame_at(2.7)
+
+
+def test_issue_3d_wake_phrase_not_understood_is_excluded_then_reported_without_mutation(take):
+    worker = ScriptedWorker(["Groove, banana"])
+    replies = flat(stream(connect(worker), worker, chunks_from_wav(take)))
+    kinds = [r["type"] for r in replies]
+    assert "command" not in kinds
+    span = kinds.index("command-span")
+    assert kinds[span + 1] == "error"
+    covering = next(i for i, r in enumerate(replies) if r["type"] == "speech-verified" and r["throughFrame"] >= frame_at(2.0))
+    assert span < covering
+
+
+def test_a_transcription_failure_holds_coverage_and_reports_the_stream_unavailable(take):
+    worker = ScriptedWorker(fail=True)
+    replies = flat(stream(connect(worker), worker, chunks_from_wav(take)))
+    failure = next(i for i, r in enumerate(replies) if r["type"] == "error")
+    assert "recognition failed" in replies[failure]["message"]
+    status = replies[failure + 1]
+    assert status["type"] == "speech-status" and status["available"] is False and status["streamId"] == "take-1"
+    assert not marks(replies[failure:])  # nothing after the failure is ever verified
+    assert max(m["throughFrame"] for m in marks(replies)) < frame_at(2.0)
 
 
 def test_hits_alone_produce_no_span_and_a_verified_take(tmp_path):
     take = synth_take(tmp_path / "hits.wav", speech=(3.9, 3.9))
-    transcriber = ScriptedTranscriber([])
-    replies = [r for _, rs in stream(connect(transcriber), chunks_from_wav(take)) for r in rs]
-    assert not [r for r in replies if r["type"] in ("command-span", "command")] and transcriber.calls == []
-    assert max(r["throughFrame"] for r in replies if r["type"] == "speech-verified") >= frame_at(3.5)
+    worker = ScriptedWorker()
+    replies = flat(stream(connect(worker), worker, chunks_from_wav(take)))
+    assert not [r for r in replies if r["type"] in ("command-span", "command")] and worker.transcribed == []
+    assert max(r["throughFrame"] for r in marks(replies)) >= frame_at(3.5)
 
 
 def test_speech_without_the_wake_phrase_during_recording_is_performance(take):
-    replies = [r for _, rs in stream(connect(ScriptedTranscriber(["la la la"])), chunks_from_wav(take)) for r in rs]
+    worker = ScriptedWorker(["la la la"])
+    replies = flat(stream(connect(worker), worker, chunks_from_wav(take)))
     assert not [r for r in replies if r["type"] in ("command-span", "command", "error")]
-    assert max(r["throughFrame"] for r in replies if r["type"] == "speech-verified") > frame_at(2.7)
+    assert max(r["throughFrame"] for r in marks(replies)) > frame_at(2.7)
 
 
 def test_outside_recording_plain_speech_is_a_command_without_a_span(take):
-    replies = [r for _, rs in stream(connect(ScriptedTranscriber(["play"]), recording=False), chunks_from_wav(take))
-               for r in rs]
+    worker = ScriptedWorker(["play"])
+    replies = flat(stream(connect(worker, recording=False), worker, chunks_from_wav(take)))
     assert not [r for r in replies if r["type"] == "command-span"]
     assert [r["command"]["operation"] for r in replies if r["type"] == "command"] == [{"type": "play", "playing": True}]
 
 
-def test_a_dropped_chunk_freezes_the_watermark_before_the_gap(take):
+def test_ws1_gap_then_new_stream_on_the_same_clock_never_verifies_pre_gap_or_missing_audio(take):
+    worker = ScriptedWorker()
+    connection = connect(worker)
     chunks = list(chunks_from_wav(take))
-    del chunks[60]  # 1.2 s
-    log = stream(connect(ScriptedTranscriber(["Groove, stop"])), chunks)
-    replies = [r for _, rs in log for r in rs]
-    errors = [r for r in replies if r["type"] == "error"]
-    assert len(errors) == 1 and "expected seq 60" in errors[0]["message"]  # caught before the frame gap
-    gap_start = chunks[59]["endFrame"]
-    assert max(r["throughFrame"] for r in replies if r["type"] == "speech-verified") < gap_start
-    assert not [r for r in replies if r["type"] == "command-span"]  # later audio was never classified
+    before_gap, after_gap = chunks[:60], chunks[61:]  # chunk 60 (1.2 s) is lost
+    replies = flat(stream(connection, worker, before_gap + [after_gap[0]]))
+    assert [r for r in replies if r["type"] == "error"]  # the gap breaks take-1
+    gap_start = before_gap[-1]["endFrame"]
+    old = marks(replies)
+    assert all(m["streamId"] == "take-1" and m["throughFrame"] < gap_start for m in old)
+    # The browser restarts capture on the same clock as a new stream; it starts after the gap.
+    restart = [dict(c, streamId="take-2", seq=i) for i, c in enumerate(after_gap[1:])]
+    new = flat(stream(connection, worker, restart))
+    assert new[0]["type"] == "speech-status" and new[0]["streamId"] == "take-2"
+    new_marks = marks(new)
+    assert new_marks and all(m["streamId"] == "take-2" and m["fromFrame"] == restart[0]["startFrame"] for m in new_marks)
+    assert restart[0]["startFrame"] > gap_start  # coverage never includes the missing frames or pre-gap input
+    assert all(m["fromFrame"] > gap_start for m in new_marks)
+
+
+def test_threaded_worker_transcribes_off_the_calling_thread_and_reports_failures():
+    from groove_agent.speech_pipeline import Segment, SpeechJob
+    seen, done = [], threading.Event()
+
+    class Recognizer:
+        name = "SCRIPTED threaded test"
+
+        def transcribe(self, samples, rate):
+            if len(samples) == 0:
+                raise RuntimeError("no audio")
+            return f"heard {len(samples)} on {threading.current_thread().name}"
+
+    def deliver(job, text, error):
+        seen.append((job.job_id, text, error))
+        if len(seen) == 2:
+            done.set()
+
+    worker = ThreadedSpeechWorker(Recognizer(), deliver)
+    segment = Segment(0, 9, np.zeros(10, np.float32), PAYLOAD_RATE)
+    worker.submit(SpeechJob("a", "s", "c", segment))
+    worker.submit(SpeechJob("b", "s", "c", Segment(0, 0, np.zeros(0, np.float32), PAYLOAD_RATE)))
+    assert done.wait(10)
+    worker.close()
+    worker.join()
+    assert seen[0] == ("a", "heard 10 on speech-worker", None)
+    assert seen[1][0] == "b" and seen[1][1] is None and "no audio" in seen[1][2]
+    assert threading.current_thread().name != "speech-worker"

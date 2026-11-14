@@ -18,17 +18,25 @@ from typing import Any, Callable, Deque, Mapping, Optional, Protocol, Sequence, 
 from .intents import (MELODIC_TRACKS, AcceptCandidate, CancelSearch, Command, Ignored, Interpretation, NotUnderstood,
                       SoundSearch, interpret, validate_operation)
 from .speech import ChunkError, StreamTracker, decode_chunk
-from .speech_pipeline import EnergySegmenter, Transcriber
+from .speech_pipeline import EnergySegmenter, SpeechJob, SpeechWorker
 
-Interpreter = Callable[[str, Mapping[str, Any], bool], Interpretation]
+Interpreter = Callable[..., Interpretation]  # (text, session, during_recording, take_armed=False)
 
 DEFAULT_ACK_TIMEOUT_S = 60.0  # longer than the slowest loop (4 bars at 40 BPM = 24 s) plus count-in
 MAX_BACKLOG = 8
 REMEMBERED_UTTERANCES = 256
-# No recognizer is wired yet (STT provider decision pending). Until one is, speech-audio
-# is validated and dropped, and speech-verified is never sent: nothing was classified.
+# Without a configured recognizer, speech-audio is validated and dropped and speech-verified is
+# never sent: nothing was classified.
 SPEECH_UNAVAILABLE = {"type": "speech-status", "available": False, "provider": "none",
-                      "reason": "no speech recognizer configured; speech-verified is not sent"}
+                      "reason": "no speech recognizer configured; speech-verified is not sent; hold speech-dependent commits"}
+
+
+@dataclass
+class _SpeechStream:
+    segmenter: EnergySegmenter
+    pending: "Deque[SpeechJob]"
+    verified: int = -1
+    failed: bool = False
 
 
 @dataclass
@@ -69,10 +77,9 @@ def _error(request_id: str, message: str) -> dict:
 
 class Connection:
     def __init__(self, interpreter: Interpreter = interpret, ack_timeout_s: float = DEFAULT_ACK_TIMEOUT_S,
-                 research: Optional[ResearchPort] = None, transcriber: Optional[Transcriber] = None) -> None:
-        self._transcriber = transcriber
-        self._segmenters: dict[str, EnergySegmenter] = {}
-        self._verified: dict[str, int] = {}
+                 research: Optional[ResearchPort] = None, speech: Optional[SpeechWorker] = None) -> None:
+        self._speech = speech
+        self._speech_state: "OrderedDict[str, _SpeechStream]" = OrderedDict()
         self._segment_count = 0
         self._interpret = interpreter
         self._research = research
@@ -129,33 +136,72 @@ class Connection:
             first = self._speech_streams.accept(chunk)
         except ChunkError as error:
             self._speech_streams.mark_broken(stream_id)
-            self._segmenters.pop(stream_id, None)
+            self._speech_state.pop(stream_id, None)
             return [_error(stream_id, f"speech-audio rejected: {error}; send a new streamId")]
-        out: list[dict] = []
         if first:
-            out.append(dict(SPEECH_UNAVAILABLE) if self._transcriber is None else
-                       {"type": "speech-status", "available": True, "provider": self._transcriber.name})
-        if self._transcriber is None:
+            status = ({**SPEECH_UNAVAILABLE, "streamId": stream_id} if self._speech is None else
+                      {"type": "speech-status", "streamId": stream_id, "available": True, "provider": self._speech.name})
+            out = [status]
+        else:
+            out = []
+        if self._speech is None:
             return out
-        segmenter = self._segmenters.get(stream_id)
-        if segmenter is None:
-            segmenter = self._segmenters[stream_id] = EnergySegmenter(chunk.sample_rate)
-            while len(self._segmenters) > 16:
-                self._segmenters.pop(next(iter(self._segmenters)))
-        for segment in segmenter.feed(chunk):
-            text = self._transcriber.transcribe(segment.samples, segment.sample_rate).strip()
-            if not text:
-                continue
+        state = self._speech_state.get(stream_id)
+        if state is None:
+            state = self._speech_state[stream_id] = _SpeechStream(EnergySegmenter(chunk.sample_rate), deque())
+            while len(self._speech_state) > 16:
+                self._speech_state.popitem(last=False)
+        if state.failed:
+            return out
+        for segment in state.segmenter.feed(chunk):
             self._segment_count += 1
-            out.extend(self._on_utterance({
-                "type": "utterance", "id": f"{stream_id}:speech-{self._segment_count}", "text": text,
-                "clockId": chunk.clock_id, "startFrame": segment.start_frame, "endFrame": segment.last_frame,
-                "duringRecording": self._recording_at(segment.start_frame)}, now))
-        watermark = segmenter.decided_through
-        if watermark > self._verified.get(stream_id, -1):
-            self._verified[stream_id] = watermark
-            out.append({"type": "speech-verified", "clockId": chunk.clock_id, "throughFrame": watermark})
+            job = SpeechJob(f"{stream_id}:speech-{self._segment_count}", stream_id, chunk.clock_id, segment)
+            state.pending.append(job)
+            self._speech.submit(job)  # transcribed off the event loop; see speech_result
+        out.extend(self._advance_speech(stream_id, chunk.clock_id))
         return out
+
+    def speech_result(self, job: SpeechJob, text: Optional[str], error: Optional[str], now: float) -> list[dict]:
+        """A transcript (or failure) for one segment, delivered on the event loop by the service.
+
+        Order: the segment's command-span and command/error first, then any watermark it
+        releases. A failure stops coverage for that stream and reports it unavailable.
+        """
+        state = self._speech_state.get(job.stream_id)
+        if state is None or state.failed or job not in state.pending:
+            return []
+        state.pending.remove(job)
+        if error is not None:
+            state.failed = True
+            state.pending.clear()
+            return [_error(job.stream_id, f"speech recognition failed: {error}"),
+                    {"type": "speech-status", "streamId": job.stream_id, "available": False,
+                     "provider": self._speech.name if self._speech else "none",
+                     "reason": "recognition failed; speech-verified stopped for this stream; hold speech-dependent commits"}]
+        out: list[dict] = []
+        if text and text.strip():
+            segment = job.segment
+            out.extend(self._on_utterance({
+                "type": "utterance", "id": job.job_id, "text": text.strip(), "clockId": job.clock_id,
+                "startFrame": segment.start_frame, "endFrame": segment.last_frame,
+                "duringRecording": self._recording_at(segment.start_frame)}, now))
+        out.extend(self._advance_speech(job.stream_id, job.clock_id))
+        return out
+
+    def _advance_speech(self, stream_id: str, clock_id: str) -> list[dict]:
+        """speech-verified for one stream: never past an open or still-transcribing segment."""
+        state = self._speech_state.get(stream_id)
+        first_frame = self._speech_streams.first_frame(stream_id)
+        if state is None or state.failed or first_frame is None:
+            return []
+        bound = state.segmenter.decided_through
+        if state.pending:
+            bound = min(bound, state.pending[0].segment.start_frame - 1)
+        if bound < first_frame or bound <= state.verified:
+            return []
+        state.verified = bound
+        return [{"type": "speech-verified", "clockId": clock_id, "streamId": stream_id,
+                 "fromFrame": first_frame, "throughFrame": bound}]
 
     def _recording_at(self, frame: int) -> bool:
         """Whether a take was capturing at `frame`, from the browser's latest transport snapshot."""
@@ -255,34 +301,35 @@ class Connection:
             return [_error(utterance_id, "utterance clock does not match the current audio clock")]
 
         during_recording = bool(message["duringRecording"])
-        result = self._interpret(message["text"], self.session, during_recording)
+        result = self._interpret(message["text"], self.session, during_recording, take_armed=self._take_armed())
         if isinstance(result, Ignored):
-            return []
+            return []  # performance, not speech addressed to Groove
+        # During recording, anything not Ignored began with the wake word. Its span is excluded
+        # from the take even when the command is not understood or is refused (Issue #3 d), and
+        # it is sent first so the browser can exclude it before any command or watermark.
+        out: list[dict] = []
+        if during_recording:
+            out.append({"type": "command-span", "utteranceId": utterance_id, "clockId": message["clockId"],
+                        "startFrame": message["startFrame"], "endFrame": message["endFrame"]})
         if isinstance(result, NotUnderstood):
-            return [_error(utterance_id, result.reason)]
+            return out + [_error(utterance_id, result.reason)]
         if isinstance(result, Command):
             problem = validate_operation(result.operation)
             if problem is not None:
-                return [_error(utterance_id, problem)]
+                return out + [_error(utterance_id, problem)]
             proposal: Optional[_Proposal] = _Proposal(utterance_id, result.operation, result.boundary)
         else:
             outcome = self._on_sound_intent(utterance_id, result)
             if isinstance(outcome, _Proposal):
                 proposal = outcome
             elif outcome:
-                return outcome  # refused, so not a recognized command: no span
+                return out + outcome  # refused: still excluded, no mutation
             else:
                 proposal = None
 
-        out: list[dict] = []
-        if during_recording:
-            # Sent before the command so the browser can exclude the span from
-            # provisional musical events even if the command itself has to wait.
-            out.append({"type": "command-span", "utteranceId": utterance_id, "clockId": message["clockId"],
-                        "startFrame": message["startFrame"], "endFrame": message["endFrame"]})
         if proposal is None:
             return out
-        if proposal.boundary == "next-loop" and self._next_loop_in_flight():
+        if proposal.boundary == "next-loop" and self._queued_in_flight():
             if len(self._backlog) >= MAX_BACKLOG:
                 out.append(_error(utterance_id, "too many commands are waiting; try again after the next loop"))
             else:
@@ -293,8 +340,21 @@ class Connection:
 
     # -- commands ----------------------------------------------------------------
 
-    def _next_loop_in_flight(self) -> bool:
-        return any(flight.proposal.boundary == "next-loop" for flight in self._in_flight.values())
+    def _take_armed(self) -> bool:
+        """A Record is counting in: the transport says armed, or our Record is not yet resolved."""
+        if (self.transport or {}).get("recordingState") == "armed":
+            return True
+        return any(flight.proposal.operation["type"] == "record" for flight in self._in_flight.values())
+
+    def _queued_in_flight(self) -> bool:
+        """A boundary-scheduled command (next-loop, or a next-beat Record) is still unresolved.
+
+        A next-beat Record checks expectedRevision on receipt and stays pinned once armed
+        (RECORDING-USABILITY.md), so it is issued without waiting. Its application can still
+        change the revision, so a next-loop command waits behind it like behind another
+        next-loop command. Immediate commands are never held back.
+        """
+        return any(flight.proposal.boundary in ("next-loop", "next-beat") for flight in self._in_flight.values())
 
     def _issue(self, proposal: _Proposal, now: float) -> dict:
         # Derived from the utterance so a repeated delivery maps to the same command ID,
@@ -311,7 +371,7 @@ class Connection:
         `expectedRevision` when a queued command is applied, so two issued
         against the same revision would make the second one stale.
         """
-        if self._backlog and self.session is not None and not self._next_loop_in_flight():
+        if self._backlog and self.session is not None and not self._queued_in_flight():
             return [self._issue(self._backlog.popleft(), now)]
         return []
 

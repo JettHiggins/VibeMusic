@@ -57,7 +57,7 @@ def errors(out):
 def test_first_voice_slice_record_then_groove_stop(conn):
     out = send(conn, utter("u1", "record kick"))
     assert out == [{"type": "command", "command": {
-        "id": "u1:cmd", "expectedRevision": 0, "boundary": "next-loop",
+        "id": "u1:cmd", "expectedRevision": 0, "boundary": "next-beat",
         "operation": {"type": "record", "target": {"trackId": "drums", "lane": "kick"}}}}]
     assert send(conn, ack("u1:cmd", "queued", 0)) == []
     assert send(conn, ack("u1:cmd", "applied", 1)) == []
@@ -100,16 +100,16 @@ def test_unrecognized_speech_reports_error_without_command(conn):
     out = send(conn, utter("u1", "make me a sandwich"))
     assert errors(out)[0]["requestId"] == "u1" and not commands(out)
     out = send(conn, utter("u2", "groove banana", recording=True))
-    assert [m["type"] for m in out] == ["error"]  # unrecognized wake phrase: no span, no command
+    assert [m["type"] for m in out] == ["command-span", "error"]  # Issue #3 d: excluded, reported, no mutation
 
 
 def test_next_loop_commands_are_serialized_against_fresh_revisions(conn):
     assert commands(send(conn, utter("u1", "tempo 140")))[0]["expectedRevision"] == 0
-    assert send(conn, utter("u2", "clear snare")) == []  # waits: issuing now would go stale
+    assert send(conn, utter("u2", "tempo 90")) == []  # waits: issuing now would go stale
     assert send(conn, ack("u1:cmd", "queued", 0)) == []
     out = send(conn, ack("u1:cmd", "applied", 1))
     assert commands(out) == [{"id": "u2:cmd", "expectedRevision": 1, "boundary": "next-loop",
-                              "operation": {"type": "clear", "target": {"trackId": "drums", "lane": "snare"}}}]
+                              "operation": {"type": "tempo", "bpm": 90}}]
 
 
 def test_immediate_commands_are_not_held_behind_a_queued_one(conn):
@@ -121,7 +121,7 @@ def test_immediate_commands_are_not_held_behind_a_queued_one(conn):
 
 def test_rejection_is_reported_and_unblocks_the_next_command(conn):
     send(conn, utter("u1", "tempo 140"))
-    send(conn, utter("u2", "undo"))
+    send(conn, utter("u2", "tempo 90"))
     out = send(conn, ack("u1:cmd", "rejected", 3, "stale revision"))
     assert errors(out)[0] == {"type": "error", "requestId": "u1", "message": "tempo was rejected: stale revision"}
     assert commands(out)[0]["id"] == "u2:cmd"
@@ -136,7 +136,7 @@ def test_session_snapshot_is_authoritative_for_revision(conn):
 
 def test_unacknowledged_command_expires_and_releases_backlog(conn):
     send(conn, utter("u1", "tempo 140"), now=0)
-    send(conn, utter("u2", "undo"), now=1)
+    send(conn, utter("u2", "tempo 90"), now=1)
     assert conn.tick(29.0) == []
     out = conn.tick(30.0)
     assert errors(out)[0]["requestId"] == "u1"
@@ -147,8 +147,8 @@ def test_unacknowledged_command_expires_and_releases_backlog(conn):
 def test_backlog_is_bounded(conn):
     send(conn, utter("u0", "tempo 140"))
     for index in range(MAX_BACKLOG):
-        assert send(conn, utter(f"b{index}", "undo")) == []
-    assert errors(send(conn, utter("overflow", "undo")))
+        assert send(conn, utter(f"b{index}", "faster")) == []
+    assert errors(send(conn, utter("overflow", "faster")))
 
 
 def test_new_connection_replays_nothing(conn):
@@ -165,3 +165,69 @@ def test_research_requests_fail_honestly_until_implemented(conn):
     out = send(conn, {"type": "sound-request", "id": "job1", "trackId": "synth-1", "description": "80s electric piano"})
     assert out[0]["status"] == "failed" and out[0]["candidates"] == []
     assert errors(send(conn, {"type": "cancel-job", "jobId": "job1"}))
+
+
+# -- recording usability (PR #12, RECORDING-USABILITY.md WS3 checklist) -------------------
+
+
+def usability_transport(**extra):
+    message = transport_msg(recording=True)
+    message["transport"].update(recordingState="recording", recordingStartFrame=88200,
+                                recordingTarget={"trackId": "drums", "lane": "kick"}, recordingEpoch=3,
+                                captureStartFrame=90000, recordingLoopStartFrame=88200.0, **extra)
+    return message
+
+
+def test_new_transport_fields_are_accepted_and_never_produce_speech_verification(conn):
+    assert send(conn, usability_transport()) == []
+    assert conn.transport["recordingEpoch"] == 3 and conn.transport["captureStartFrame"] == 90000
+    out = send(conn, utter("u1", "Groove, stop", recording=True, start=96000, end=120000))
+    assert [m["type"] for m in out] == ["command-span", "command"]  # never speech-verified from transport
+
+
+def test_record_is_next_beat_and_not_held_behind_a_queued_tempo(conn):
+    send(conn, utter("u1", "tempo 140"))
+    send(conn, ack("u1:cmd", "queued", 0))
+    out = commands(send(conn, utter("u2", "record snare")))
+    assert out == [{"id": "u2:cmd", "expectedRevision": 0, "boundary": "next-beat",
+                    "operation": {"type": "record", "target": {"trackId": "drums", "lane": "snare"}}}]
+
+
+def test_next_loop_command_waits_for_an_armed_record_to_resolve(conn):
+    send(conn, utter("u1", "record kick"))
+    send(conn, ack("u1:cmd", "queued", 0))
+    assert send(conn, utter("u2", "tempo 100")) == []  # record's application may change the revision
+    out = send(conn, ack("u1:cmd", "applied", 1))
+    assert commands(out)[0]["operation"] == {"type": "tempo", "bpm": 100}
+    assert commands(out)[0]["expectedRevision"] == 1
+
+
+def test_clear_and_undo_are_immediate_during_a_take_and_not_held_back(conn):
+    send(conn, usability_transport())
+    send(conn, utter("u1", "tempo 100"))
+    send(conn, ack("u1:cmd", "queued", 0))
+    clear = commands(send(conn, utter("u2", "Groove, clear", recording=True)))
+    undo = commands(send(conn, utter("u3", "Groove, undo", recording=True)))
+    assert [c["boundary"] for c in clear + undo] == ["immediate", "immediate"]
+    assert undo[0]["operation"] == {"type": "undo"}  # backend Undo is a normal Undo, never discardCaptureOnly
+
+
+def test_issue_3c_a_queued_edit_made_stale_by_an_immediate_edit_is_reported_not_rebased(conn):
+    # RECORDING-USABILITY.md: queued musical edits recheck revision at application; no rebasing.
+    send(conn, utter("u1", "tempo 100"))
+    send(conn, ack("u1:cmd", "queued", 0))
+    send(conn, utter("u2", "undo"))
+    send(conn, ack("u2:cmd", "applied", 1))
+    out = send(conn, ack("u1:cmd", "rejected", 1, "stale revision"))
+    assert errors(out)[0]["message"] == "tempo was rejected: stale revision"
+    assert commands(out) == []  # nothing re-issued automatically
+
+
+def test_issue_3e_groove_stop_during_count_in_is_issued_immediately(conn):
+    send(conn, utter("u1", "record kick"))
+    send(conn, ack("u1:cmd", "queued", 0))
+    armed = transport_msg(recording=False)
+    armed["transport"].update(recordingState="armed", armedTarget={"trackId": "drums", "lane": "kick"})
+    send(conn, armed)
+    out = commands(send(conn, utter("u2", "stop recording")))
+    assert out[0]["boundary"] == "immediate" and out[0]["operation"] == {"type": "stop-recording"}

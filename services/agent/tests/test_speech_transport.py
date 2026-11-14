@@ -90,11 +90,12 @@ def test_contiguous_chunks_advance_received_frames_and_gaps_break_the_stream():
 
 def test_without_a_recognizer_audio_gets_one_status_per_stream_and_never_a_watermark(conn):
     out = send(conn, chunk(0, 0))
-    assert out == [{"type": "speech-status", "available": False, "provider": "none",
-                    "reason": "no speech recognizer configured; speech-verified is not sent"}]
+    assert out == [{"type": "speech-status", "streamId": "mic-1", "available": False, "provider": "none",
+                    "reason": "no speech recognizer configured; speech-verified is not sent; hold speech-dependent commits"}]
     replies = [m for seq in range(1, 50) for m in send(conn, chunk(seq, seq * 882))]
     assert replies == []
-    assert send(conn, chunk(0, 0, stream="mic-2"))[0]["type"] == "speech-status"
+    second = send(conn, chunk(0, 0, stream="mic-2"))
+    assert second[0]["type"] == "speech-status" and second[0]["streamId"] == "mic-2"
     assert not any(m["type"] in ("speech-verified", "command-span", "command") for m in replies)
 
 
@@ -113,3 +114,50 @@ def test_audio_on_a_foreign_or_unknown_clock_is_rejected_once():
     send(connection, transport(clock="new-context"))
     out = send(connection, chunk(0, 0, stream="mic-2"))
     assert out[0]["type"] == "error" and "clockId" in out[0]["message"]
+
+
+
+def test_ws1_repro_six_seconds_at_8khz_in_one_chunk_is_rejected():
+    long = chunk(0, 0, frames=6 * CONTEXT_RATE, rate=8000)  # 48,000 samples: fits the base64 limit
+    validate("ClientMessage", long)
+    with pytest.raises(ChunkError, match="at most 1 s"):
+        decode_chunk(long, CONTEXT_RATE)
+    one_second = chunk(0, 0, frames=CONTEXT_RATE, rate=48000)
+    assert len(decode_chunk(one_second, CONTEXT_RATE).samples) == 48000  # exactly one second is allowed
+
+
+def test_context_span_over_one_second_is_rejected_even_with_few_samples():
+    sparse = chunk(0, 0, frames=CONTEXT_RATE + 1, rate=8000)
+    with pytest.raises(ChunkError, match="frames"):
+        decode_chunk(sparse, CONTEXT_RATE)
+
+
+def test_ws1_repro_rate_change_within_a_stream_breaks_it():
+    tracker = StreamTracker()
+    tracker.accept(decode_chunk(chunk(0, 0, rate=16000), CONTEXT_RATE))
+    with pytest.raises(ChunkError, match="sampleRate changed from 16000 to 8000"):
+        tracker.accept(decode_chunk(chunk(1, 882, rate=8000), CONTEXT_RATE))
+    assert tracker.is_broken("mic-1") and tracker.first_frame("mic-1") is None
+
+
+def test_a_stream_must_start_at_seq_zero(conn):
+    tracker = StreamTracker()
+    with pytest.raises(ChunkError, match="seq 0"):
+        tracker.accept(decode_chunk(chunk(3, 0), CONTEXT_RATE))
+    out = send(conn, chunk(3, 0, stream="late-start"))
+    assert [m["type"] for m in out] == ["error"] and "seq 0" in out[0]["message"]
+    assert send(conn, chunk(4, 882, stream="late-start")) == []  # one error per bad stream
+
+
+def test_first_frame_marks_where_a_stream_coverage_can_begin():
+    tracker = StreamTracker()
+    tracker.accept(decode_chunk(chunk(0, 5000), CONTEXT_RATE))
+    tracker.accept(decode_chunk(chunk(1, 5882), CONTEXT_RATE))
+    assert tracker.first_frame("mic-1") == 5000 and tracker.received_through("mic-1") == 6763
+
+
+def test_speech_verified_fixture_is_scoped_to_one_stream():
+    fixture = load_fixture("SpeechVerified")
+    validate("ServerMessage", fixture)
+    assert fixture["fromFrame"] <= fixture["throughFrame"] and fixture["streamId"]
+    validate("ServerMessage", {"type": "speech-verified", "clockId": "c", "throughFrame": 10})  # older producers

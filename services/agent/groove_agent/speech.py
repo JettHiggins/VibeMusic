@@ -19,6 +19,7 @@ from typing import Any, Mapping, Optional
 import numpy as np
 
 SAMPLE_TOLERANCE = 1  # resampling chunk edges may round by one payload sample
+MAX_CHUNK_SECONDS = 1.0  # both the payload duration and the context-frame span
 
 
 class ChunkError(ValueError):
@@ -49,6 +50,8 @@ def decode_chunk(message: Mapping[str, Any], context_rate: int) -> Chunk:
     start, end = message["startFrame"], message["endFrame"]
     if end <= start:
         raise ChunkError("endFrame must be greater than startFrame")
+    if end - start > MAX_CHUNK_SECONDS * context_rate:
+        raise ChunkError(f"chunk spans {end - start} frames; at most {MAX_CHUNK_SECONDS:g} s ({context_rate} frames) allowed")
     try:
         raw = base64.b64decode(message["data"], validate=True)
     except (binascii.Error, ValueError) as error:
@@ -56,6 +59,8 @@ def decode_chunk(message: Mapping[str, Any], context_rate: int) -> Chunk:
     if len(raw) % 2:
         raise ChunkError("pcm-s16le data must contain whole 16-bit samples")
     samples = np.frombuffer(raw, dtype="<i2")
+    if len(samples) > MAX_CHUNK_SECONDS * message["sampleRate"]:
+        raise ChunkError(f"chunk carries {len(samples)} samples; at most {MAX_CHUNK_SECONDS:g} s at {message['sampleRate']} Hz")
     expected = expected_samples(start, end, message["sampleRate"], context_rate)
     if abs(len(samples) - expected) > SAMPLE_TOLERANCE:
         raise ChunkError(f"{len(samples)} samples at {message['sampleRate']} Hz do not cover frames "
@@ -69,6 +74,8 @@ class _Stream:
     clock_id: str
     next_seq: int
     next_frame: int
+    sample_rate: int = 0
+    first_frame: int = 0
     broken: bool = False
 
 
@@ -82,7 +89,11 @@ class StreamTracker:
         """True for a new stream's first chunk. Raises ChunkError (once) when continuity breaks."""
         stream = self.streams.get(chunk.stream_id)
         if stream is None:
-            self.streams[chunk.stream_id] = _Stream(chunk.clock_id, chunk.seq + 1, chunk.end_frame)
+            if chunk.seq != 0:
+                self.mark_broken(chunk.stream_id)
+                raise ChunkError(f"a stream must start at seq 0, got {chunk.seq}")
+            self.streams[chunk.stream_id] = _Stream(chunk.clock_id, 1, chunk.end_frame, chunk.sample_rate,
+                                                    chunk.start_frame)
             while len(self.streams) > self.max_streams:
                 self.streams.pop(next(iter(self.streams)))
             return True
@@ -102,6 +113,11 @@ class StreamTracker:
         stream = self.streams.get(stream_id)
         return stream is not None and stream.broken
 
+    def first_frame(self, stream_id: str) -> Optional[int]:
+        """First frame of the stream: the fromFrame of any coverage it produces."""
+        stream = self.streams.get(stream_id)
+        return None if stream is None or stream.broken else stream.first_frame
+
     def received_through(self, stream_id: str) -> Optional[int]:
         """Last contiguously received frame (inclusive), the upper bound for any watermark."""
         stream = self.streams.get(stream_id)
@@ -113,6 +129,8 @@ class StreamTracker:
             return "stream already broken; start a new streamId"
         if chunk.clock_id != stream.clock_id:
             return "clockId changed within a stream; a new audio context needs a new streamId"
+        if chunk.sample_rate != stream.sample_rate:
+            return f"sampleRate changed from {stream.sample_rate} to {chunk.sample_rate} within a stream"
         if chunk.seq != stream.next_seq:
             return f"expected seq {stream.next_seq}, got {chunk.seq}"
         if chunk.start_frame != stream.next_frame:

@@ -1,6 +1,7 @@
 {
   "type": "speech-status",
+  "streamId": "mic-take-1",
   "available": false,
   "provider": "none",
-  "reason": "no speech recognizer configured; speech-verified is never sent"
+  "reason": "no speech recognizer configured; speech-verified is never sent; hold speech-dependent commits"
 }

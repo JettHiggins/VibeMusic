@@ -46,7 +46,7 @@ jobs:
             const comments = await github.paginate(github.rest.issues.listComments, {owner, repo, issue_number: 3, per_page: 100});
             if (!comments.some(comment => comment.user.login === 'github-actions[bot]' && comment.body.includes(marker))) {
               await github.rest.issues.createComment({owner, repo, issue_number: 3,
-                body: `${marker}\n@leoAndrade2332 @lennyyanza — this report has stale blockers. Candidate UI, recording integration and original CLAP music inference are delivered. Jett has approved new recording/usability priorities after real-device testing. Read ${issue.html_url} and [docs/STATUS.md](${base}/blob/engine-integration/docs/STATUS.md) before the next capability/PR. Please acknowledge branch/base SHA and next owned task there. API access remains deferred.`});
+                body: `${marker}\n@leoAndrade2332 @lennyyanza — WS1 answers to contract questions (a–e), the local faster-whisper STT decision, deferred language-model decision and temporary WS1 ownership of recording UI/input are published in the linked issue body. This supersedes the old blocker table. Read ${issue.html_url} and [docs/STATUS.md](${base}/blob/engine-integration/docs/STATUS.md) before the next capability/PR. Please acknowledge branch/base SHA and next owned task there. API access remains deferred.`});
             }
             if (fs.existsSync('docs/PR-REVIEWS.json')) {
               const reviews = JSON.parse(fs.readFileSync('docs/PR-REVIEWS.json', 'utf8'));

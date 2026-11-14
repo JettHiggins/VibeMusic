@@ -38,16 +38,21 @@ Python 3.11; the code avoids syntax newer than 3.10. `GET /healthz` reports serv
 - Each connection starts clean. Nothing issued before a disconnect is replayed after a reconnect.
 - Only pages served from localhost may open the socket.
 
-## Speech audio (provider pending)
+## Speech audio
 
-`speech-audio` chunks (docs/CONTRACTS.md) are checked by `speech.py`. `speech_pipeline.py` segments them in
-20 ms energy windows on the capture clock and bounds the `speech-verified` watermark; a `Transcriber` (the STT
-provider seam) turns a closed segment into text, which then follows the normal utterance path (`command-span`
-before `command`, then the watermark). The service does not configure a transcriber yet, so it answers
-`speech-status available:false` and never sends `speech-verified`. `tests/test_speech_harness.py` streams a
-synthetic WAV through the real `Connection` with a SCRIPTED transcriber to test frame math and ordering only.
-Limits: energy segmentation treats sustained singing as a candidate segment (held up to 4 s, then transcribed and
-ignored unless it starts with "Groove"); transcription is synchronous, so a real provider must run in a worker.
+`speech-audio` chunks (docs/CONTRACTS.md) are checked by `speech.py`: seq starts at 0, one payload rate per
+stream, at most one second per chunk, contiguous frames. `speech_pipeline.py` segments each stream and hands
+closed segments to a `SpeechWorker`; `ThreadedSpeechWorker` transcribes them on a background thread, never on
+the event loop. Results come back through `Connection.speech_result`: the transcript follows the utterance path
+(recognized "Groove ..." speech during recording gets its measured `command-span`, then a command or an error,
+with no mutation on error), and only then can `speech-verified` advance. Coverage is per stream
+(`streamId`, `fromFrame`, `throughFrame`), never crosses a gap, and stays behind any segment still being
+transcribed. A recognition failure stops that stream's coverage and sends `speech-status available:false`.
+
+Without a configured worker the service answers `available:false` and never sends `speech-verified`.
+EXPERIMENTAL: energy segmentation stands in for a real VAD and treats sustained singing as a candidate segment.
+`tests/test_speech_harness.py` streams a synthetic WAV through the real `Connection` with a SCRIPTED worker; it
+tests timing, coverage and ordering only, not recognition.
 
 ## Sound research
 

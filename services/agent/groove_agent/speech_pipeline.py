@@ -11,15 +11,22 @@ depend on the provider:
   segment is final at once; an open segment, or quiet inside its hangover, holds the
   watermark just before the segment's first frame. It never passes received audio.
 
-`Connection` sends a closed segment's transcript through the normal utterance path
-(so recording-time "Groove ..." commands produce command-span then command) and only
-then advances speech-verified. Transcription runs synchronously in this version; a real
-provider must not block the event loop (run it in a worker, keeping the same ordering).
+`Connection` hands each closed segment to a `SpeechWorker`, which transcribes it off the
+event loop (`ThreadedSpeechWorker`). The transcript then goes through the normal utterance
+path (recognized "Groove ..." speech gets its command-span, then a command or an error)
+before speech-verified may pass it. A failed transcription stops that stream's coverage
+and reports it unavailable; nothing is verified that was not actually classified.
+
+EXPERIMENTAL: energy segmentation is a placeholder until a real VAD is chosen; it treats
+sustained singing as a candidate segment. Tests use a SCRIPTED transcriber, which proves
+timing and ordering only, never recognition.
 """
 from __future__ import annotations
 
+import queue
+import threading
 from dataclasses import dataclass, field
-from typing import Optional, Protocol
+from typing import Callable, Optional, Protocol
 
 import numpy as np
 
@@ -119,3 +126,55 @@ class EnergySegmenter:
         if self._open is not None and self._history_f:
             return min(self._received_through, int(self._history_f[0][0]) - 1)
         return min(self._received_through, self._decided_through)
+
+
+@dataclass(frozen=True)
+class SpeechJob:
+    job_id: str
+    stream_id: str
+    clock_id: str
+    segment: Segment
+
+
+Deliver = Callable[[SpeechJob, Optional[str], Optional[str]], None]  # (job, text, error)
+
+
+class SpeechWorker(Protocol):
+    """Transcribes jobs off the event loop and reports each result exactly once, in submission order."""
+    name: str
+
+    def submit(self, job: SpeechJob) -> None: ...
+
+
+class ThreadedSpeechWorker:
+    """One background thread per connection running a Transcriber. `deliver` is called on that
+    thread; the service hands results back to the event loop (call_soon_threadsafe)."""
+
+    def __init__(self, transcriber: Transcriber, deliver: Deliver) -> None:
+        self.name = transcriber.name
+        self._transcriber = transcriber
+        self._deliver = deliver
+        self._jobs: "queue.Queue[Optional[SpeechJob]]" = queue.Queue()
+        self._thread = threading.Thread(target=self._run, name="speech-worker", daemon=True)
+        self._thread.start()
+
+    def submit(self, job: SpeechJob) -> None:
+        self._jobs.put(job)
+
+    def close(self) -> None:
+        self._jobs.put(None)
+
+    def join(self, timeout: float = 30.0) -> None:
+        self._thread.join(timeout)
+
+    def _run(self) -> None:
+        while True:
+            job = self._jobs.get()
+            if job is None:
+                return
+            try:
+                text = self._transcriber.transcribe(job.segment.samples, job.segment.sample_rate)
+            except Exception as error:  # a provider failure must hold coverage, never fake it
+                self._deliver(job, None, f"{type(error).__name__}: {error}"[:300])
+            else:
+                self._deliver(job, text, None)

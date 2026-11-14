@@ -10,7 +10,7 @@ for name in ('SessionState', 'SessionCommand', 'PerformanceEvent', 'PatchCandida
 print('All six contract fixtures pass Python JSON Schema validation.')
 Draft202012Validator(json.loads((root / 'SessionCommand.schema.json').read_text())).validate(json.loads((root / 'fixtures/PerformanceBatch.json').read_text()))
 print('Performance-batch example passes Python command validation.')
-for name, schema_name in (('SpeechAudio', 'ClientMessage'), ('SpeechStatus', 'ServerMessage')):
+for name, schema_name in (('SpeechAudio', 'ClientMessage'), ('SpeechStatus', 'ServerMessage'), ('SpeechVerified', 'ServerMessage')):
     Draft202012Validator(json.loads((root / f'{schema_name}.schema.json').read_text())).validate(
         json.loads((root / 'fixtures' / f'{name}.json').read_text()))
 print('Speech transport examples pass Python message validation.')
