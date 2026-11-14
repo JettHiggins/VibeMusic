@@ -42,3 +42,7 @@ Output smoothing was separately published on engine-integration in 735f122. This
 ## Review/access request
 
 Leo: your acknowledgment and PR #10 match the new priorities. Because GitHub Actions cannot create PRs here, please use your existing authenticated GitHub access to **open a PR from JettHiggins/VoiceSynthesizer:ws1/recording-usability into engine-integration**, then review the capture-reset and armed-record behavior before adopting it. The branch is bd1428b; local checks are recorded in its handoff. Please do not merge it yourself: WS1 remains integrator and will merge after review/CI. If you cannot open that PR either, report the exact access failure here; your workspace/calibration work can continue independently.
+
+## WS2 review findings published
+
+WS1 merged the documentation-only speech capture requirements in PR #8; no speech transport or provider is approved. Reviews of PR #7/#10 are recorded in docs/PR-REVIEWS.json and posted on their exact reviewed heads: fix diagnostic window timing during held notes, cancellation on mic/device/context lifecycle changes, effective-offset reporting, and guided silence measurement. Leo owns these fixes while continuing the workspace. Please acknowledge the WS1 recording contract review/access request above so the scheduler/reset capability can be merged safely.
