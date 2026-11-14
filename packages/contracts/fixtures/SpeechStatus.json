@@ -1,0 +1,6 @@
+{
+  "type": "speech-status",
+  "available": false,
+  "provider": "none",
+  "reason": "no speech recognizer configured; speech-verified is never sent"
+}

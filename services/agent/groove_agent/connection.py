@@ -17,12 +17,17 @@ from typing import Any, Callable, Deque, Mapping, Optional, Protocol, Sequence, 
 
 from .intents import (MELODIC_TRACKS, AcceptCandidate, CancelSearch, Command, Ignored, Interpretation, NotUnderstood,
                       SoundSearch, interpret, validate_operation)
+from .speech import ChunkError, StreamTracker, decode_chunk
 
 Interpreter = Callable[[str, Mapping[str, Any], bool], Interpretation]
 
 DEFAULT_ACK_TIMEOUT_S = 60.0  # longer than the slowest loop (4 bars at 40 BPM = 24 s) plus count-in
 MAX_BACKLOG = 8
 REMEMBERED_UTTERANCES = 256
+# No recognizer is wired yet (STT provider decision pending). Until one is, speech-audio
+# is validated and dropped, and speech-verified is never sent: nothing was classified.
+SPEECH_UNAVAILABLE = {"type": "speech-status", "available": False, "provider": "none",
+                      "reason": "no speech recognizer configured; speech-verified is not sent"}
 
 
 @dataclass
@@ -74,6 +79,7 @@ class Connection:
         self._in_flight: "OrderedDict[str, _InFlight]" = OrderedDict()
         self._backlog: Deque[_Proposal] = deque()
         self._utterances: "OrderedDict[str, None]" = OrderedDict()
+        self._speech_streams = StreamTracker()
 
     # -- inbound -----------------------------------------------------------------
 
@@ -93,11 +99,29 @@ class Connection:
             return self._on_utterance(message, now)
         if kind == "sound-request":
             return self._start_search(message["id"], message["trackId"], message["description"], None)
+        if kind == "speech-audio":
+            return self._on_speech_audio(message)
         if kind == "cancel-job":
             if self._research is not None and self._research.cancel(message["jobId"]):
                 return []  # the job answers with status "cancelled"
             return [_error(message["jobId"], "no such running research job")]
         return [_error("unknown", f"unsupported message type {kind!r}")]
+
+    def _on_speech_audio(self, message: Mapping[str, Any]) -> list[dict]:
+        """Validate and drop audio (no recognizer yet). One status per stream; one error per broken stream."""
+        stream_id = message["streamId"]
+        if self._speech_streams.is_broken(stream_id):
+            return []
+        transport = self.transport
+        try:
+            if transport is None or transport["clockId"] != message["clockId"]:
+                raise ChunkError("clockId does not match the latest transport snapshot")
+            chunk = decode_chunk(message, transport["sampleRate"])
+            first = self._speech_streams.accept(chunk)
+        except ChunkError as error:
+            self._speech_streams.mark_broken(stream_id)
+            return [_error(stream_id, f"speech-audio rejected: {error}; send a new streamId")]
+        return [dict(SPEECH_UNAVAILABLE)] if first else []
 
     def tick(self, now: float) -> list[dict]:
         """Expire commands the browser never resolved, so later commands are not blocked forever."""

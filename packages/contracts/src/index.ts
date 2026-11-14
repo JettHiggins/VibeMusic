@@ -33,20 +33,29 @@ const Operation = z.discriminatedUnion('type', [
 export const SessionCommand = z.strictObject({ id, expectedRevision: frame, boundary: z.enum(['immediate', 'next-loop']), operation: Operation });
 export const PatchCandidate = z.strictObject({ id, patch: Patch, provenance: id, previewUrl: z.string(), score: z.number().finite() });
 export const Transport = z.strictObject({ clockId: id, sampleRate: z.number().int().positive(), currentFrame: frame, loopStartFrame: frame, playing: z.boolean(), recording: z.boolean(), pendingCommandIds: z.array(id), recordingState: z.enum(['idle','armed','recording']).optional(), recordingStartFrame: frame.optional(), recordingTarget: Target.optional(), armedTarget: Target.optional() });
+// Speech transport (Workstream 3 proposal): microphone audio for server-side recognition.
+// startFrame/endFrame are AudioContext frames on the latency-corrected performance timeline,
+// half-open [startFrame, endFrame). data is base64 little-endian 16-bit mono PCM at sampleRate
+// (the payload rate; frames stay on the context clock). At most 1 s of 48 kHz audio per chunk.
+const base64 = z.string().min(4).max(128000).regex(/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/);
+export const SpeechAudio = z.strictObject({ type: z.literal('speech-audio'), streamId: id, seq: frame, clockId: id, startFrame: frame, endFrame: frame, sampleRate: z.number().int().min(8000).max(48000), encoding: z.literal('pcm-s16le'), data: base64 });
+export const SpeechStatus = z.strictObject({ type: z.literal('speech-status'), available: z.boolean(), provider: id, reason: z.string().optional() });
 export const ClientMessage = z.discriminatedUnion('type', [
  z.strictObject({ type: z.literal('session'), session: SessionState }),
  z.strictObject({ type: z.literal('transport'), transport: Transport }),
  z.strictObject({ type: z.literal('ack'), commandId: id, status: z.enum(['queued','applied','rejected']), revision: frame, reason: z.string().optional() }),
  z.strictObject({ type: z.literal('utterance'), id, text: id, clockId: id, startFrame: frame, endFrame: frame, duringRecording: z.boolean() }),
  z.strictObject({ type: z.literal('sound-request'), id, trackId: TrackId, description: id }),
- z.strictObject({ type: z.literal('cancel-job'), jobId: id })
+ z.strictObject({ type: z.literal('cancel-job'), jobId: id }),
+ SpeechAudio
 ]);
 export const ServerMessage = z.discriminatedUnion('type', [
  z.strictObject({ type: z.literal('command'), command: SessionCommand }),
  z.strictObject({ type: z.literal('speech-verified'), clockId: id, throughFrame: frame }),
  z.strictObject({ type: z.literal('command-span'), utteranceId: id, clockId: id, startFrame: frame, endFrame: frame }),
  z.strictObject({ type: z.literal('research'), jobId: id, status: z.enum(['running','complete','cancelled','failed']), progress: unit, candidates: z.array(PatchCandidate), error: z.string().optional() }),
- z.strictObject({ type: z.literal('error'), requestId: id, message: id })
+ z.strictObject({ type: z.literal('error'), requestId: id, message: id }),
+ SpeechStatus
 ]);
 export type SessionState = z.infer<typeof SessionState>;
 export type SessionCommand = z.infer<typeof SessionCommand>;
@@ -55,6 +64,8 @@ export type Transport = z.infer<typeof Transport>;
 export type ClientMessage = z.infer<typeof ClientMessage>;
 export type ServerMessage = z.infer<typeof ServerMessage>;
 export type PatchCandidate = z.infer<typeof PatchCandidate>;
+export type SpeechAudio = z.infer<typeof SpeechAudio>;
+export type SpeechStatus = z.infer<typeof SpeechStatus>;
 export const AuditionEvent = z.discriminatedUnion('kind',[
  z.strictObject({kind:z.literal('note'),trackId:z.enum(['synth-1','synth-2','synth-3']),midi:z.number().int().min(0).max(127),velocity:unit,on:z.boolean()}),
  z.strictObject({kind:z.literal('drum'),lane:Lane,velocity:unit})

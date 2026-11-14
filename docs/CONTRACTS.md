@@ -69,3 +69,20 @@ This lets one provisional take absorb later hits before its next-loop commit ins
 The accepted additive ServerMessage is `{type:'speech-verified', clockId, throughFrame}`. It means all audio frames through that inclusive watermark have completed speech classification and any command spans have already been delivered. An unresolved utterance holds the watermark before its start. This is not derived from transport progress or socket connectivity. Both watermarks and command-span times must use the same already latency-corrected performance timeline as PerformanceEvent; do not subtract calibration twice. The input consumer is wired, but the backend must not emit this message until a real speech pipeline can establish it. Manual takes explicitly assume no spoken instructions during capture.
 
 Transport additionally exposes armedTarget when a record command is pending. Input UI uses the current window target while recording, armedTarget while counting in, and session selection after a take. A completed recording window does not pin the next selected lane.
+
+## Speech audio transport (Workstream 3 proposal, additive v1)
+
+The browser streams microphone audio for recognition as ClientMessage `speech-audio` and the service reports recognizer availability as ServerMessage `speech-status`. `utterance` remains the transcript-level seam for typed/development input. Examples: `fixtures/SpeechAudio.json` (20 ms of synthetic silence) and `fixtures/SpeechStatus.json`.
+
+`{type:'speech-audio', streamId, seq, clockId, startFrame, endFrame, sampleRate, encoding:'pcm-s16le', data}`
+
+- `startFrame`/`endFrame` are AudioContext frames on the same latency-corrected performance timeline as PerformanceEvent, half-open: the chunk covers `startFrame <= f < endFrame`. Correct input latency once, before both events and speech.
+- `data` is base64 little-endian 16-bit mono PCM at `sampleRate` (8–48 kHz; 16 kHz recommended). It must hold whole samples, and the sample count must be `(endFrame - startFrame) * sampleRate / transport.sampleRate` within one sample. The frame range, not the payload rate, is the timeline. A chunk carries at most 128,000 base64 characters (1 s at 48 kHz); 20–250 ms is recommended.
+- A stream is one capture session on one clock: `seq` starts anywhere and increases by one; each chunk starts at the previous `endFrame`. Send silence too while the microphone is on, because unreceived frames cannot be classified. A new AudioContext or a restart after a dropped chunk uses a new `streamId`.
+- The service rejects a chunk with a foreign clock, an inconsistent sample count, or a gap/overlap/reordering, sends one `error` with `requestId` = `streamId`, and ignores the rest of that stream. Frames missing from a stream are never covered by `speech-verified`; a recorder waiting on the watermark therefore stops committing after a gap (the documented safe failure) until the take restarts.
+- Whether audio is a recording-time wake-phrase command or ordinary speech is decided from the browser's transport snapshots (`recordingState`/`recordingStartFrame`), not a flag on the chunk.
+- The service decodes audio in memory and does not persist it. Raw microphone audio is not saved by default (PLAN.md).
+
+`{type:'speech-status', available, provider, reason?}` is sent in reply to the first chunk of each stream and whenever availability changes. `available:false` means no `speech-verified` will be sent for that audio. The input pipeline must then not wait for spoken-command exclusions; use the manual-take path or report speech as unavailable. `available:true` names the provider; command-span and speech-verified keep their existing meaning.
+
+Until an STT provider decision is made, the service validates and drops `speech-audio`, replies `available:false` with `provider:'none'`, and never emits `speech-verified`.

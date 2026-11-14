@@ -494,6 +494,65 @@
         "jobId"
       ],
       "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "speech-audio"
+        },
+        "streamId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "clockId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "startFrame": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "endFrame": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "sampleRate": {
+          "type": "integer",
+          "minimum": 8000,
+          "maximum": 48000
+        },
+        "encoding": {
+          "type": "string",
+          "const": "pcm-s16le"
+        },
+        "data": {
+          "type": "string",
+          "minLength": 4,
+          "maxLength": 128000,
+          "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$"
+        }
+      },
+      "required": [
+        "type",
+        "streamId",
+        "seq",
+        "clockId",
+        "startFrame",
+        "endFrame",
+        "sampleRate",
+        "encoding",
+        "data"
+      ],
+      "additionalProperties": false
     }
   ]
 }

@@ -30,3 +30,12 @@ test('performance-batch fixture and extended transport validate with shared sche
  SessionCommand.parse(JSON.parse(readFileSync('packages/contracts/fixtures/PerformanceBatch.json','utf8')));
  ClientMessage.parse({type:'transport',transport:{clockId:'clock',sampleRate:44100,currentFrame:400000,loopStartFrame:352800,playing:true,recording:true,recordingState:'recording',recordingStartFrame:352800,recordingTarget:{trackId:'drums',lane:'kick'},pendingCommandIds:[]}});
 });
+test('speech transport fixtures validate and malformed audio chunks are rejected',()=>{
+ const chunk=ClientMessage.parse(JSON.parse(readFileSync('packages/contracts/fixtures/SpeechAudio.json','utf8')));
+ assert.equal(chunk.type,'speech-audio');
+ ServerMessage.parse(JSON.parse(readFileSync('packages/contracts/fixtures/SpeechStatus.json','utf8')));
+ const base=JSON.parse(readFileSync('packages/contracts/fixtures/SpeechAudio.json','utf8'));
+ for(const bad of [{data:'not base64!'},{data:'AAA'},{encoding:'float32'},{sampleRate:96000},{seq:-1},{data:'A'.repeat(128004)},{transcript:'groove stop'}])
+  assert.equal(ClientMessage.safeParse({...base,...bad}).success,false,JSON.stringify(Object.keys(bad)));
+ assert.equal(ServerMessage.safeParse({type:'speech-status',available:true}).success,false);
+});
