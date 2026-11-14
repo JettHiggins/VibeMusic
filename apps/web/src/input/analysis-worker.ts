@@ -10,7 +10,7 @@ export type AnalysisRequest =
  /** End any open sung note at this raw capture frame (the take closed). */
  | { type: 'flush'; frame: number };
 export type AnalysisResult =
- | { type: 'onsets'; onsets: Onset[]; notes: SungNote[]; analysedThrough: number; levelDb: number; analysisMs: number; pitch?: PitchReading | null }
+ | { type: 'onsets'; onsets: Onset[]; notes: SungNote[]; analysedThrough: number; levelDb: number; analysisMs: number; pitch?: PitchReading | null; processedThrough?: number }
  | { type: 'noise-floor'; db: number }
  | { type: 'error'; message: string };
 
@@ -68,7 +68,8 @@ function onAudio(startFrame: number, samples: Float32Array) {
    try { post({ type: 'noise-floor', db: measureNoiseFloor(all) }); } catch (e) { post({ type: 'error', message: String(e) }); }
   }
  }
- post({ type: 'onsets', onsets, notes, analysedThrough: analysedThrough(), levelDb: toDb(peak), analysisMs: performance.now() - started, pitch });
+ // analysedThrough is held at an open note's start (verification coverage); processedThrough is real elapsed capture.
+ post({ type: 'onsets', onsets, notes, analysedThrough: analysedThrough(), processedThrough: lastFrame, levelDb: toDb(peak), analysisMs: performance.now() - started, pitch });
 }
 
 scope.onmessage = ({ data }: MessageEvent<AnalysisRequest>) => {

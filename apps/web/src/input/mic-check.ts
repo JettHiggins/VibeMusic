@@ -46,15 +46,18 @@ export class MicCheck {
  reset() { this.peaks = []; this.onsets = 0; this.notes = 0; this.lastOnset = null; this.lastNote = null; this.pitch = null; }
 
  add(frame: AnalysisFrame) {
-  this.peaks.push({ frame: frame.analysedThrough, db: frame.levelDb });
-  const oldest = frame.analysedThrough - this.windowSeconds * this.sampleRate;
+  // Expire by real processed capture time. analysedThrough is held at the start of a sustained
+  // sung note (verification coverage), which would freeze the window and keep stale readings.
+  const now = frame.processedThrough ?? frame.analysedThrough;
+  this.peaks.push({ frame: now, db: frame.levelDb });
+  const oldest = now - this.windowSeconds * this.sampleRate;
   while (this.peaks.length && this.peaks[0].frame < oldest) this.peaks.shift();
   for (const o of frame.onsets) { this.onsets++; this.lastOnset = { levelDb: o.levelDb, confidence: o.confidence, accepted: o.confidence >= MIN_CONFIDENCE }; }
   // Keep the most informative recent reading: a usable pitch outranks a quieter or unclear one for ~0.3 s.
   if (frame.pitch) {
    const rank = { silent: 0, quiet: 1, unclear: 2, pitch: 3 } as const;
-   const fresh = !this.pitch || frame.analysedThrough - this.pitch.frame > 0.3 * this.sampleRate || rank[frame.pitch.state] >= rank[this.pitch.reading.state];
-   if (fresh) this.pitch = { reading: frame.pitch, frame: frame.analysedThrough };
+   const fresh = !this.pitch || now - this.pitch.frame > 0.3 * this.sampleRate || rank[frame.pitch.state] >= rank[this.pitch.reading.state];
+   if (fresh) this.pitch = { reading: frame.pitch, frame: now };
   }
   for (const n of frame.notes) { this.notes++; this.lastNote = { midi: n.midi, durationMs: (n.endFrame - n.startFrame) / this.sampleRate * 1000, confidence: n.confidence }; }
  }

@@ -138,3 +138,13 @@ Verified in the browser (diagnostic test signal through the real worklet → wor
 - Cancel during practice kept 120 ms and +30.
 
 Not yet: reproduction on Lenny's device itself, and next-beat recording / immediate Clear and Undo, which wait for WS1's published contract.
+
+### WS1 review fixes (#7 / #10)
+
+- **Diagnostic clock**: the worker now reports `processedThrough` (real processed capture), separately from `analysedThrough` (verification coverage, which is held at the start of an open sung note). MicCheck expires peaks and pitch readings by processed time, so a sustained note no longer freezes the window. Sustained-note regression added.
+- **Calibration lifecycle** (`input/timed-run.ts`): one cancellable run that always settles, on completion, Cancel, `stopMicrophone()`, device disconnect, device change, `dispose()`, or the AudioContext closing (its clock stops). Scheduled click nodes are stopped and disconnected on every exit. Cancelled or failed runs leave the calibration untouched instead of restoring a snapshot, so a trim made mid-run survives and one device's timing is never applied to another. `VoiceInput` loads the microphone lazily through an injectable factory, so `tests/input-lifecycle.test.ts` drives the real class with fake audio objects for each interruption.
+- **Report**: `MicTestReport.calibration` adds `offsetAdjustMs` and `effectiveLatencyMs` (numbers only).
+- **Guided silence**: Measure silence shows a 3-second "stay quiet" countdown, then the measurement, with Cancel. No clicks. Cancel or failure keeps the previous noise floor.
+- **Armed Record (integration note)**: when WS1's recording-usability contract is adopted, Record leaves the command client's automatic re-issue list (WS1 pins an armed Record to its target and deadline). Until then Record still uses next-loop, and re-issue prevents the stale drop reproduced earlier.
+
+Verified in the browser (test signal): silence countdown 3-2-1 → measuring → −44.6 dBFS for injected noise of about −44.8 dBFS; stopping the mic during timing calibration settled immediately and kept the timing. `npm test` 125 pass, 1 skipped; build ok.
