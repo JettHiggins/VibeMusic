@@ -25,6 +25,7 @@ export interface MicLike {
  configure(noiseFloorDb: number, sensitivity?: number): void;
  measureNoiseFloor(seconds?: number): Promise<number>;
  flush(frame: number): void;
+ reset(frame: number): void;
  stop(): void;
  dispose(): void;
 }
@@ -62,6 +63,7 @@ const SILENCE_COUNTDOWN = 3, SILENCE_SECONDS = 1.5;
 export class VoiceInput {
  onChange: (state: VoiceInputState) => void = () => {};
  readonly recorder: PerformanceRecorder;
+ onBeforeLiveEdit: (operation: SessionCommand['operation']) => void = () => {};
  private mic: MicLike | null = null;
  private transport: Transport | null = null;
  private state: VoiceInputState;
@@ -69,6 +71,7 @@ export class VoiceInput {
  private collector: number[] | null = null;
  private check: MicCheck | null = null;
  private lastUiUpdate = 0;
+ private heldCaptureStart: number | null = null;
  /** The one guided run (timing or silence) that may be active. */
  private run: TimedRun | null = null;
  private unsubscribe: () => void;
@@ -82,12 +85,22 @@ export class VoiceInput {
   this.unsubscribe = engine.subscribe(message => {
    if (message.type === 'transport') {
     const was = this.transport?.recordingState;
+    const epochChanged = message.transport.recordingEpoch !== undefined && message.transport.recordingEpoch !== this.transport?.recordingEpoch;
     this.transport = message.transport;
+    if (epochChanged) this.heldCaptureStart = null;
+    if (epochChanged) this.mic?.reset((message.transport.captureStartFrame ?? message.transport.recordingStartFrame ?? message.transport.currentFrame) + (this.state.calibration ? effectiveLatencyFrames(this.state.calibration) : 0));
     // When a take closes, finish the note being sung so it is kept (clamped to the cut-off).
-    if (was === 'recording' && message.transport.recordingState !== 'recording') this.mic?.flush(message.transport.currentFrame + (this.state.calibration ? effectiveLatencyFrames(this.state.calibration) : 0));
+    if (!epochChanged && was === 'recording' && message.transport.recordingState !== 'recording') this.mic?.flush(message.transport.currentFrame + (this.state.calibration ? effectiveLatencyFrames(this.state.calibration) : 0));
    }
    this.recorder.handle(message);
   });
+ }
+
+ /** Applied to both UI actions and backend proposals before dispatch, preserving IDs. */
+ prepareCommand(command: SessionCommand): SessionCommand {
+  if (command.operation.type === 'clear' || command.operation.type === 'undo') this.onBeforeLiveEdit(command.operation);
+  return command.operation.type === 'undo' && (this.recorder.hasPendingCapture || this.heldCaptureStart !== null)
+   ? { ...command, operation: { type: 'undo', discardCaptureOnly: true } } : command;
  }
 
  getState() { return this.state; }
@@ -142,6 +155,9 @@ export class VoiceInput {
   if (this.collector) { this.collector.push(...frame.onsets.map(o => o.frame)); }
   else if (this.transport && this.state.calibration) {
    const latencyFrames = effectiveLatencyFrames(this.state.calibration), clock = this.transport.clockId;
+   const heldStart = Math.floor(frame.analysedThrough - latencyFrames);
+   this.heldCaptureStart = this.transport.recording && this.transport.recordingTarget?.trackId !== 'drums'
+    && frame.pitch?.holding && heldStart >= (this.transport.captureStartFrame ?? this.transport.recordingStartFrame ?? Infinity) ? heldStart : null;
    if (frame.notes.length) this.recorder.addNotes(frame.notes, latencyFrames, clock, frame.analysedThrough);
    this.recorder.addOnsets(frame.onsets, latencyFrames, clock, frame.analysedThrough);
   }

@@ -24,7 +24,7 @@ function fakeMic(): MicLike & { stops: number; disposed: boolean; noise: { resol
  const mic = {
   onAnalysis: (_: AnalysisFrame) => {}, onError: (_: Error) => {}, inputLatencySeconds: 0.01, deviceId: 'mic-a', captureSettings: null,
   stops: 0, disposed: false, noise: {} as { resolve?: (db: number) => void },
-  async startMicrophone() {}, async startTestSignal() {}, configure() {}, flush() {},
+  async startMicrophone() {}, async startTestSignal() {}, configure() {}, flush() {}, reset() {},
   measureNoiseFloor() { return new Promise<number>(resolve => { mic.noise.resolve = resolve; }); },
   stop() { mic.stops++; }, dispose() { mic.disposed = true; },
  };
@@ -39,7 +39,7 @@ async function setup() {
  await voice.enableMicrophone();
  // A prior valid calibration that must survive interrupted runs.
  voice.setLatencyFrames(5292);
- return { ctx, nodes, mic, voice, prior: voice.getState().calibration! };
+ return { ctx, nodes, mic, voice, listeners, prior: voice.getState().calibration! };
 }
 
 for (const [name, interrupt] of [
@@ -140,4 +140,37 @@ test('the copied test report includes the manual trim and the effective compensa
  assert.equal(report.calibration?.offsetAdjustMs, 30);
  assert.equal(report.calibration?.effectiveLatencyMs, 150);
  assert.ok(!JSON.stringify(report).includes('secret'));
+});
+
+
+test('VoiceInput resets at raw cutoff with effective latency once and preserves backend Undo identity',async()=>{
+ const s=await setup();
+ s.voice.setOffsetAdjust(30);
+ const resets:number[]=[],flushes:number[]=[];s.mic.reset=f=>resets.push(f);s.mic.flush=f=>flushes.push(f);
+ const emit=(m:ClientMessage)=>s.listeners.forEach(l=>l(m));
+ const transport={clockId:'clock',sampleRate:SR,currentFrame:100000,loopStartFrame:0,playing:true,recording:true,recordingState:'recording' as const,recordingStartFrame:88200,recordingTarget:{trackId:'drums' as const,lane:'kick' as const},recordingEpoch:1,captureStartFrame:88200,recordingLoopStartFrame:0,pendingCommandIds:[]};
+ emit({type:'session',session:(await import('../packages/contracts/src/index.ts')).createSession()});
+ emit({type:'transport',transport});
+ const latency=5292+Math.round(.03*SR);
+ assert.deepEqual(resets,[88200+latency]);
+ s.mic.onAnalysis({onsets:[{frame:90000+latency,velocity:.8,confidence:1,levelDb:-12}],notes:[],analysedThrough:100000+latency,levelDb:-12,analysisMs:1});
+ const command={id:'backend-utterance:cmd',expectedRevision:0,boundary:'immediate' as const,operation:{type:'undo' as const}};
+ const prepared=s.voice.prepareCommand(command);
+ assert.equal(prepared.id,command.id);assert.deepEqual(prepared.operation,{type:'undo',discardCaptureOnly:true});
+ emit({type:'transport',transport:{...transport,recordingEpoch:2,captureStartFrame:100001}});
+ assert.deepEqual(resets,[88200+latency,100001+latency]);
+ assert.equal(s.voice.recorder.status().provisional.length,0);
+ assert.equal(flushes.length,0,'live reset never flushes old held singing');
+ assert.deepEqual(s.voice.prepareCommand(command).operation,{type:'undo'});
+ s.voice.dispose();
+});
+
+
+test('Undo discards an open sung note before it has produced any completed note event',async()=>{
+ const s=await setup();const emit=(m:ClientMessage)=>s.listeners.forEach(l=>l(m));
+ emit({type:'transport',transport:{clockId:'clock',sampleRate:SR,currentFrame:150000,loopStartFrame:0,playing:true,recording:true,recordingState:'recording',recordingStartFrame:88200,recordingTarget:{trackId:'synth-1'},recordingEpoch:1,captureStartFrame:88200,pendingCommandIds:[]}});
+ s.mic.onAnalysis({onsets:[],notes:[],analysedThrough:100000+5292,processedThrough:150000,levelDb:-12,analysisMs:1,pitch:{state:'pitch',midi:60,clarity:1,levelDb:-12,gateDb:-45,holding:true}});
+ assert.equal(s.voice.recorder.hasPendingCapture,false,'the note is still held inside the worker');
+ assert.deepEqual(s.voice.prepareCommand({id:'undo-held',expectedRevision:0,boundary:'immediate',operation:{type:'undo'}}).operation,{type:'undo',discardCaptureOnly:true});
+ s.voice.dispose();
 });

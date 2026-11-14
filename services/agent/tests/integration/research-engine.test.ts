@@ -59,8 +59,9 @@ test('research candidates from real engine audio are accepted and undone by the 
     socket.onStatus = connected => { if (connected) bridge.sync(); };
     const errors: string[] = [];
     const research: Extract<ServerMessage, {type: 'research'}>[] = [];
+    const commands: Extract<ServerMessage, {type: 'command'}>[] = [];
     bridge.onError = e => errors.push(e.message);
-    bridge.onMessage = m => { if (m.type === 'error') errors.push(m.message); if (m.type === 'research') research.push(m); };
+    bridge.onMessage = m => { if (m.type === 'error') errors.push(m.message); if (m.type === 'research') research.push(m); if (m.type === 'command') commands.push(m); };
     await socket.connect();
 
     let frame = 0;
@@ -119,13 +120,19 @@ test('research candidates from real engine audio are accepted and undone by the 
     core.dispatch({id: 'undo-panel', expectedRevision: core.getSession().revision, boundary: 'next-loop', operation: {type: 'undo'}});
     render(LOOP);
 
-    // Undo restores the earlier sound, again at a boundary, once the backend has the new revision.
+    // Undo now restores the earlier sound immediately, without waiting for or stopping playback.
     await new Promise(r => setTimeout(r, 300));
+    const beforeUndoRevision = core.getSession().revision;
     bridge.submitTranscript('undo');
-    await until('undo to be queued', () => core.transport().pendingCommandIds.length === 1, 5000);
-    render(LOOP);
+    await until('immediate undo to apply', () => core.getSession().revision === beforeUndoRevision + 1, 5000);
+    const undo = commands.at(-1)!.command;
+    assert.equal(undo.operation.type, 'undo');
+    assert.equal(undo.boundary, 'immediate');
+    assert.equal(core.transport().pendingCommandIds.length, 0, 'Undo must not wait for a future loop');
+    assert.equal(core.transport().playing, true);
     assert.deepEqual(core.getSession().tracks[0].patch, session.tracks[0].patch);
     assert.deepEqual(core.getSession().tracks[0].notes, notes);
+    assert.ok(render(LOOP) > 0.001, 'restored patch continues to play after immediate Undo');
     assert.deepEqual(errors, []);
     console.log(`rms before ${before.toFixed(4)}, boundary loop ${during.toFixed(4)}, after ${after.toFixed(4)}; candidates: ${final.candidates.map(c => c.provenance.split(';')[0]).join(' | ')}`);
   } finally {

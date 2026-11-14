@@ -1,4 +1,4 @@
-import type {EngineAdapter,AgentAdapter,ClientMessage,ServerMessage,Transport} from '@voicesynth/contracts';
+import type {EngineAdapter,AgentAdapter,ClientMessage,ServerMessage,Transport,SessionCommand} from '@voicesynth/contracts';
 /** The engine owns session state; the service only proposes changes. */
 export class SessionCoordinator {
  private transport:Transport|null=null;
@@ -7,6 +7,7 @@ export class SessionCoordinator {
  private cleanups:(()=>void)[];
  onMessage:(message:ServerMessage)=>void=()=>{};
  onError:(error:Error)=>void=()=>{};
+ prepareCommand:(command:SessionCommand)=>SessionCommand=command=>command;
  constructor(private engine:EngineAdapter,private agent:AgentAdapter,private connected:()=>boolean){
   this.cleanups=[engine.subscribe(m=>{
    if(m.type==='transport'){
@@ -22,7 +23,7 @@ export class SessionCoordinator {
    if(m.type==='command'){
     if(m.command.operation.type==='record')this.recordIntents.set(m.command.id,'pending');
     try{
-     const receipt=engine.dispatch(m.command);
+     const receipt=engine.dispatch(this.prepareCommand(m.command));
      // Successful submission receipts are not authoritative audio-thread acknowledgments.
      if(receipt.type==='ack'&&receipt.status==='rejected'){this.recordIntents.delete(m.command.id);this.send(receipt);}
     }catch(error){this.recordIntents.delete(m.command.id);this.send({type:'ack',commandId:m.command.id,status:'rejected',revision:engine.getSession().revision,reason:String(error)});}

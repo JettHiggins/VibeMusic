@@ -10,10 +10,10 @@ export interface CommandResult { id: string; text: string; status: 'queued' | 'a
 
 /**
  * Re-issuing these is the same as the user pressing the button again: the operation is absolute
- * (set tempo to N, record this target, clear this lane, load this session). Undo is relative and is
- * never re-issued, because it could undo a different edit than the user saw.
+ * (set tempo to N, load this session). Undo is relative and is
+ * never re-issued, because it could undo a different edit than the user saw. Record is pinned by the engine; Clear must not replay after fresh input.
  */
-const REISSUABLE = new Set<Operation['type']>(['record', 'tempo', 'clear', 'load-session']);
+const REISSUABLE = new Set<Operation['type']>(['tempo', 'load-session']);
 
 /** No queued/applied/rejected answer in this time means the audio engine is not processing commands. */
 export const NO_ANSWER_MS = 3000;
@@ -25,10 +25,9 @@ interface Pending { operation: Operation; boundary: Boundary; revision: number; 
  *
  * Next-loop commands are checked against the session revision when the boundary arrives. Any other
  * edit applied in the meantime (an instant mute or selection, another queued change) makes them
- * stale, and the engine rejects them. Previously a Record pressed during count-in was silently
- * dropped by a later click. This client re-issues still-queued absolute commands against the
- * current revision as soon as the revision moves, so they still apply at the same boundary
- * when possible. The superseded command's later stale rejection is expected and stays quiet.
+ * stale, and the engine rejects them. Only tempo/load absolute intentions may be re-issued.
+ * Record is pinned by the engine to its original deadline. Clear and Undo must never be
+ * replayed after fresh capture or an explicit live edit.
  */
 export class CommandClient {
  onResult: (result: CommandResult) => void = () => {};
@@ -107,11 +106,11 @@ export function describe(op: Operation, status: CommandResult['status'], reason?
   : op.type === 'select' ? `Select ${nameOf(op.target)}`
   : op.type === 'play' ? (op.playing ? 'Play' : 'Stop')
   : op.type === 'stop-recording' ? 'Stop recording'
-  : op.type === 'undo' ? 'Undo'
+  : op.type === 'undo' ? (op.discardCaptureOnly ? 'Discard pending input' : 'Undo')
   : op.type === 'load-session' ? 'Load session'
   : op.type === 'volume' ? `${nameOf({ trackId: op.trackId })} volume ${Math.round(op.volume * 100)}%`
   : op.type;
- if (status === 'queued') return op.type === 'record' ? `${what}: count-in, starts at the next downbeat` : `${what}: applies at the next loop`;
+ if (status === 'queued') return op.type === 'record' ? `${what}: armed (next beat, or four count-in beats from stopped)` : `${what}: applies at the next loop`;
  if (status === 'retrying') return `${what}: another change landed first; re-sent for the next loop`;
  if (status === 'applied') return `${what}: done`;
  const why = (reason ?? '').replace(/^Error:\s*/, '');
