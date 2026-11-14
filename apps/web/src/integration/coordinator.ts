@@ -8,6 +8,7 @@ export class SessionCoordinator {
  onMessage:(message:ServerMessage)=>void=()=>{};
  onError:(error:Error)=>void=()=>{};
  prepareCommand:(command:SessionCommand)=>SessionCommand=command=>command;
+ onReceipt:(message:ClientMessage)=>void=()=>{};
  constructor(private engine:EngineAdapter,private agent:AgentAdapter,private connected:()=>boolean){
   this.cleanups=[engine.subscribe(m=>{
    if(m.type==='transport'){
@@ -24,9 +25,10 @@ export class SessionCoordinator {
     if(m.command.operation.type==='record')this.recordIntents.set(m.command.id,'pending');
     try{
      const receipt=engine.dispatch(this.prepareCommand(m.command));
+     this.reportReceipt(receipt);
      // Successful submission receipts are not authoritative audio-thread acknowledgments.
      if(receipt.type==='ack'&&receipt.status==='rejected'){this.recordIntents.delete(m.command.id);this.send(receipt);}
-    }catch(error){this.recordIntents.delete(m.command.id);this.send({type:'ack',commandId:m.command.id,status:'rejected',revision:engine.getSession().revision,reason:String(error)});}
+    }catch(error){this.recordIntents.delete(m.command.id);const receipt:ClientMessage={type:'ack',commandId:m.command.id,status:'rejected',revision:engine.getSession().revision,reason:String(error)};this.reportReceipt(receipt);this.send(receipt);}
    }
    this.onMessage(m);
   })];
@@ -40,6 +42,7 @@ export class SessionCoordinator {
  }
  get captureAllowed(){return !this.disposed&&this.connected()&&this.transport?.recording===true;}
  sync(){this.send({type:'session',session:this.engine.getSession()});if(this.transport)this.send({type:'transport',transport:this.transport});}
+ private reportReceipt(message:ClientMessage){try{this.onReceipt(message);}catch(error){this.onError(new Error(String(error)));}}
  private send(message:ClientMessage){try{this.agent.send(message);}catch(error){this.onError(new Error(String(error)));}}
  /** Transcript-level seam only. Real speech capture supplies measured span frames. */
  submitTranscript(text:string){
