@@ -1,5 +1,6 @@
 import { AuditionEvent, SessionCommand, type SessionState, type ClientMessage, type Transport } from '@voicesynth/contracts';
 import type { FirmwareMetadata } from './metadata.ts';
+import {OutputTransition} from './output-transition.ts';
 import { firmwareSnapshot } from './snapshot.ts';
 import {commitPerformance,type RecordingWindow} from './performance.ts';
 export interface FirmwareBridge {
@@ -18,6 +19,7 @@ export class EngineCore {
  private startRequested=false;
  private frame=0;
  private loopStart=0;
+ private output=new OutputTransition(44100);
  constructor(private dsp: FirmwareBridge, private metadata:FirmwareMetadata, session:SessionState, private clockId:string, private emit:(m:ClientMessage)=>void){
   this.session=copy(session);this.sync();
  }
@@ -111,6 +113,7 @@ export class EngineCore {
   firmwareSnapshot(state,this.metadata);
   if(c.operation.type==='undo')this.history.pop();
   else if(!['select','play','record','stop-recording'].includes(c.operation.type)){this.history.push(old);if(this.history.length>64)this.history.shift();}
+  if(state.tracks.some((track,i)=>JSON.stringify(track.patch)!==JSON.stringify(old.tracks[i].patch)))this.output.begin();
   this.session=state;
   if(c.operation.type==='load-session'){
    this.recording=null;
@@ -147,7 +150,7 @@ export class EngineCore {
    const count=Math.min(left.length-offset,this.metadata.blockFrames,untilLoop);
    const pointer=this.dsp.w.vs_render(count);
    const samples=new Float32Array(this.dsp.w.memory.buffer,pointer,count*2);
-   for(let i=0;i<count;i++){left[offset+i]=samples[i*2];right[offset+i]=samples[i*2+1];}
+   for(let i=0;i<count;i++)this.output.write(left,right,offset+i,samples[i*2],samples[i*2+1]);
    offset+=count;this.frame+=count;
   }
  }
