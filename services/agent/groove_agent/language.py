@@ -145,7 +145,10 @@ def create_graph(model):
         "Groove stop means stop-recording during recording/count-in; explicit stop playback means play(false). "
         "No recording/armed state: bare stop means play(false). A drum target requires a lane for record/select. "
         "Tempo is 40..240. Sound search/refine/accept preserve music. Unknown/ambiguous requests use refuse_request. "
-        "Audition playback is currently a browser UI action; refuse requests for unsupported automatic audition."),
+        "Audition playback is currently a browser UI action; refuse requests for unsupported automatic audition. "
+        "metronome {enabled} and erase-event are immediate. erase-event removes ONE event at one-based bar, beat and "
+        "subdivision 1..4: step=(bar-1)*16+(beat-1)*4+(subdivision-1); drum targets need a lane; if bar or beat is "
+        "missing or unclear, use refuse_request rather than guessing a step or track."),
         middleware=[only_musical_tools, guard_tools,
                     ModelCallLimitMiddleware(run_limit=3, exit_behavior="error"),
                     ToolCallLimitMiddleware(run_limit=4, exit_behavior="error")])
