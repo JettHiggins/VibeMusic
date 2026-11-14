@@ -43,3 +43,29 @@ Checks: PCM frame/sample counts, silence/uneven blocks, fractional latency/start
 gap discard and real capture-worklet transfer behavior pass deterministic tests. Shared
 schema/TypeScript checks, existing full Node suite and production build pass. No raw
 microphone, live recognition or human audio-quality result is implied.
+
+## Positive scripted browser integration
+
+Start the TEST-ONLY server in a separate terminal from the repository root:
+
+```sh
+VOICESYNTH_SCRIPTED_SPEECH=1 PYTHONPATH=services/agent .venv/bin/python -m uvicorn \
+  scripted_speech_server:app --app-dir tests/browser --host 127.0.0.1 --port 8766
+```
+
+With Vite on port 5173, open the app in playwright-cli, click Enable audio once for
+browser activation, then run `tests/browser/speech-verified-loop.js`. Close the test
+browser and stop the test server afterward. The fixture fails startup without its
+explicit environment guard. It is not a GROOVE_STT provider and is never used by the
+production service. Its `/plan` endpoint is test control, not a contract extension.
+
+The test uses real BrowserEngine, VoiceInput, capture/PCM workers, WebSocketAgent,
+SessionCoordinator, server-side contract/PCM validation and SLOOP WASM. The server
+explicitly SCRIPTs availability, coverage, one exclusion interval and stop-recording;
+it does not recognize audio or exercise WS3's transcriber/segmenter. Four synthetic
+kick hits must commit at expected composition steps; a fifth hit in the scripted
+command span must not commit. Span -> stop-recording -> covering watermark order,
+recording false, playback true and no input error are required. It passed locally
+with expected/actual steps [23,27,31,39], four committed hits and continued playback.
+Steps are calculated from actual clock origin, so the numeric cells can vary with
+browser activation time. No physical or real-STT acceptance is implied.
