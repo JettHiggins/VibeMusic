@@ -25,6 +25,10 @@ from .speech_pipeline import EnergySegmenter, SpeechJob, SpeechWorker
 from .language import LanguageJob
 from .contracts import ContractError, validate
 
+
+from .speech_pipeline import Transcript
+from .speech_alignment import locate_command
+
 Interpreter = Callable[..., Interpretation]  # (text, session, during_recording, take_armed=False)
 
 DEFAULT_ACK_TIMEOUT_S = 60.0  # longer than the slowest loop (4 bars at 40 BPM = 24 s) plus count-in
@@ -204,7 +208,7 @@ class Connection:
         out.extend(self._advance_speech(stream_id, chunk.clock_id, now))
         return out
 
-    def speech_result(self, job: SpeechJob, text: Optional[str], error: Optional[str], now: float) -> list[dict]:
+    def speech_result(self, job: SpeechJob, text: Optional[str | Transcript], error: Optional[str], now: float) -> list[dict]:
         """A transcript (or failure) for one segment, delivered on the event loop by the service.
 
         Order: the segment's command-span and command/error first, then any watermark it
@@ -222,7 +226,7 @@ class Connection:
                      "provider": self._speech.name if self._speech else "none",
                      "reason": "recognition failed; speech-verified stopped for this stream; hold speech-dependent commits"}]
         out: list[dict] = []
-        text = (text or "").strip()
+        job, text = locate_command(job, text or "", state.segmenter.decided_through)
         held = state.held_wake
         if held is not None and text:
             state.held_wake = None
@@ -241,9 +245,10 @@ class Connection:
         return out
 
     def _speech_utterance(self, job: SpeechJob, text: str, now: float, end: Optional[int] = None) -> list[dict]:
-        """Every command in the segment, in spoken order; the segment's span is sent once, first."""
+        """Ordered commands share one measured span; capture context follows the aligned wake."""
         segment = job.segment
-        window = self._window_at(segment.start_frame)  # capture-time context of the first word spoken
+        context_start = job.context_start_frame if job.context_start_frame is not None else segment.start_frame
+        window = self._window_at(context_start)
         out: list[dict] = []
         for index, command in enumerate(split_commands(text)):
             out.extend(self._on_utterance({

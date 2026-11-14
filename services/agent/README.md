@@ -209,3 +209,8 @@ Familiar commands use the parser immediately. Unknown addressed speech can use a
 Each socket permits one running language request and four queued requests. Disconnect cancels pending inference. Late results are refused after take/clock/revision changes, newer edits (including revision-preserving Undo), or replacement candidates. Timeout/quota/auth failures produce explicit errors with no mutation; provider exception text is never forwarded. Parser commands remain available after provider errors.
 
 Run `python services/agent/scripts/language_check.py "Groove stop" --recording` for an offline parser result. Add `--live` only after local backend configuration to explicitly measure that text against the selected free model. It reports latency and parser agreement; agreement is not correctness. No live call validated this implementation. `test_language.py` exercises the real graph using a scripted chat model when optional dependencies are installed. WS4's frozen corpus, provider comparison, browser integration and human acceptance remain open.
+
+
+### Speech timing inside joined singing/command segments
+
+Local recognition now returns internal word alignment: the existing wire command-span begins at the measured Groove/Grove onset with 120 ms pre-roll, rather than deleting all preceding singing in the same energy segment. It includes the measured end plus at most 120 ms of already-classified quiet. Invalid/missing alignment remains conservative. Paused wake joining and capture-time take checks stay enabled. See TIMED-SPEECH-HANDOFF.md for tests and the pending exact browser reproduction.

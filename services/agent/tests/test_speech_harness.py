@@ -467,3 +467,56 @@ def test_unknown_first_command_does_not_swallow_later_stop(take):
 def test_split_commands_respects_wake_word_boundaries(text, expected):
     from groove_agent.connection import split_commands
     assert split_commands(text) == expected
+
+
+@pytest.mark.parametrize("payload_rate", [16000, 44100])
+def test_timed_wake_preserves_singing_before_a_joined_stop(tmp_path, payload_rate):
+    from groove_agent.speech_pipeline import Transcript, Word
+    # One energy segment: three sung notes, half-second quiet, then addressed speech.
+    take = synth_take(tmp_path / "joined-melody.wav", hits=(), speech=(1.0, 2.5),
+                      more_speech=((3.0, 3.7),), seconds=5.0)
+    worker = ScriptedWorker([Transcript("Groove, stop.", (Word(" Groove,", 2.0, 2.3), Word(" stop.", 2.4, 2.7)))])
+    connection = connect(worker)
+    chunks = list(chunks_from_wav(take))
+    if payload_rate == 44100:
+        for chunk in chunks:
+            pcm = np.frombuffer(base64.b64decode(chunk["data"]), "<i2").astype(float)
+            resampled = np.interp(np.arange(882) * 160 / 441, np.arange(len(pcm)), pcm)
+            chunk["data"] = base64.b64encode(resampled.astype("<i2").tobytes()).decode()
+            chunk["sampleRate"] = 44100
+    replies = flat(stream(connection, worker, chunks))
+    assert len(worker.transcribed) == 1  # unchanged hangover still joins the source audio
+    span = next(r for r in replies if r["type"] == "command-span")
+    assert frame_at(2.5) < span["startFrame"] <= frame_at(3.0)
+    assert abs(span["endFrame"] - frame_at(3.82)) <= WINDOW_FRAMES
+    commands = [r for r in replies if r["type"] == "command"]
+    assert len(commands) == 1 and commands[0]["command"]["operation"] == {"type": "stop-recording"}
+    covering = next(i for i, r in enumerate(replies) if r["type"] == "speech-verified" and r["throughFrame"] >= span["endFrame"])
+    assert replies.index(span) < replies.index(commands[0]) < covering
+
+
+def test_timed_wake_uses_its_own_capture_context_not_the_singing_start(tmp_path):
+    from groove_agent.speech_pipeline import Transcript, Word
+    take = synth_take(tmp_path / "late-wake.wav", hits=(), speech=(1.0, 2.5),
+                      more_speech=((3.0, 3.7),), seconds=5.0)
+    worker = ScriptedWorker([Transcript("Groove, stop.", (Word("Groove,", 2.0, 2.3), Word("stop.", 2.4, 2.7)))])
+    connection = connect(worker)
+    chunks = list(chunks_from_wav(take))
+    # Stop before the wake word: do not apply a transcript to the ended take just because
+    # the energy segment started with singing during it. Start a new take before the wake.
+    stream(connection, worker, chunks, transcribe_each_chunk=False)
+    replies = deliver_after(connection, worker, transport_message("idle", frame_at(2.7)),
+                            transport_message("recording", frame_at(2.9), start=frame_at(2.9)))
+    assert next(r for r in replies if r["type"] == "command")["command"]["operation"] == {"type": "stop-recording"}
+
+
+def test_timed_paused_wake_is_held_and_joined_without_excluding_earlier_music(tmp_path):
+    from groove_agent.speech_pipeline import Transcript, Word
+    take = synth_take(tmp_path / "timed-join.wav", hits=(), speech=(1.0, 1.5),
+                      more_speech=((2.0, 2.4), (3.3, 3.7)), seconds=5.0)
+    worker = ScriptedWorker([Transcript("Groove.", (Word("Groove.", 1.0, 1.4),)), "Stop."])
+    replies = flat(stream(connect(worker), worker, chunks_from_wav(take)))
+    span = next(r for r in replies if r["type"] == "command-span")
+    assert frame_at(1.5) < span["startFrame"] <= frame_at(2)
+    assert abs(span["endFrame"] - frame_at(3.7)) <= WINDOW_FRAMES
+    assert [r["command"]["operation"] for r in replies if r["type"] == "command"] == [{"type": "stop-recording"}]
