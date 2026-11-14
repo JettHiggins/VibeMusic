@@ -187,7 +187,7 @@ test('hands-free opt-in requires recognizer status, rejects stale streams and ho
  emit({type:'transport',transport});
  s.voice.recorder.addOnsets([{frame:90000+5292,confidence:1,velocity:1,levelDb:-12}],5292,'clock',100000+5292);
  assert.equal(s.voice.recorder.hasPendingCapture,true);
- s.voice.configureSpeechSender(m=>sent.push(m));s.voice.setSpeechAvailable(true);s.voice.setHandsFree(true);
+ s.voice.configureSpeechSender(m=>sent.push(m),()=>{},async()=>{});s.voice.setSpeechAvailable(true);s.voice.setHandsFree(true);
  assert.equal(s.voice.getState().speech.status,'waiting');assert.equal(s.voice.recorder.hasPendingCapture,false,'manual pre-stream input discarded');
  const pcm=new SpeechPcmEncoder({...config!,sampleRate:SR},message=>result!({type:'chunk',message}));pcm.push(100000,new Float32Array(SR));
  assert.ok(sent.length>0,'real worker PCM reaches configured transport seam');
@@ -201,4 +201,15 @@ test('hands-free opt-in requires recognizer status, rejects stale streams and ho
  const count=sent.length;pcm.push(100000+SR,new Float32Array(SR));assert.equal(sent.length,count,'failed stream cannot send/replay');
  s.voice.setSpeechAvailable(true);assert.equal(s.voice.getState().speech.status,'unavailable','socket reconnect cannot silently resume');
  s.voice.setHandsFree(false);assert.equal(s.voice.getState().recorder.mode,'manual','only explicit opt-out selects manual mode');s.voice.dispose();
+});
+
+
+test('explicit hands-free enable connects locally but never overrides a manual opt-out during connection',async()=>{
+ const s=await setup();let resolve:()=>void=()=>{},starts=0;
+ s.mic.startSpeech=()=>{starts++;};s.mic.stopSpeech=()=>{};
+ s.voice.configureSpeechSender(()=>{},()=>{},()=>new Promise<void>(r=>{resolve=r;}));
+ const pending=s.voice.enableHandsFree();
+ assert.equal(s.voice.getState().recorder.mode,'speech');assert.equal(s.voice.getState().speech.status,'waiting');
+ s.voice.setHandsFree(false);s.voice.setSpeechAvailable(true);resolve();await pending;
+ assert.equal(starts,0);assert.equal(s.voice.getState().recorder.mode,'manual');assert.equal(s.voice.getState().speech.enabled,false);s.voice.dispose();
 });

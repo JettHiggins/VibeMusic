@@ -6,7 +6,7 @@ async page=>await page.evaluate(async()=>{
  const engine=new BrowserEngine(),voice=new VoiceInput(engine),agent=new WebSocketAgent('ws://127.0.0.1:8767/ws');
  const coordinator=new SessionCoordinator(engine,agent,()=>agent.connected);
  const server=[],errors=[];let transport=null;
- voice.configureSpeechSender(m=>agent.send(m));coordinator.prepareCommand=c=>voice.prepareCommand(c);
+ voice.configureSpeechSender(m=>agent.send(m),()=>agent.disconnect(),()=>agent.connect());coordinator.prepareCommand=c=>voice.prepareCommand(c);
  agent.onStatus=c=>{coordinator.connectionChanged(c);voice.setSpeechAvailable(c);};
  coordinator.onMessage=m=>{server.push(m);voice.handleServerMessage(m);if(m.type==='error')errors.push(m.message);};
  agent.onError=e=>errors.push(e.message);engine.onError=e=>errors.push(e.message);

@@ -38,6 +38,8 @@ async def peer(socket: WebSocket):
             if tracker.accept(chunk):
                 first[chunk.stream_id] = chunk.start_frame
                 await send({'type':'speech-status','streamId':chunk.stream_id,'available':True,'provider':'SCRIPTED synthetic integration peer (NOT STT)'})
+            if plan.get('stall_verification'):
+                continue  # TEST ONLY: recognizer advertises ready but never completes classification
             begin, end = plan['startFrame'], plan['endFrame']
             bound = chunk.end_frame - 1
             if begin <= bound <= end: bound = begin - 1

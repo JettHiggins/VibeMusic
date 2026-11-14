@@ -102,3 +102,30 @@ This is real browser/model integration with synthetic speech and generated kicks
 physical microphone, human voice, p95 command-latency measurement, or full hands-free
 acceptance. It does not resolve delayed-result/new-take semantics in #15. Stop the isolated
 provider service and close the browser after running; do not commit generated audio/models.
+
+## Verification backlog and stale-connection recovery
+
+The client measures pending coverage from transmitted context-clock frames, not socket
+connectivity or wall-clock arrival times. After two seconds it shows verification pending;
+after eight seconds without sufficient progress the stream terminally fails. No newer
+unverified chunk is sent. The take stops, pending capture is discarded and playback and
+composition remain. Four-second normal classification segments still pass; receiving
+coverage reduces the displayed backlog. The thresholds are explicit client grace limits,
+not measured recognizer performance or a shared wire change.
+
+Failure closes the old WebSocket without discarding adapter subscriptions. Late callbacks
+from it cannot deliver commands into the next connection. This follows existing connection
+reset semantics: connection-owned research jobs are cancelled; accepted patches/composition
+are preserved. It does not abort a model inference already executing on the service.
+Hands-free enable/Retry explicitly reconnects to the local service and starts a new stream;
+it never resumes the old take or replays audio. Manual opt-out while reconnecting remains
+manual even if the connection later succeeds. A fresh recording requires a new user/voice
+Record command. Calibration/device/clock changes use the same reset path.
+
+Tests: deterministic deadline/catch-up and stale-socket command tests, plus actual browser
+speech-stall.js with a guarded SCRIPTED producer that never verifies. The browser showed
+backlog, closed the failed connection, committed zero hits, stopped capture with playback
+continuing, and reconnected on explicit Retry with a different stream and no old take.
+The real unavailable-service UI test also passes with auto-connection from the hands-free
+checkbox (no separate Agent-panel connect action). Positive scripted verification still
+passes. These are software/synthetic recovery checks, not real recognition/latency acceptance.

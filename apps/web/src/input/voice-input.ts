@@ -3,7 +3,7 @@ import { calibrationProgress, calibrationStatus, clickPlan, defaultCalibration, 
 import { MicCheck, type MicCheckState } from './mic-check.ts';
 import { buildMicTestReport, type CaptureSettings, type MicTestReport } from './diagnostics.ts';
 import type { AnalysisFrame } from './microphone.ts';
-import { SpeechSession } from './speech-session.ts';
+import { SpeechSession, SPEECH_PENDING_SECONDS } from './speech-session.ts';
 import type { SpeechResult } from './speech-worker.ts';
 import { handleSpeechMessage } from './speech-messages.ts';
 import { PerformanceRecorder, type RecorderStatus, type VerificationMode } from './recorder.ts';
@@ -79,6 +79,9 @@ export class VoiceInput {
  private lastUiUpdate = 0;
  private speechSession:SpeechSession|null=null;
  private speechConnected=false;
+ private resetSpeechConnection:()=>void=()=>{};
+ private connectSpeechConnection:()=>Promise<void>=async()=>{throw new Error('Connect the local agent first');};
+ private speechConnecting=false;
  private speechSend:((message:ClientMessage)=>void)|null=null;
  private heldCaptureStart: number | null = null;
  /** The one guided run (timing or silence) that may be active. */
@@ -130,7 +133,7 @@ export class VoiceInput {
  }
  /** Socket state never proves recognizer availability. */
  setSpeechAvailable(available: boolean) {this.speechConnected=available;if(!available)this.failSpeech('Agent disconnected; restart hands-free capture');}
- configureSpeechSender(send:(message:ClientMessage)=>void) {this.speechSend=send;}
+ configureSpeechSender(send:(message:ClientMessage)=>void,resetConnection:()=>void,connect:()=>Promise<void>) {this.speechSend=send;this.resetSpeechConnection=resetConnection;this.connectSpeechConnection=connect;}
  private endSpeechTake() {
   const revision=this.engineSessionRevision();
   if(this.transport?.recording||this.transport?.recordingState==='armed')this.engine.dispatch({id:crypto.randomUUID(),expectedRevision:revision,boundary:'immediate',operation:{type:'stop-recording'}});
@@ -139,12 +142,23 @@ export class VoiceInput {
  private engineSessionRevision() {return this.engine.getSession?.().revision??this.latestRevision;}
  private latestRevision=0;
  private failSpeech(reason:string) {
-  if(!this.state.speech.enabled)return;
+  if(!this.state.speech.enabled||this.state.speech.status==='unavailable')return;
   this.recorder.setSpeechAvailable(false);this.recorder.resetPendingCapture();this.mic?.stopSpeech?.();this.speechSession=null;
   this.update({speech:{enabled:true,status:'unavailable',message:reason}});
-  this.endSpeechTake();
+  this.endSpeechTake();this.resetSpeechConnection();
+ }
+ async enableHandsFree() {
+  if(this.speechConnecting)return;
+  if(this.speechConnected){this.setHandsFree(true);return;}
+  this.setHandsFree(true); // Immediately hold/discard old capture before waiting on a connection.
+  this.update({speech:{enabled:true,status:'waiting',message:'Connecting local speech service…'}});
+  this.speechConnecting=true;
+  try{await this.connectSpeechConnection();if(this.state.speech.enabled)this.setHandsFree(true);}
+  catch(error){this.failSpeech(String(error));}
+  finally{this.speechConnecting=false;}
  }
  setHandsFree(enabled:boolean) {
+  if(this.speechSession)this.failSpeech('Speech mode changed; reconnect for a fresh stream');
   this.mic?.stopSpeech?.();this.speechSession=null;this.recorder.setSpeechAvailable(false);this.recorder.resetPendingCapture();
   this.endSpeechTake();this.recorder.setMode(enabled?'speech':'manual');
   this.update({speech:{enabled,status:enabled?'waiting':'off',message:null}});
@@ -154,7 +168,8 @@ export class VoiceInput {
   const session=this.speechSession=new SpeechSession(streamId,clockId,{
    send:m=>this.speechSend!(m),available:value=>{this.recorder.setSpeechAvailable(value);if(value)this.update({speech:{enabled:true,status:'ready',message:'Local speech ready; start a fresh take'}});},
    verify:(clock,frame)=>this.recorder.verifyThrough(clock,frame),exclude:m=>handleSpeechMessage(this.recorder,m),failed:reason=>this.failSpeech(reason),
-  });
+   lag:seconds=>{if(this.state.speech.status==='ready')this.update({speech:{enabled:true,status:'ready',message:seconds>SPEECH_PENDING_SECONDS?`Speech verification pending (${seconds.toFixed(1)} s); unverified input is waiting`:'Local speech ready; recording waits for verified audio'}});},
+  },this.transport.sampleRate);
   try{this.mic.startSpeech({streamId,clockId,latencyFrames:effectiveLatencyFrames(this.state.calibration)},result=>{
    if(this.speechSession!==session)return;
    if(result.type==='gap')session.fail(result.reason);else {if(result.message.seq===0)this.recorder.beginSpeechCoverage(clockId,result.message.startFrame);session.chunk(result.message);}

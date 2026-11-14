@@ -26,3 +26,24 @@ test('unavailable is terminal and never silently falls back or replays queued au
  const s=setup();s.chunk();s.session.handle({type:'speech-status',streamId:'s',available:false,provider:'none'});
  s.ready();s.mark(180);s.chunk(200,300,1);assert.equal(s.sent.length,1);assert.equal(s.verified.length,0);assert.equal(s.failures.length,1);assert.equal(s.available.at(-1),false);
 });
+
+test('connected recognizer that stops classifying hits the clock-based deadline and cannot recover silently',()=>{
+ const sent:any[]=[],lag:number[]=[],failed:string[]=[],available:boolean[]=[];
+ const session=new SpeechSession('s','clock',{send:m=>sent.push(m),available:a=>available.push(a),verify:()=>{},exclude:()=>{},failed:r=>failed.push(r),lag:s=>lag.push(s)},44100);
+ session.handle({type:'speech-status',streamId:'s',available:true,provider:'SCRIPTED stalled recognizer'});
+ for(let i=0;i<82;i++)session.chunk({type:'speech-audio',streamId:'s',clockId:'clock',seq:i,startFrame:100000+i*4410,endFrame:100000+(i+1)*4410,sampleRate:44100,encoding:'pcm-s16le',data:'AAAA'});
+ assert.equal(failed.length,1);assert.match(failed[0],/stalled/);assert.equal(sent.length,80,'no more than eight seconds of unverified audio sent');
+ assert.ok(lag.some(s=>s>2));assert.equal(available.at(-1),false);
+ session.handle({type:'speech-status',streamId:'s',available:true,provider:'SCRIPTED'});assert.equal(available.at(-1),false);
+});
+
+test('advancing coverage reduces backlog; a normal long classification segment remains usable',()=>{
+ const lag:number[]=[],failed:string[]=[];
+ const session=new SpeechSession('s','clock',{send:()=>{},available:()=>{},verify:()=>{},exclude:()=>{},failed:r=>failed.push(r),lag:s=>lag.push(s)},44100);
+ session.handle({type:'speech-status',streamId:'s',available:true,provider:'SCRIPTED'});
+ for(let i=0;i<100;i++){
+  session.chunk({type:'speech-audio',streamId:'s',clockId:'clock',seq:i,startFrame:i*4410,endFrame:(i+1)*4410,sampleRate:44100,encoding:'pcm-s16le',data:'AAAA'});
+  if(i%40===39)session.handle({type:'speech-verified',streamId:'s',clockId:'clock',fromFrame:0,throughFrame:(i+1)*4410-1});
+ }
+ assert.deepEqual(failed,[]);assert.ok(lag.includes(0));assert.ok(Math.max(...lag)<=4);
+});

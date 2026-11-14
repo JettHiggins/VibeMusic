@@ -2,9 +2,6 @@ async page=>{
  const sent=[];
  page.on('websocket',socket=>socket.on('framesent',event=>{try{const m=JSON.parse(String(event.payload));if(m.type==='speech-audio')sent.push({seq:m.seq,streamId:m.streamId,clockId:m.clockId,startFrame:m.startFrame,endFrame:m.endFrame,sampleRate:m.sampleRate,bytes:m.data.length*3/4-(m.data.endsWith('==')?2:m.data.endsWith('=')?1:0)});}catch{}}));
  await page.getByRole('button',{name:'Enable audio',exact:true}).click();
- await page.getByText('Agent',{exact:true}).click();
- await page.getByRole('button',{name:'Connect agent',exact:true}).click();
- await page.waitForFunction(()=>document.body.textContent.includes('Agent connected'));
  await page.evaluate(async()=>{
   const {engine,voice}=globalThis.__voicesynth,context=engine.getAudioContext();
   await voice.enableTestSignal(context.createBuffer(1,context.sampleRate*20,context.sampleRate),context.currentTime+.05);

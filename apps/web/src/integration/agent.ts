@@ -29,5 +29,6 @@ export class WebSocketAgent implements AgentAdapter {
   this.socket!.send(JSON.stringify(message));
  }
  subscribe(listener:(message:ServerMessage)=>void){this.listeners.add(listener);return ()=>{this.listeners.delete(listener);};}
- dispose(){const socket=this.socket;this.socket=null;socket?.close();this.onStatus(false);this.listeners.clear();}
+ disconnect(){const socket=this.socket;this.socket=null;socket?.close();if(socket)this.onStatus(false);}
+ dispose(){this.disconnect();this.listeners.clear();}
 }
