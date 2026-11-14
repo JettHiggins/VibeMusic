@@ -16,9 +16,9 @@ Official references checked today: [free catalog and quotas](https://openrouter.
 
 | Owner | Delivered / current state | Next action |
 | --- | --- | --- |
-| WS1 — Jett / @JettHiggins | Engine/contracts/build/integration; next-beat Record, stopped four-beat count-in, immediate Clear/Undo and epoch resets. Temporarily owns browser speech capture. | Publish reviewed integrations; obtain peer review of ws1/speech-capture at ac612d3, integrate it, then run combined hands-free/device acceptance. |
+| WS1 — Jett / @JettHiggins | Engine/contracts/build/integration; next-beat Record, stopped four-beat count-in, immediate Clear/Undo and epoch resets. Temporarily owns browser speech capture. | Publish reviewed integrations; obtain peer review of ws1/speech-capture at bdb4ffc, integrate it, then run combined hands-free/device acceptance. |
 | WS2 — Leo / @leoAndrade2332 | Dark persistent workspace, editable synth piano roll, calibration/device diagnostics; #20 recording consumer and #23 worker-load diagnostics integrated. Usage availability unconfirmed; recent PR delivery observed. | Review WS1 speech branch without duplicating it; reproduce Lenny's exact melody-loading error and tune real input from device evidence. |
-| WS3 — Lenny / @lennyyanza | #13 CLAP retrieval, #14 speech contract, #15 pipeline, #16 recording proposals, #21 local faster-whisper and #22 issue-3 tests integrated. | Start focused OpenRouter/Deep Agents PR from latest integration; wire safe backend config, typed tools and evaluation. Provider choice and issue #3 are no longer blockers. |
+| WS3 — Lenny / @lennyyanza | #13 CLAP retrieval, #14 speech contract, #15 pipeline, #16 recording proposals, #21 local faster-whisper and #22 issue-3 tests integrated. | Fix joined singing/Stop exclusion described below in a focused PR; implement OpenRouter/Deep Agents in a separate capability with safe backend config, typed tools and evaluation. Provider choice and issue #3 are no longer blockers. |
 | WS4 — fourth teammate | Issues #17–#19 published; no delivered PR observed. Owns evals/, tools/evaluation/, docs/WS4-HANDOFF.md. | Start #17 command acceptance corpus, then #18 blind-listening summarizer, then #19 sound/refinement rubric. Read docs/WS4-START.md. |
 
 ## Branch / integration state
@@ -29,7 +29,7 @@ Reviewed and integrated: WS2 #4–#7/#10/#11/#20/#23; WS1 recording contract/eng
 
 The latest review includes #15 c62613d (capture-time context), #21 d637213 (real STT plus optional mic self-check), #22 75f4181 (issue-3 regressions), #23 d34f10e (worker URL/line diagnostics and current mic guide). The previous delayed-Groove-stop and missing-SciPy blockers are fixed. Remaining exact device melody failure is not presumed fixed by diagnostics.
 
-**Unmerged WS1 capability:** ws1/speech-capture at ac612d3. Contains independent browser speech tap/PCM worker, scoped coverage gates, explicit hands-free mode, bounded backlog, failed-connection isolation and explicit Retry, plus dev-worklet refresh. Request a peer-created/reviewed PR to engine-integration. Repository settings prohibit Actions PR creation; WS1 has SSH push but no separate PR-create authentication. ws1/integration-preview and ws1/dev-worklet-sync are parent review history; do not merge them separately after the speech branch. ws1/recording-consumer is integrated through #20. Other old workstream branches retain history; no new unreviewed work is implied by their existence.
+**Unmerged WS1 capability:** ws1/speech-capture at bdb4ffc. Contains independent browser speech tap/PCM worker, scoped coverage gates, explicit hands-free mode, bounded backlog, failed-connection isolation and explicit Retry, plus dev-worklet refresh. Request a peer-created/reviewed PR to engine-integration. Repository settings prohibit Actions PR creation; WS1 has SSH push but no separate PR-create authentication. ws1/integration-preview and ws1/dev-worklet-sync are parent review history; do not merge them separately after the speech branch. ws1/recording-consumer is integrated through #20. Other old workstream branches retain history; no new unreviewed work is implied by their existence.
 
 ## Validation and limits
 
@@ -37,7 +37,7 @@ Combined reviewed #15/#21/#22/#23 baseline: shared schemas/checks, full Node sui
 
 The delayed-result reproduction now emits exclusion span, error/no mutation, then verification when an old take ends; it cannot turn Groove stop into playback stop or affect a newer take. Tests cover stop/new-take/count-in/late segment closure and held wake joining.
 
-Browser speech branch evidence: real Chromium capture/worklet/worker/socket/WASM integration with scripted coverage passed, including command-span exclusion, continuing playback, unavailable and stalled-service failure/retry. Browser head ac612d3 adopts reviewed integration 6377130. Actual faster-whisper recognized synthetic Record kick / Groove stop and committed three generated hits at expected steps [21,25,29], with exclusion -> stop-recording -> verification, playback continuing and no pipeline error. This rerun used the fresh declared speech environment, including SciPy, and the current bounded-backlog/recovery client. Combined schema checks, Node suite (162 passed/one optional skip), explicit live-service/WASM integration and production build passed. The isolated test service/browser were stopped. Peer review and shared browser merge remain open. These are synthetic checks, not physical voice/device acceptance.
+Browser speech branch evidence: real Chromium capture/worklet/worker/socket/WASM integration with scripted coverage passed, including command-span exclusion, continuing playback, unavailable and stalled-service failure/retry. Browser head bdb4ffc adopts reviewed integration 6377130. Actual faster-whisper recognized synthetic Record kick / Groove stop and committed three generated hits at expected steps [21,25,29], with exclusion -> stop-recording -> verification, playback continuing and no pipeline error. This rerun used the fresh declared speech environment, including SciPy, and the current bounded-backlog/recovery client. Combined schema checks, Node suite (162 passed/one optional skip), explicit live-service/WASM integration and production build passed. The isolated test service/browser were stopped. Peer review and shared browser merge remain open. These are synthetic checks, not physical voice/device acceptance.
 
 Recording consumer: actual browser/YIN synthetic C4/E4/G4 extraction, phrase correction, live held-note Undo/Clear and fresh epoch capture passed. CI at edd6044 passed contracts/web, firmware/research and macOS/Windows software integration. Synthetic p95 analysis was ~7–9 ms on WS1's machine; this does not establish real-device latency.
 
@@ -58,3 +58,23 @@ Recording consumer: actual browser/YIN synthetic C4/E4/G4 extraction, phrase cor
 - Full hands-free PLAN.md scenario, real command latency targets and ten-minute audible playback on target devices. Software CI is supporting evidence, not physical signoff.
 
 Handoffs must include PR/commit, behavior, validation, limitations and next integration step. No secrets, raw microphone recordings, downloaded models or large generated corpora in Git.
+
+## New integrated-path blocker — joined singing and Stop exclusion
+
+WS1 browser diagnostic tests/browser/local-stt-melody.js at bdb4ffc uses actual local
+faster-whisper, capture/PCM/YIN workers, WebSocket and WASM with synthetic speech/tones.
+Record melody -> C4/E4/G4 -> Groove stop passed with a 2.5 s pause before Stop: all three
+notes committed at expected starts/durations/pitches, recording stopped, playback continued.
+At /?testStopAt=8 the pause is 0.5 s. This failed twice: Record/Stop recognized, zero notes
+committed, no pipeline error, playback continuing. Latest run's command-span [286932,428933]
+at 44.1 kHz lasts 3.22 s and excludes singing plus the command. The browser correctly follows
+the supplied span; backend energy hangover/whole-segment exclusion needs refinement.
+
+WS3 owns a focused fix: exclude measured wake/command speech while preserving preceding
+musical input, without leaking command audio, breaking paused wake phrases or advancing
+coverage before classification. No schema change is implied; propose any needed change
+before use. Do not treat the long-pause pass as completion. Keep the failing short-pause
+reproduction and add backend regression evidence. Exact commands/evidence are in
+[the speech handoff](https://github.com/JettHiggins/VoiceSynthesizer/blob/ws1/speech-capture/docs/BROWSER-SPEECH.md).
+This synthetic failure is distinct from the unresolved physical TypeScript/chord-loader
+report. The isolated test service/browser were stopped. No live API calls or human audio.
