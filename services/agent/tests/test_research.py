@@ -360,7 +360,7 @@ def test_describe_audition_refine_accept_by_voice(session):
                            "candidates": candidates("u3:job")})
     out = conn.handle(utter("u4", "use number two"), 0)
     validate("ServerMessage", out[0])
-    assert out[0]["command"] == {"id": "u4:cmd", "expectedRevision": 0, "boundary": "next-loop", "operation": {
+    assert out[0]["command"] == {"id": "u4:cmd", "expectedRevision": 0, "boundary": "immediate", "operation": {
         "type": "apply-patch", "trackId": "synth-2", "patch": candidates("u3:job")[1]["patch"]}}
     assert conn.handle(utter("u5", "use number nine"), 0)[0]["type"] == "error"
     assert conn.handle(utter("u6", "cancel"), 0) == [] and port.cancelled == ["u3:job"]

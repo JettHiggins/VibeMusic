@@ -501,7 +501,7 @@ class Connection:
             if result.index > len(latest.candidates):
                 return [_error(utterance_id, f"there are only {len(latest.candidates)} candidates")]
             patch = latest.candidates[result.index - 1]["patch"]
-            return _Proposal(utterance_id, {"type": "apply-patch", "trackId": latest.track_id, "patch": patch}, "next-loop")
+            return _Proposal(utterance_id, {"type": "apply-patch", "trackId": latest.track_id, "patch": patch}, BOUNDARY["apply-patch"])
         assert isinstance(result, SoundSearch)
         if result.refine:
             if latest is None or not latest.candidates:
@@ -618,7 +618,8 @@ class Connection:
                                              "boundary": result.boundary, "operation": result.operation})
             except ContractError:
                 return [_error(utterance_id, "invalid command proposal; no change applied")]
-            if result.boundary != BOUNDARY.get(result.operation["type"]):
+            allowed_boundaries = ("immediate", "next-loop") if result.operation["type"] == "apply-patch" else (BOUNDARY.get(result.operation["type"]),)
+            if result.boundary not in allowed_boundaries:
                 return [_error(utterance_id, "invalid command scheduling boundary; no change applied")]
             problem = validate_operation(result.operation)
             if problem is not None:
@@ -635,7 +636,7 @@ class Connection:
 
         if proposal is None:
             return out
-        if proposal.boundary == "next-loop" and self._queued_in_flight():
+        if self._must_wait(proposal):
             if len(self._backlog) >= MAX_BACKLOG:
                 out.append(_error(utterance_id, "too many commands are waiting; try again after the next loop"))
             else:
@@ -658,9 +659,19 @@ class Connection:
         A next-beat Record checks expectedRevision on receipt and stays pinned once armed
         (RECORDING-USABILITY.md), so it is issued without waiting. Its application can still
         change the revision, so a next-loop command waits behind it like behind another
-        next-loop command. Immediate commands are never held back.
+        next-loop command. Immediate controls are never held back; patch acceptances serialize separately.
         """
         return any(flight.proposal.boundary in ("next-loop", "next-beat") for flight in self._in_flight.values())
+
+    def _must_wait(self, proposal: _Proposal) -> bool:
+        # Interactive patches apply immediately once issued, but two acceptances
+        # must not race against the same revision. Keep emergency/transport edits
+        # on their existing immediate path.
+        if proposal.operation["type"] == "apply-patch":
+            return self._queued_in_flight() or any(
+                flight.proposal.operation["type"] == "apply-patch"
+                for flight in self._in_flight.values())
+        return proposal.boundary == "next-loop" and self._queued_in_flight()
 
     def _issue(self, proposal: _Proposal, now: float) -> dict:
         self._language_epoch += 1  # even discard-only Undo can invalidate a late interpretation
@@ -672,13 +683,13 @@ class Connection:
                                                "boundary": proposal.boundary, "operation": proposal.operation}}
 
     def _drain(self, now: float) -> list[dict]:
-        """Issue the next waiting next-loop command once the previous one has resolved.
+        """Issue the next waiting edit once its revision dependency has resolved.
 
         Next-loop commands are issued one at a time: the browser rechecks
         `expectedRevision` when a queued command is applied, so two issued
         against the same revision would make the second one stale.
         """
-        if self._backlog and self.session is not None and not self._queued_in_flight():
+        if self._backlog and self.session is not None and not self._must_wait(self._backlog[0]):
             return [self._issue(self._backlog.popleft(), now)]
         return []
 

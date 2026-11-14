@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { resolve } from 'node:path';
-import { createSession, type ClientMessage } from '../packages/contracts/src/index.ts';
+import { createSession, type ClientMessage, type SessionCommand } from '../packages/contracts/src/index.ts';
 import { PatchEditQueue, patchControls, withEngine, withParameter } from '../apps/web/src/ui/patch-edit.ts';
 
 const dir = 'apps/web/public/engine';
@@ -27,27 +27,29 @@ test('rapid sound changes apply latest-wins through the real engine and preserve
  const { FirmwareAudio } = await import(pathToFileURL(resolve(`${dir}/preview-worklet.js`)).href);
  const metadata = JSON.parse(readFileSync(`${dir}/metadata.json`, 'utf8'));
  const start = createSession(); start.tracks[0].notes.push({ id: 'n', step: 0, duration: 4, midi: 60, velocity: 0.8 });
- const listeners: ((m: ClientMessage) => void)[] = [];
- const core = new EngineCore(new FirmwareAudio(module), metadata, start, 'clock', m => listeners.forEach(l => l(m)));
+ const listeners: ((m: ClientMessage) => void)[] = [],deliveries:ClientMessage[]=[],commands:SessionCommand[]=[];let defer=false;
+ const core = new EngineCore(new FirmwareAudio(module), metadata, start, 'clock', m => {if(defer)deliveries.push(m);else listeners.forEach(l=>l(m));});
  let n = 0;
- const q = new PatchEditQueue({ dispatch: c => core.dispatch(c), newId: () => `p${++n}` });
+ const q = new PatchEditQueue({ dispatch: c => {commands.push(c);const receipt=core.dispatch(c);return receipt.type==='ack'&&receipt.status==='rejected'?receipt:{type:'ack',commandId:c.id,status:'queued',revision:core.getSession().revision};}, newId: () => `p${++n}` });
  listeners.push(m => q.handle(m));
  q.handle({ type: 'session', session: core.getSession() });
- // Playing: edits queue for the boundary, so successive slider moves coalesce.
+ // Real audio thread replies arrive asynchronously. Delay those replies while slider moves coalesce.
  core.dispatch({ id: 'play', expectedRevision: core.getSession().revision, boundary: 'immediate', operation: { type: 'play', playing: true } });
  { const l = new Float32Array(128), r = new Float32Array(128); core.render(l, r, 0); }
+ defer=true;const frame=core.transport().currentFrame;
  const base = withEngine(core.getSession().tracks[0].patch, 1, 2); // DIGITAL; FM6 has no generic sliders
  q.set('synth-1', base);
  const cutoff = patchControls(base, metadata).find(c => c.name === 'FLT')!;
  for (const v of [-20, 10, 40]) q.set('synth-1', withParameter(q.view('synth-1')!, cutoff.id, v));
  assert.ok(q.pending('synth-1'));
- const loop = Math.ceil(44100 * 960 / 120);
- for (let i = 0; i < 3; i++) { const l = new Float32Array(loop), r = new Float32Array(loop); core.render(l, r, 128 + i * loop); }
+ while(deliveries.length){const message=deliveries.shift()!;listeners.forEach(l=>l(message));}
  const patch = core.getSession().tracks[0].patch;
  assert.equal(patch.engine, 1); assert.equal(patch.preset, 2);
  assert.equal(patch.parameters[String(cutoff.id)], 40, 'latest value wins');
  assert.deepEqual(core.getSession().tracks[0].notes.map(x => x.id), ['n'], 'notes preserved');
  assert.equal(q.pending('synth-1'), false); assert.equal(q.lastError, null);
+ assert.equal(core.transport().currentFrame,frame,'no loop or audio-frame advancement was needed');
+ assert.equal(commands.length,2,'in-flight choice plus final coalesced choice only');assert.ok(commands.every(c=>c.boundary==='immediate'));
 });
 
 test('FM6 packed voices expose no generic sliders that would overwrite the real voice', { skip: !ready }, () => {

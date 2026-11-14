@@ -30,7 +30,7 @@ export function SoundPanel({ engine, metadata, session, trackId, enabled }: { en
     {engineMeta.presets.map((p, i) => <option key={i} value={i}>{p.name}</option>)}
    </select></label>
    <button disabled={!enabled || !engine.audition} onPointerDown={() => play(true)} onPointerUp={() => play(false)} onPointerLeave={() => play(false)}>Hold to audition</button>
-   {queue.pending(trackId) && <span style={small}>applies at the next loop…</span>}
+   {queue.pending(trackId) && <span style={small}>Applying sound…</span>}
   </div>
   {usesPackedVoice(patch, metadata) && <p style={small}>FM6 voices use packed factory data, so their parameters aren't editable here yet. Choose a preset, or switch engine to shape the sound.</p>}
   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(118px, 1fr))', gap: 8 }}>

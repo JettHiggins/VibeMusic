@@ -46,7 +46,7 @@ def test_b_audition_is_preview_only_accept_applies_and_undo_restores():
                                   "candidates": candidates("u1:job")}) == []
     assert conn.pending_command_ids == []
     accept = conn.handle(utter("u2", "use number two"), 0)[0]["command"]
-    assert accept["operation"]["type"] == "apply-patch" and accept["boundary"] == "next-loop"
+    assert accept["operation"]["type"] == "apply-patch" and accept["boundary"] == "immediate"
     conn.handle({"type": "ack", "commandId": accept["id"], "status": "applied", "revision": 1}, 0)
     undo = conn.handle(utter("u3", "undo"), 0)[0]["command"]
     assert undo["operation"] == {"type": "undo"} and undo["boundary"] == "immediate"

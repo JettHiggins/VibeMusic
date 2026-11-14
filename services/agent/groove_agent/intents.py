@@ -23,7 +23,7 @@ MELODIC_TRACKS = ("synth-1", "synth-2", "synth-3")
 
 # Boundaries follow docs/CONTRACTS.md "Command lifecycle" as amended by RECORDING-USABILITY.md
 # (PR #12): Record arms at the next beat (one-bar count-in from stopped); Clear and Undo apply
-# immediately, also during playback/capture. Tempo and apply-patch stay next-loop.
+# immediately, also during playback/capture. Tempo stays next-loop; interactive patches are immediate.
 BOUNDARY = {
     "select": "immediate",
     "stop-recording": "immediate",
@@ -33,7 +33,7 @@ BOUNDARY = {
     "tempo": "next-loop",
     "clear": "immediate",
     "undo": "immediate",
-    "apply-patch": "next-loop",
+    "apply-patch": "immediate",
     # Playtest repair (docs/PLAYTEST-REPAIR-CONTRACT.md): both are immediate-only.
     "metronome": "immediate",
     "erase-event": "immediate",
