@@ -99,20 +99,46 @@ def _selected(session: Mapping[str, Any]) -> dict:
     return dict(session["selected"])
 
 
+# Recognizers in noisy rooms turn "synth two" into "sent two", "since three", "syn two"...
+# These count as "synth" only when a track number follows, so ordinary words keep their meaning.
+_SYNTH_WORDS = frozenset({"synth", "synthesizer", "track", "melody"})
+_SYNTH_MISHEARINGS = frozenset({"synths", "syn", "sin", "sent", "send", "cent", "since", "sense", "scent"})
+_TRACK_NUMBERS = {**_ORDINALS, "tree": 3}
+
+
 def find_target(tokens: Sequence[str], session: Mapping[str, Any]) -> Optional[dict]:
     """Return the Target named in tokens, or None when no target is named."""
     for lane, phrases in _LANE_PHRASES:
         if any(_contains(tokens, phrase) for phrase in phrases):
             return {"trackId": "drums", "lane": lane}
     for index, token in enumerate(tokens[:-1]):
-        if token in ("synth", "synthesizer", "track", "melody") and tokens[index + 1] in _ORDINALS:
-            return {"trackId": f"synth-{_ORDINALS[tokens[index + 1]]}"}
+        if token in _SYNTH_WORDS | _SYNTH_MISHEARINGS and tokens[index + 1] in _TRACK_NUMBERS:
+            return {"trackId": f"synth-{_TRACK_NUMBERS[tokens[index + 1]]}"}
+        if token in ("first", "second", "third") and tokens[index + 1] in _SYNTH_WORDS:  # "the second synth"
+            return {"trackId": f"synth-{_ORDINALS[token]}"}
     if "drums" in tokens or _contains(tokens, "drum track"):
         return {"trackId": "drums"}
     if "melody" in tokens or "synth" in tokens:
         current = session["selected"]["trackId"]
         return {"trackId": current if current in MELODIC_TRACKS else "synth-1"}
     return None
+
+
+_UNRESOLVED_TARGET = "didn't catch which track; say synth one, two or three, or kick, snare or hats"
+
+
+def names_unresolved_target(tokens: Sequence[str]) -> bool:
+    """Track-like words are present but name no track: refuse instead of using the selection.
+    A misheard "record sent two" must not record over synth one."""
+    return any(token in _TRACK_NUMBERS or token.isdigit() or token in _SYNTH_MISHEARINGS for token in tokens)
+
+
+def _target_or_selected(rest: Sequence[str], session: Mapping[str, Any]) -> Optional[dict]:
+    """The named target; the selection only when nothing track-like was said; None when unclear."""
+    target = find_target(rest, session)
+    if target is not None:
+        return target
+    return None if names_unresolved_target(rest) else _selected(session)
 
 
 def _needs_lane(target: Mapping[str, Any]) -> Optional[str]:
@@ -181,7 +207,9 @@ def interpret(text: str, session: Mapping[str, Any], during_recording: bool, tak
         return _command({"type": "play", "playing": False})
 
     if verb == "record" or (verb in ("start", "begin") and ("recording" in rest or "record" in rest)):
-        target = find_target(rest, session) or _selected(session)
+        target = _target_or_selected(rest, session)
+        if target is None:
+            return NotUnderstood(_UNRESOLVED_TARGET)
         problem = _needs_lane(target)
         return NotUnderstood(problem) if problem else _command({"type": "record", "target": target})
 
@@ -194,10 +222,15 @@ def interpret(text: str, session: Mapping[str, Any], during_recording: bool, tak
         return _tempo(tokens, session)
 
     if verb in ("clear", "erase", "delete", "wipe"):
-        return _command({"type": "clear", "target": find_target(rest, session) or _selected(session)})
+        target = _target_or_selected(rest, session)
+        if target is None:
+            return NotUnderstood(_UNRESOLVED_TARGET)  # never erase a guessed track
+        return _command({"type": "clear", "target": target})
 
     if verb in ("mute", "unmute", "silence"):
-        target = find_target(rest, session) or {"trackId": session["selected"]["trackId"]}
+        target = _target_or_selected(rest, session)
+        if target is None:
+            return NotUnderstood(_UNRESOLVED_TARGET)
         if "lane" in target and rest:
             return NotUnderstood("single drums cannot be muted; say mute drums")
         return _command({"type": "mute", "trackId": target["trackId"], "muted": verb != "unmute"})
