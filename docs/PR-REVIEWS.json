@@ -97,11 +97,6 @@
     "retargetBase": "engine-integration"
   },
   {
-    "pullRequest": 36,
-    "headSha": "5295c5f1629df110000ad1968527c2a4ac88f588",
-    "body": "WS1 isolated combined review with both engine capabilities: Node 186 passed / one optional skip; shared checks passed with Python jsonschema available. The profile and same-ID in-flight fence integration are useful; no human acceptance claimed. Follow-up before frozen test: when measure-noise filters sustained pitched input, collected frames may never reach the target, but microphone.ts times out with \"No microphone audio arrived\" although real audio is flowing. Report insufficient quiet/background speech rather than a missing device and test the actual worker/lifecycle path. The approved normal-volume foreground reference/guidance is also still missing; document remaining scope and implement it in a focused WS2 PR. WS1 will exercise mouse erasure with real AudioWorklet and surviving queued input. Do not duplicate engine work."
-  },
-  {
     "pullRequest": 32,
     "headSha": "c4d11c532407c5d4100ec88af17fbfb0dfa208c1",
     "retargetBase": "engine-integration",
@@ -109,12 +104,20 @@
   },
   {
     "pullRequest": 34,
-    "headSha": "666b6fddc70ee3c9685f2f26ecb9b99805794a7f",
-    "body": "WS1 re-review: the original invalid synth, two-synth/two-lane and leftover-position reproductions are now refused correctly; focused #34/#37 tests pass. One remaining shared-resolver defect blocks integration: `clear kick and synth two` clears kick, `record kick and synth three` records kick, and `erase snare and synth two bar one beat two` erases snare. In resolve_target, the lane-present filter keeps only targets containing lane, dropping explicitly numbered synth targets before the conflict check. Discard only the redundant generic drums target for phrases like \"the snare on the drums\"; retain explicit synth targets so mixed drum+synth requests refuse. Also cover a bare synth mention alongside a lane according to the documented unnumbered-synth behavior. Add mixed-family parser/Connection regressions for clear/record/erase across selections. This is the remaining concrete source fix; prior requested cases have passed and need no rework. WS1 can merge after this follow-up passes; no provider or contract decision is pending."
+    "headSha": "8c46ebb382fa12bc0b81ca8d41c3c3d9e61c486a",
+    "retargetBase": "engine-integration",
+    "body": "WS1 reviewed the mixed-family fix: the resolver now drops only redundant generic drums and refuses bare/numbered synth conflicts. All 28 reported refusal combinations across selections pass. Combined backend 350 passed/six optional skips and Python-WebSocket-coordinator-WASM integration passed. Reviewed/integrated #34 with #37; no physical speech or fun acceptance claimed."
   },
   {
     "pullRequest": 37,
     "headSha": "3b8e262e5edf57d15442613c65d17b0eb2926aa6",
-    "body": "WS1 re-review: the original invalid synth, two-synth/two-lane and leftover-position reproductions are now refused correctly; focused #34/#37 tests pass. One remaining shared-resolver defect blocks integration: `clear kick and synth two` clears kick, `record kick and synth three` records kick, and `erase snare and synth two bar one beat two` erases snare. In resolve_target, the lane-present filter keeps only targets containing lane, dropping explicitly numbered synth targets before the conflict check. Discard only the redundant generic drums target for phrases like \"the snare on the drums\"; retain explicit synth targets so mixed drum+synth requests refuse. Also cover a bare synth mention alongside a lane according to the documented unnumbered-synth behavior. Add mixed-family parser/Connection regressions for clear/record/erase across selections. This is the remaining concrete source fix; prior requested cases have passed and need no rework. WS1 can merge after this follow-up passes; no provider or contract decision is pending."
+    "retargetBase": "engine-integration",
+    "body": "WS1 reviewed #37 together with the corrected shared resolver from #34 at 8c46ebb. Original invalid/conflicting/leftover-position reproductions and mixed-family follow-ups now refuse. Positive actual Python-WebSocket-coordinator-WASM test confirms immediate click mute without musical revision change and erase defaulting to the active take after selection changes. Combined backend 350 passed/six optional skips. Integrated after #34, preserving its resolver correction. This tests typed transcripts, not acoustic STT or human acceptance."
+  },
+  {
+    "pullRequest": 36,
+    "headSha": "cc2300ea95a5f51710b5616d5b68578d1ce61cd6",
+    "retargetBase": "engine-integration",
+    "body": "WS1 reviewed the actual-worker insufficient-quiet result, timeout cleanup, quiet-but-pitched foreground exclusion and rolling normal-volume margin/advice. Combined Node 193 passed/one optional skip and shared checks pass; real service/WASM integration passes. Integrated #36 as the reviewed UI/input foundation. Its engine-dependent controls remain gated until WS1 engine integration; WS1 will enable the erasure seam and re-run the actual UI checks with matching rebuilt assets. Conversation suppression, every-synth real voice and usability/fun remain human gates, not established by requested browser noise suppression or these synthetic regressions."
   }
 ]
