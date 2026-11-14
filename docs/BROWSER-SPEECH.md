@@ -69,3 +69,36 @@ recording false, playback true and no input error are required. It passed locall
 with expected/actual steps [23,27,31,39], four committed hits and continued playback.
 Steps are calculated from actual clock origin, so the numeric cells can vary with
 browser activation time. No physical or real-STT acceptance is implied.
+
+## Real-model synthetic first drum slice
+
+`tests/browser/local-stt-loop.js` uses the real PR #21 FastAPI service on localhost:8767,
+with `GROOVE_STT=faster-whisper`, base.en CPU/int8 and four threads. Run it in an isolated
+checkout/environment of that provider PR; do not switch the normal service to unreviewed
+code. The reviewed head b6b2d09 needs an extra SciPy install because its requirements omit
+resampling support; that remains a merge blocker, not an accepted setup workaround.
+
+For a reproducible synthetic fixture, generate these ignored WAVs from the browser repo:
+
+```sh
+espeak-ng -v en-us -s 140 -w apps/web/public/engine/synthetic-record-kick.wav 'Record kick.'
+espeak-ng -v en-us -s 140 -w apps/web/public/engine/synthetic-groove-stop.wav 'Groove, stop.'
+```
+
+With Vite running, open the app in playwright-cli, click Enable audio once for activation,
+then run local-stt-loop.js. It uses an isolated engine and explicitly connects to port 8767.
+The test decodes/resamples the generated speech on the browser context, streams it through
+actual capture/PCM workers and WebSocket at 44.1 kHz, and invokes real faster-whisper. No
+transcripts, spans, coverage or musical commands are scripted in this test. Synthetic
+Record kick must produce next-beat recording of the kick lane; three generated hits must
+commit at expected composition positions; recognized Groove stop must emit exclusion,
+stop-recording and covering watermark in order. The test waits for audio-thread transport
+confirmation, and checks exclusion against audible speech rather than espeak's appended
+sentence silence. It requires recording false, playback true and no pipeline error.
+
+Observed pass: base.en recognized both commands, three hits at expected/actual steps
+[30,34,38], recording stopped and playback continued. Positions depend on clock origin.
+This is real browser/model integration with synthetic speech and generated kicks, not a
+physical microphone, human voice, p95 command-latency measurement, or full hands-free
+acceptance. It does not resolve delayed-result/new-take semantics in #15. Stop the isolated
+provider service and close the browser after running; do not commit generated audio/models.
