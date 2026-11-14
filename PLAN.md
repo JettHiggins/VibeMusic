@@ -21,13 +21,9 @@ Use SLOOP's actual browser WASM DSP and sequencer. The browser groovebox, musica
 - Speech recognition: local faster-whisper (configurable small-model baseline), selected by Jett. Language-model provider: OpenRouter, free models only, selected by Jett on 2026-11-14. Keep credentials backend-local, never in Git or the browser. Local STT and optional OpenRouter Deep Agents are integrated; live model quality and full-product acceptance remain unfinished. Familiar commands retain the deterministic parser path.
 - Current UI direction: dark monochrome DAW workspace, persistent transport/track/editor/inspector controls, drum step sequencer, and an editable synth piano roll. Replace the tab-based layout. Timing calibration includes preparation, practice clicks, progress, cancellation, and a recording-offset adjustment.
 
-## Current priority: playtest repair milestone
+## Current priority: musical control and hands-free completion
 
-The latest real-device session found an infinite apparent count-in when Record precedes Play, difficult drum timing/individual erasure, noisy-room melody failure progressing to no notes on synth 3, and unwanted demo-song startup. [docs/PLAYTEST-REPAIR.md](docs/PLAYTEST-REPAIR.md) is the approved detailed repair plan; docs/STATUS.md is the current assignment ledger. The three copyable goals are in docs/WORKSTREAM-1.md, docs/WORKSTREAM-2.md and docs/WORKSTREAM-3.md.
-
-Defaults selected by Jett: empty stopped project on fresh launch (explicit load only); metronome during playback AND recording with mute; mouse AND precise voice erasure; aggressive noisy-room cleanup, accepting some artifacts. WS1 owns count-in/audio deadlines/metronome/erase contracts and engine/empty startup/integration. WS2 owns processing-profile-aware input, calibration, editing and feedback. WS3 owns noisy-room classification/coverage/target continuity and deterministic commands. Preserve/defer sound-search feature branches until the repair gate; no new feature expansion. Human microphone/fun acceptance on a frozen commit is required. The full milestones below remain the product roadmap, not claims of completion.
-
-The reviewed repair build is frozen at tag `playtest-repair-1`; see [docs/FROZEN-PLAYTEST.md](docs/FROZEN-PLAYTEST.md). WS1 pauses for Jett's real microphone/fun test. Software checks passed; human repair acceptance and the full roadmap below remain open.
+Jett tested `playtest-repair-1` and reported that the creation process went much better. New requests: optional key/scale snapping, immediate preset changes, complete hands-free sound/timeline/calibration controls, reliable end-of-sentence handling and stop-recording. See [docs/HANDSFREE-COMPLETION.md](docs/HANDSFREE-COMPLETION.md) and docs/STATUS.md for scope, owners and acceptance. This supersedes the freeze and research deferral; retain the fixed tag and the full roadmap below. The qualitative test report is not a blanket pass of every prior gate.
 
 ## Milestones and acceptance
 
@@ -51,7 +47,7 @@ Accept the complete slice: say record kick, beatbox, hear quantized loop, say Gr
 
 ### 3. Melody and correction
 
-Use worker-based YIN pitch tracking with confidence filtering, hysteresis, and minimum duration. Derive MIDI pitch, velocity, duration; quantize starts/ends with minimum one step. Handle silence, vibrato, repeated notes, octave errors, and loop-crossing notes. Apply atomic edits at boundaries. Benchmark Basic Pitch as optional phrase refinement; do not place inference in audio callbacks. No forced musical scale.
+Use worker-based YIN pitch tracking with confidence filtering, hysteresis, and minimum duration. Derive MIDI pitch, velocity, duration; quantize starts/ends with minimum one step. Handle silence, vibrato, repeated notes, octave errors, and loop-crossing notes. Apply atomic edits at boundaries. Benchmark Basic Pitch as optional phrase refinement; do not place inference in audio callbacks. Pitch snapping is optional: Off preserves chromatic capture; a chosen root and Major/Minor scale constrains new sung notes, with an explicit undoable existing-track action.
 
 Accept singing a melody and replacing one phrase while preserving untouched notes.
 

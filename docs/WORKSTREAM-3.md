@@ -1,3 +1,13 @@
+# Workstream 3 — musical control and hands-free completion
+
+Current scope: HANDSFREE-COMPLETION.md; assignments/dependencies: STATUS.md and issue #9. This supersedes the prior freeze instructions.
+
+```text
+/goal Own WS3 for musical control and hands-free completion. Read AGENTS.md, PLAN.md, docs/STATUS.md, docs/HANDSFREE-COMPLETION.md and issue #9. Preserve work. First reproduce/fix premature utterance finalization and voice stop-recording through actual speech, with pause/long-sentence/command-then-performance regressions. Then add bounded timeline/key/calibration intents/tools using published contracts and complete/adapt real voice research #29 with WS1 #31 integration. No partial-fragment musical edits or model-controlled sample timing. Small PRs and honest unavailable states; real hands-free acceptance required.
+```
+
+## Historical handoff — superseded
+
 # Workstream 3 — playtest repair
 
 **Freeze checkpoint:** `playtest-repair-1` is ready for the physical test. Your repair PRs are integrated. Preserve work, follow FROZEN-PLAYTEST.md/STATUS.md and help record results; do not add features or change code during the frozen session. The goal below remains the repair scope if human testing reveals failures.

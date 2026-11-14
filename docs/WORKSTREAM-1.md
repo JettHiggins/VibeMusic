@@ -1,3 +1,13 @@
+# Workstream 1 — musical control and hands-free completion
+
+Current scope: HANDSFREE-COMPLETION.md; assignments/dependencies: STATUS.md and issue #9. This supersedes the prior freeze instructions.
+
+```text
+/goal Own WS1 for musical control and hands-free completion. Read AGENTS.md, PLAN.md, docs/STATUS.md and docs/HANDSFREE-COMPLETION.md. Publish new shared contracts/examples before consumers; implement authoritative optional key snapping and immediate smoothed patches, review/adopt #29/#31, coordinate small PRs and verify the complete microphone-to-command/research/browser path. Preserve the previous frozen tag and all work. Publish the next test build and require real whole-sentence/hands-free/fun evidence before completion.
+```
+
+## Historical handoff — superseded
+
 # Workstream 1 — playtest repair
 
 Owner: Jett — this computer. Ownership: Engine, shared contracts, root build/CI, startup and integration.

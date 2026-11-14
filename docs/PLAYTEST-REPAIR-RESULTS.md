@@ -1,6 +1,6 @@
 # Frozen repair playtest results
 
-**Not run. Frozen build: `playtest-repair-1`.** Record its exact SHA with `git rev-parse HEAD` and follow FROZEN-PLAYTEST.md. Do not test a moving branch and describe the result as acceptance.
+**Human session reported complete; qualitative creation process improved. Detailed per-check results remain unreported. Frozen build: `playtest-repair-1`.** Record its exact SHA with `git rev-parse HEAD` and follow FROZEN-PLAYTEST.md. Do not test a moving branch and describe the result as acceptance.
 
 Use headphones and the same microphone/gain for quiet and conversational-noise trials. Startup audio activation/microphone permission is allowed; check voice and mouse correction separately. Keep raw recordings off. Copy the app's microphone report for numeric evidence.
 
@@ -44,3 +44,7 @@ For a capture failure, note what the meter, pitch reading, provisional notes, sp
 - Repair milestone accepted by Jett: **No — test pending**
 
 Post the filled result as a comment on coordination issue #9 or a linked test issue, identifying the frozen commit. WS1 records failures and assigns repairs before another freeze. This gate does not replace the larger all-device, hands-free sound-design and blind-listening gates in PLAN.md.
+
+## Jett's follow-up report
+
+Creation went much better. New requests/failures: optional key snapping, delayed preset selection, incomplete hands-free sound/timeline/calibration controls, premature sentence processing and stop-recording failure. Exact command wording/transcripts requested; do not fill unreported checklist cells as passes. Next scope: HANDSFREE-COMPLETION.md.

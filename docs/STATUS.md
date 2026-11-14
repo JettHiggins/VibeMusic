@@ -1,31 +1,25 @@
-# Current team status — frozen repair test
+# Current team status — musical control and hands-free completion
 
-**Ready for Jett's human test: tag `playtest-repair-1`.** Exact commit is in coordination issue #9 and the test handoff. Read [FROZEN-PLAYTEST.md](FROZEN-PLAYTEST.md) for checkout/startup/test steps. WS1 pauses the goal for this test at Jett's request. Human acceptance is **pending**, not passed.
+Read AGENTS.md, PLAN.md, HANDSFREE-COMPLETION.md, your WORKSTREAM file and coordination issue #9 at startup/capability/PR checkpoints. Preserve work and secrets. Laptop sessions must read GitHub themselves; notifications do not update their conversations.
 
-## Shared build and scope
+## Human result and new priority
 
-`engine-integration` now combines reviewed count-in/metronome/empty-startup #38, targeted engine erasure #39, microphone/UI #36, deterministic target/metronome/erase #34/#37, noisy-room speech coverage/spans #33/#35 and timing diagnostics #32. Leo reviewed the exact WS1 engine heads d856621 and ab9342b in #38/#39 with no blocker. WS1 resolved their combined engine merge, enabled the reviewed erasure UI seam and rebuilt matching WASM. `main` remains documentation-only; it is not the app integration branch.
+Jett finished the `playtest-repair-1` session: creation went much better. Remaining reported issues: neighboring sung pitches vary; presets change late; hands-free sound requests, timeline edits and calibration/tuning fail; language processing sometimes starts before the sentence ends; voice stop-recording did not work. Exact phrases/transcripts and pitch-snap scope have been requested. Do not mark all prior physical checks passed from this qualitative report.
 
-The build starts empty/stopped. Record starts after four beats from stopped or on the next beat while playing. Playback/recording metronome defaults on and can be muted. Mouse/voice targeted erasure removes one lane hit or whole occupied melody note, fences old input without a global epoch reset, preserves unrelated captured music and retains a surviving queued batch's command ID. No stale erasure replay. Invalid/conflicting targets/positions refuse. Noisy room requests browser suppression, calibration excludes confident foreground pitch, and input feedback distinguishes insufficient quiet, foreground margin, pitch and speech verification. These features still require physical testing.
+The freeze is over for development. Keep tag playtest-repair-1 immutable. New scope/acceptance is HANDSFREE-COMPLETION.md. Research #29/#31 is no longer deferred; review/adopt it without dropping the latest repair fixes. No new API key setup is required; existing OpenRouter/free-model and local faster-whisper decisions persist, with credentials backend-local.
 
-## Evidence
+## Assignments / dependencies
 
-Final integrated source: **193 Node tests passed/one optional skip; 356 backend tests passed/six optional skips**. Shared TypeScript/Python schema checks, frontend build and provider-disabled local Python-WebSocket-coordinator-WASM integration passed. Matching WASM rebuilt from pinned upstream bac9c05ea7627449405aa10e48da21d75b6c8c56, including `vs_erase_note`.
+| Stream | Next task | Dependency |
+| --- | --- | --- |
+| WS1 / Jett | Publish key-snap / immediate-patch / browser-action contracts and fixtures, implement engine behavior, review #29/#31 and integrate/test the full hands-free path. | Independent now; consumers use only published contracts. |
+| WS2 / Leo | Reproduce immediate-preset and sung-pitch UX; key controls/preview + explicit existing-track action; browser calibration/profile action executor and progress/cancel; then mic test. | Wait for new key/browser-action publication before wire use. Existing UI/input reproduction can start now. |
+| WS3 / Lenny | Reproduce/fix premature endpointing and voice stop first; then bounded timeline/key/calibration intent/tools, real sound research rollout in #29 and cooperation with #31. | Speech/stop reproduction is independent now. Key/browser-action commands await publication; research contracts already exist. |
 
-Actual Chromium UI/AudioWorklet/WASM passed empty startup, fresh/stopped Record with displayed audio-frame deadlines, metronome button mute, drum mouse erase and piano-roll Delete, preserving other music/playback/capture. Real recorder-to-WASM tests preserve the survivor's command ID and reject delayed matching input. Voice-operation integration uses typed transcripts and verifies metronome revision independence and active-take targeting after selection changes. Both #38/#39 CI runs passed web/contracts, firmware parity and Windows/macOS integration.
+Concrete source findings: UI PatchEditQueue and engine currently enforce next-loop patches, explaining preset delay. Repair freeze intentionally excluded voice research #29/#31; that gap now needs completion. Parser already recognizes Groove stop/stop recording, but acoustic failure remains open. Current segmenter has a four-second cap and a short hangover: investigate rather than treating fragments as final intentions.
 
-Synthetic signals, seeded events, typed transcripts and CI do **not** establish acoustic latency, background conversation rejection, real singing on every synth or fun. The firmware reset-counter defect was reproduced after play/stop; do not claim the exact original first-press laptop cause fully established.
+## Baseline / evidence
 
-## Assignments during the freeze
+Use origin/engine-integration, not documentation-only main or old unmerged feature heads. Frozen test source f3eb3d9 included reviewed #38/#39 engine, #36 input/UI, #34/#37 commands, #33/#35 speech repairs and #32 timing diagnostics. Final checks at that freeze: Node 193 passed/one optional skip; backend 356 passed/six optional skips; schemas/build/service-WASM and actual synthetic-signal Chromium UI flows passed. CI covered Linux parity/web and Windows/macOS integration. This is historical foundation evidence, not proof of the new requests or full hands-free acceptance.
 
-| Stream | Next action |
-| --- | --- |
-| WS1 / Jett | Hand off the fixed tag/commit, pause the goal and collect the real microphone/fun result before further repair edits or completion. |
-| WS2 / Leo | Preserve existing work; help run/report physical input, timing, profile and individual-erasure checks on the frozen build. No code changes during the session. |
-| WS3 / Lenny | Preserve existing work; help run/report local speech, target transitions, coverage and voice correction on the frozen build. #34/#37 are integrated, not waiting on source changes. |
-
-Use PLAYTEST-REPAIR-RESULTS.md. Test normal-volume synth orders 1→2→3 and 3→1→2, quiet then with conversation, individual committed/provisional corrections, stale/ambiguous commands and ten minutes building a groove without code changes. Copy numeric diagnostics and exact commit/OS/browser/profile/calibration; raw microphone audio stays unrecorded by default. If a take fails, record pitch/provisional/verification/target/commit feedback rather than only increasing gain. Jett decides timing, usability and fun acceptance. Resume WS1 with the results.
-
-## Preserved roadmap
-
-Keep research #29/#31 deferred and preserved. No new API setup is needed for repair commands; existing backend-local credentials stay private and unchanged. All-device acceptance, original module-load reproduction, blind listening and complete hands-free sound design remain larger unfinished gates in PLAN.md. Passing this repair test does not finish the entire project. Other sessions read issue #9/this ledger at their next checkpoint; GitHub mentions do not update agent conversations automatically.
+Small owner branches/PRs, merged by WS1. Shared changes require examples/tests before consumers; do not mutate engine timing from model callbacks. Keep raw mic audio/models/secrets out of Git. Publish a new frozen combined test only after software checks and then obtain real whole-sentence/hands-free/fun evidence. Preserve the complete roadmap in PLAN.md.
