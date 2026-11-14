@@ -1,5 +1,7 @@
 # Real-microphone test (each teammate, on their own laptop)
 
+Current priority: [PLAYTEST-REPAIR.md](PLAYTEST-REPAIR.md) and [STATUS.md](STATUS.md). New repair behavior is planned, not yet implemented; historical demo/count-in/editing/noise guidance below may be superseded. Use a frozen integrated commit for human acceptance.
+
 Use Chrome with wired headphones. This is a manual-input/device check, not the final hands-free speech acceptance. Microphone audio is analysed live and is not saved or uploaded by this workflow; the copied report contains measurements only. Use a normal browser with microphone permission if an embedded browser does not expose the device.
 
 1. Read docs/STATUS.md for the tested branch/review state, preserve local work, and use the current reviewed `engine-integration` baseline. Record `git rev-parse --short HEAD`. Build/stage the WASM assets as described in SETUP.md if missing; restart `npm run dev` after pulling engine changes, then open the URL printed by Vite (usually http://localhost:5173). Do not overwrite another person's branch. The recording-consumer capability from PR #20 is already integrated; test the current integrated controls.

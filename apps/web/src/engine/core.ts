@@ -112,6 +112,7 @@ export class EngineCore {
     const result=commitPerformance(state,op,this.recording,this.clockId,this.frame);
     result.revision++;firmwareSnapshot(result,this.metadata);return result;
    }
+   default:throw new Error('Operation not supported by this engine build');
   }
   if(op.type!=='stop-recording')state.revision++;firmwareSnapshot(state,this.metadata);return state;
  }

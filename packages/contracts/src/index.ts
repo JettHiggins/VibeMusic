@@ -16,6 +16,8 @@ export const PerformanceEvent = z.discriminatedUnion('kind', [
 ]);
 export const SpeechSpan = z.strictObject({startFrame: frame, endFrame: frame});
 const Operation = z.discriminatedUnion('type', [
+ z.strictObject({ type: z.literal('metronome'), enabled: z.boolean() }),
+ z.strictObject({ type: z.literal('erase-event'), target: Target, step: z.number().int().min(0).max(63) }),
  z.strictObject({ type: z.literal('select'), target: Target }),
  z.strictObject({ type: z.literal('record'), target: Target }),
  z.strictObject({ type: z.literal('stop-recording') }),
@@ -32,7 +34,8 @@ const Operation = z.discriminatedUnion('type', [
 ]);
 export const SessionCommand = z.strictObject({ id, expectedRevision: frame, boundary: z.enum(['immediate', 'next-beat', 'next-loop']), operation: Operation });
 export const PatchCandidate = z.strictObject({ id, patch: Patch, provenance: id, previewUrl: z.string(), score: z.number().finite() });
-export const Transport = z.strictObject({ clockId: id, sampleRate: z.number().int().positive(), currentFrame: frame, loopStartFrame: frame, playing: z.boolean(), recording: z.boolean(), pendingCommandIds: z.array(id), recordingState: z.enum(['idle','armed','recording']).optional(), recordingStartFrame: frame.optional(), recordingTarget: Target.optional(), armedTarget: Target.optional(), recordingEpoch: frame.optional(), captureStartFrame: frame.optional(), recordingLoopStartFrame: z.number().finite().optional() });
+export const CaptureErasure = z.strictObject({commandId:id,recordingEpoch:frame,throughFrame:frame,target:Target,step:z.number().int().min(0).max(63)});
+export const Transport = z.strictObject({ metronomeEnabled:z.boolean().optional(),armedStartFrame:frame.optional(),countInBeatsRemaining:z.number().int().min(0).max(4).optional(),captureErasure:CaptureErasure.optional(),clockId: id, sampleRate: z.number().int().positive(), currentFrame: frame, loopStartFrame: frame, playing: z.boolean(), recording: z.boolean(), pendingCommandIds: z.array(id), recordingState: z.enum(['idle','armed','recording']).optional(), recordingStartFrame: frame.optional(), recordingTarget: Target.optional(), armedTarget: Target.optional(), recordingEpoch: frame.optional(), captureStartFrame: frame.optional(), recordingLoopStartFrame: z.number().finite().optional() });
 // Speech transport (Workstream 3 proposal): microphone audio for server-side recognition.
 // startFrame/endFrame are AudioContext frames on the latency-corrected performance timeline,
 // half-open [startFrame, endFrame). data is base64 little-endian 16-bit mono PCM at sampleRate
@@ -70,6 +73,7 @@ export type SessionState = z.infer<typeof SessionState>;
 export type SessionCommand = z.infer<typeof SessionCommand>;
 export type PerformanceEvent = z.infer<typeof PerformanceEvent>;
 export type Transport = z.infer<typeof Transport>;
+export type CaptureErasure = z.infer<typeof CaptureErasure>;
 export type ClientMessage = z.infer<typeof ClientMessage>;
 export type ServerMessage = z.infer<typeof ServerMessage>;
 export type PatchCandidate = z.infer<typeof PatchCandidate>;

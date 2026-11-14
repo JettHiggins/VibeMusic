@@ -1,5 +1,7 @@
 # Integration handoff
 
+Current priority: [PLAYTEST-REPAIR.md](PLAYTEST-REPAIR.md) and [STATUS.md](STATUS.md). New repair behavior is planned, not yet implemented; historical demo/count-in/editing/noise guidance below may be superseded. Use a frozen integrated commit for human acceptance.
+
 This document is chronological history. Read STATUS.md for current assignments, approved product changes and verified completion; older sections below contain superseded blockers. In particular candidate UI, recording/input integration and original CLAP music inference are delivered, while the recording-usability redesign is approved but not yet implemented.
 
 ## Verified foundation
