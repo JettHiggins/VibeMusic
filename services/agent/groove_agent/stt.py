@@ -5,7 +5,7 @@ Hugging Face cache, never into the repository. One loaded model is shared by eve
 each connection's ThreadedSpeechWorker calls `transcribe` off the event loop, and a lock keeps
 one decode at a time so concurrent connections cannot oversubscribe the CPU.
 
-Decoding favours latency for short commands: English only, greedy (beam 1), no timestamps, no
+Decoding favours latency for short commands: English only, greedy (beam 1), no
 conditioning on earlier text. A short initial prompt lists the command vocabulary so "Groove"
 and lane names are spelled consistently. Whisper can invent text for non-speech, so the
 interpreter, not this module, decides whether a transcript is a command.
@@ -18,6 +18,8 @@ from importlib.metadata import version
 from math import gcd
 
 import numpy as np
+
+from .speech_pipeline import Transcript, Word
 
 WHISPER_RATE = 16000
 DEFAULT_MODEL = "base.en"  # measured baseline; see docs in services/agent/README.md
@@ -50,15 +52,32 @@ class FasterWhisperTranscriber:
                      f"{threads} threads)")
 
     def transcribe(self, samples: np.ndarray, sample_rate: int) -> str:
+        return self.transcribe_timed(samples, sample_rate).text
+
+    def transcribe_timed(self, samples: np.ndarray, sample_rate: int) -> Transcript:
+        """Word alignment locates wake speech inside a segment that may start with singing."""
         audio = np.asarray(samples, dtype=np.float32)
         if audio.size == 0:
-            return ""
+            return Transcript("")
         audio = to_whisper_rate(audio, sample_rate)
         with self._lock:
             segments, _ = self._model.transcribe(
                 audio, language="en", beam_size=1, condition_on_previous_text=False, without_timestamps=True,
+                word_timestamps=True,
                 vad_filter=False, initial_prompt=COMMAND_PROMPT, temperature=0.0)
-            return " ".join(segment.text.strip() for segment in segments).strip()
+            # Energy segments are <=4 s, well within one Whisper window. With timestamps
+            # disabled the first decode covers the entire window. Word alignment rewinds
+            # faster-whisper's seek to the last word and may decode a phantom tail (e.g.
+            # "Groove, stop. Bye."). Do not decode that tail a second time. Longer external
+            # clips retain multi-window support; the streaming path never takes that branch.
+            if len(audio) <= 30 * WHISPER_RATE:
+                first = next(iter(segments), None)
+                segments = [] if first is None else [first]
+            else:
+                segments = list(segments)
+            return Transcript(" ".join(segment.text.strip() for segment in segments).strip(),
+                              tuple(Word(word.word, word.start, word.end)
+                                    for segment in segments for word in (segment.words or ())))
 
 
 def transcriber_from_env():

@@ -41,6 +41,19 @@ class Transcriber(Protocol):
 
 
 @dataclass(frozen=True)
+class Word:
+    text: str
+    start: float  # seconds relative to the supplied audio, before resampling
+    end: float
+
+
+@dataclass(frozen=True)
+class Transcript:
+    text: str
+    words: tuple[Word, ...] = ()
+
+
+@dataclass(frozen=True)
 class Segment:
     start_frame: int
     last_frame: int  # inclusive, like speech-verified throughFrame
@@ -140,9 +153,10 @@ class SpeechJob:
     stream_id: str
     clock_id: str
     segment: Segment
+    context_start_frame: Optional[int] = None  # actual first word; exclusion may include pre-roll
 
 
-Deliver = Callable[[SpeechJob, Optional[str], Optional[str]], None]  # (job, text, error)
+Deliver = Callable[[SpeechJob, Optional[str | Transcript], Optional[str]], None]  # (job, text, error)
 
 
 class SpeechWorker(Protocol):
@@ -179,7 +193,8 @@ class ThreadedSpeechWorker:
             if job is None:
                 return
             try:
-                text = self._transcriber.transcribe(job.segment.samples, job.segment.sample_rate)
+                transcribe = getattr(self._transcriber, "transcribe_timed", self._transcriber.transcribe)
+                text = transcribe(job.segment.samples, job.segment.sample_rate)
             except Exception as error:  # a provider failure must hold coverage, never fake it
                 self._deliver(job, None, f"{type(error).__name__}: {error}"[:300])
             else:
