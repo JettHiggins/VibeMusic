@@ -65,6 +65,13 @@ test('legato pitch changes split at the change; vibrato does not', () => {
  assert.ok(Math.abs(ms(notes[2].startFrame) - 1100) < 30);
 });
 
+test('wide vibrato (±0.6 semitone) held notes stay single notes', () => {
+ const held: Sung[] = [{ midi: 57, start: 0.2, end: 1.0, vibrato: 0.6 }, { midi: 64, start: 1.1, end: 1.9, vibrato: 0.6 }, { midi: 62, start: 2.0, end: 2.8, vibrato: 0.6 }];
+ const { notes } = analyse(sing(held, 3.1));
+ assert.deepEqual(notes.map(n => n.midi), [57, 64, 62]);
+ notes.forEach((n, i) => assert.ok(Math.abs(ms(n.endFrame) - held[i].end * 1000) < 40, `end ${i}`));
+});
+
 test('repeated notes on one pitch separated by an articulation dip stay distinct', () => {
  const { notes } = analyse(sing([{ midi: 65, start: 0.1, end: 0.4 }, { midi: 65, start: 0.42, end: 0.7 }, { midi: 65, start: 0.72, end: 1.0 }], 1.2));
  assert.equal(notes.length, 3, `notes ${JSON.stringify(notes.map(n => [ms(n.startFrame), ms(n.endFrame)]))}`);

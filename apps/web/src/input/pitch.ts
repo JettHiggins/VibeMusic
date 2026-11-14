@@ -196,10 +196,11 @@ export class NoteSegmenter {
    this.deviating = [];
    return;
   }
-  // Hysteresis: a new pitch must persist ≥ 4 hops (~23 ms) before it ends the note; vibrato stays.
+  // Hysteresis: a new pitch must persist ≥ 12 hops (~70 ms) before it ends the note. A sung step
+  // holds; a wide vibrato excursion (±0.6 semitone at 5–6 Hz) stays beyond 0.9 for well under that.
   if (Math.abs(m - centre) > 0.9) {
    this.deviating.push({ ...f, f0: 440 * 2 ** ((m - 69) / 12) });
-   if (this.deviating.length >= 4 && this.deviating.every(x => Math.abs(hzToMidi(x.f0!) - hzToMidi(this.deviating[0].f0!)) <= 1)) {
+   if (this.deviating.length >= 12 && this.deviating.every(x => Math.abs(hzToMidi(x.f0!) - hzToMidi(this.deviating[0].f0!)) <= 1)) {
     const d = this.deviating; this.deviating = [];
     this.close(d[0].frame - half, notes);
     this.open = { start: d[0].frame - half, pitches: d.map(x => hzToMidi(x.f0!)), clarity: d.map(x => x.clarity), peakDb: Math.max(...d.map(x => x.rmsDb)), minSincePeak: Infinity, minFrame: 0, lastVoiced: f.frame };
