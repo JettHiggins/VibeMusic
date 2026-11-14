@@ -1,0 +1,99 @@
+[
+  {
+    "type": "command",
+    "command": {
+      "expectedRevision": 0,
+      "boundary": "immediate",
+      "id": "metro-off",
+      "operation": {
+        "type": "metronome",
+        "enabled": false
+      }
+    }
+  },
+  {
+    "type": "command",
+    "command": {
+      "expectedRevision": 0,
+      "boundary": "immediate",
+      "id": "erase-kick",
+      "operation": {
+        "type": "erase-event",
+        "target": {
+          "trackId": "drums",
+          "lane": "kick"
+        },
+        "step": 24
+      }
+    }
+  },
+  {
+    "type": "command",
+    "command": {
+      "expectedRevision": 0,
+      "boundary": "immediate",
+      "id": "erase-note",
+      "operation": {
+        "type": "erase-event",
+        "target": {
+          "trackId": "synth-3"
+        },
+        "step": 7
+      }
+    }
+  },
+  {
+    "type": "transport",
+    "transport": {
+      "clockId": "repair-clock",
+      "sampleRate": 44100,
+      "currentFrame": 44100,
+      "loopStartFrame": 0,
+      "playing": true,
+      "recording": false,
+      "recordingState": "armed",
+      "armedTarget": {
+        "trackId": "drums",
+        "lane": "kick"
+      },
+      "pendingCommandIds": [
+        "record"
+      ],
+      "metronomeEnabled": true,
+      "armedStartFrame": 88200,
+      "countInBeatsRemaining": 2
+    }
+  },
+  {
+    "type": "transport",
+    "transport": {
+      "clockId": "repair-clock",
+      "sampleRate": 44100,
+      "currentFrame": 110250,
+      "loopStartFrame": 0,
+      "playing": true,
+      "recording": true,
+      "recordingState": "recording",
+      "recordingStartFrame": 88200,
+      "recordingTarget": {
+        "trackId": "drums",
+        "lane": "kick"
+      },
+      "recordingEpoch": 1,
+      "captureStartFrame": 88200,
+      "recordingLoopStartFrame": 0,
+      "pendingCommandIds": [],
+      "metronomeEnabled": true,
+      "captureErasure": {
+        "commandId": "erase-kick",
+        "recordingEpoch": 1,
+        "throughFrame": 110250,
+        "target": {
+          "trackId": "drums",
+          "lane": "kick"
+        },
+        "step": 24
+      }
+    }
+  }
+]

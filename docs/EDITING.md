@@ -1,5 +1,7 @@
 # Engine editing and session restore for Workstream 2
 
+Current priority: [PLAYTEST-REPAIR.md](PLAYTEST-REPAIR.md) and [STATUS.md](STATUS.md). New repair behavior is planned, not yet implemented; historical demo/count-in/editing/noise guidance below may be superseded. Use a frozen integrated commit for human acceptance.
+
 These are additive v1 commands handled by the real audio-thread engine. Use the current getSession().revision, a unique command ID, and the normal applied/rejected subscription feedback. Do not update the UI's authoritative session from a queued submission receipt.
 
 ## Pattern replacement and volume

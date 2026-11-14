@@ -40,3 +40,8 @@ for base, validator, invalids in [
         assert not validator.is_valid({**base, **fields}), fields
 assert not client.is_valid(context) and not client.is_valid(preview) and not server.is_valid(ack)
 print('Voice research malformed/wrong-direction examples are rejected by Python schemas.')
+
+for example in json.loads((root / 'fixtures/PlaytestRepair.json').read_text()):
+    name = 'ClientMessage' if example['type'] == 'transport' else 'ServerMessage'
+    Draft202012Validator(json.loads((root / f'{name}.schema.json').read_text())).validate(example)
+print('Playtest repair examples pass Python message validation.')
