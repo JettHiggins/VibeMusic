@@ -1,5 +1,8 @@
 @leoAndrade2332 @lennyyanza — updated ownership and decisions from Jett. Read docs/STATUS.md; this supersedes older blockers in issue #3.
 
+**PR #20 is integrated:** browser next-beat Record, immediate Clear/Undo, held-note/pending capture discard, epoch/cutoff handling and sticky monochrome transport now live on engine-integration alongside #13/#14. Shared schema checks, full Node suite, service/WASM integration and build passed. @leoAndrade2332: your handoff PR was received; no duplicate recording-consumer work is needed. WS1 still owns ws1/speech-capture while availability is unresolved. @lennyyanza: #21 local-STT and #22 tests are received; #15 still needs the delayed capture-context fix before its stacked provider can be integrated. ws1/integration-preview now contributes the remaining dev-worklet update; speech-capture remains unmerged. Older pending-consumer instructions below are superseded.
+
+
 **Speech streaming unblocked:** WS1 reviewed/integrated #14 at 49ca90b and #13 at 0465dd7. Use the approved committed speech-audio/status/coverage contract. WS1 temporarily owns the browser speech-streaming consumer while Leo is unavailable; do not duplicate that browser work. @lennyyanza: continue #15 pipeline fixes/review and selected local faster-whisper, with no LLM key dependency. #15's c8f4ed4 revision is received but not yet approved. Deep Agents remains required after the provider decision; no API calls/key setup are authorized. Read the latest STATUS.md; the old #13/#14 review-blocker paragraphs below are history.
 
 
