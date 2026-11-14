@@ -95,3 +95,12 @@ Checks: `patch-edit` tests (controls and ranges from real metadata; three rapid 
 The melody branch is integrated with the existing replacement-batch protocol, latency calibration, explicit speech watermark routing and full-window RMS onset fix. The 0.4-second submission window now allows later verified notes/hits to replace its queued batch before the same boundary. Stop remains transport-only and does not invalidate a pending batch. The earlier stop-revision limitation above describes the pre-integration branch. The record panel uses armedTarget during count-in.
 
 Integrated validation: schema/type checks, complete Node suite, live service integration and build pass. The browser melody diagnostic committed eight exact notes and a one-note correction through the real workers/WASM by their following loops, preserving the other seven notes and playback, with analysis p95 around 6.2 ms. Synthetic singing only. Pattern and sound queues remain subscribed when switching workspace tabs so pending changes are not lost.
+
+## Follow-up after `1ed72fc` (branch `ui-input-fixes`)
+
+PR #5 was merged at `13f67ed`, before these recorder fixes. Ported onto the integrated recorder, which keeps both boundary-timed batching and `replacesCommandId` replacement:
+
+- A replaced batch that already applied on the audio thread (its ack crossing the MessagePort after the replacement was sent) is counted as committed, and only new events are retried.
+- When a new take starts, an in-flight batch the engine no longer lists in `pendingCommandIds` is dropped and reported instead of being chained onto.
+- Tests: deferred, out-of-order acknowledgments and a never-acknowledged batch. `npm test` 94 pass, 1 skipped. Browser, with a worklet rebuilt from `1ed72fc`: a 7-note sung take with vibrato and a late stop committed all 7 notes exactly, with nothing pending and no errors.
+- Restart `npm run dev` after pulling engine changes so `public/engine-runtime.js` is rebuilt. A stale worklet rejects new contract fields without acknowledging them.

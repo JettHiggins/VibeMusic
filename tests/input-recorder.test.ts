@@ -271,3 +271,57 @@ test('during a take, verified events are batched just before the loop boundary',
  recorder.handle(engine.transport({ recording: false, recordingState: 'idle' }));
  assert.equal(engine.sent.length, 2);
 });
+
+test('a replaced batch that the audio thread already applied is counted, not resubmitted (async acks)', () => {
+ // Like BrowserEngine: dispatch only posts to the audio thread and returns a submission receipt;
+ // authoritative acks and snapshots come back later, possibly after the recorder sent a replacement.
+ const engine = new FakeEngine();
+ engine.window = { ...engine.window, target: { trackId: 'synth-1' } };
+ const inbox: SessionCommand[] = [], outbox: ClientMessage[] = [];
+ engine.listeners.push(m => outbox.push(m));
+ let n = 0;
+ const recorder = new PerformanceRecorder({ dispatch: c => { inbox.push(c); return { type: 'ack', commandId: c.id, status: 'queued', revision: 0 }; }, newId: () => `a${++n}` }, 'manual', { batchLeadSeconds: Infinity });
+ const audioThread = () => inbox.splice(0).forEach(c => engine.dispatch(c));
+ const deliver = () => outbox.splice(0).forEach(m => recorder.handle(m));
+ recorder.handle({ type: 'session', session: engine.session });
+ const advance = (frames: number) => { engine.frame += frames; recorder.handle(engine.transport()); };
+ advance(10 * STEP);
+ recorder.addNotes([note(0, 4, 60)], 0, CLOCK, engine.frame);
+ audioThread(); deliver(); // A queued
+ engine.boundary(); // A applied; its ack and snapshot are still in transit
+ advance(10 * STEP);
+ recorder.addNotes([note(8, 12, 62)], 0, CLOCK, engine.frame); // replacement B sent before A's ack arrives
+ audioThread(); deliver(); // applied(A), session, rejected(B: no longer queued)
+ for (let i = 0; i < 3; i++) { audioThread(); engine.boundary(); deliver(); }
+ assert.deepEqual(engine.session.tracks[0].notes.map(x => x.midi).sort(), [60, 62]);
+ assert.equal(recorder.status().lastError, null);
+ assert.equal(recorder.status().inFlight, null);
+ assert.equal(recorder.status().provisional.length, 0);
+ assert.equal(recorder.status().committed, 2, 'A counted once, B resubmitted without A');
+ const resent = engine.sent.filter(c => c.operation.type === 'commit-performance').at(-1)!.operation;
+ assert.ok(resent.type === 'commit-performance' && resent.events.every(e => e.kind === 'note' && e.midi === 62), 'already-applied events are not resubmitted');
+});
+
+test('a new take does not chain onto an unacknowledged batch from the previous take', () => {
+ const engine = new FakeEngine();
+ let n = 0;
+ const recorder = new PerformanceRecorder({ dispatch: c => ({ type: 'ack', commandId: c.id, status: 'queued', revision: 0 }), newId: () => `s${++n}` }, 'manual', { batchLeadSeconds: Infinity }); // engine never answers
+ recorder.handle({ type: 'session', session: engine.session });
+ engine.frame += 10 * STEP; recorder.handle(engine.transport());
+ recorder.addOnsets([{ frame: Math.round(START + 2 * STEP), velocity: 0.8, confidence: 0.9, levelDb: -12 }], 0, CLOCK, engine.frame);
+ assert.ok(recorder.status().inFlight);
+ // Next take: new window start, nothing pending in the engine.
+ const next = START + 128 * STEP;
+ engine.frame = next + 4 * STEP;
+ recorder.handle(engine.transport({ recordingStartFrame: next, pendingCommandIds: [] }));
+ assert.equal(recorder.status().inFlight, null);
+ assert.equal(recorder.status().provisional.length, 0);
+ assert.match(recorder.status().lastError ?? '', /not acknowledged/);
+ const sent: SessionCommand[] = [];
+ const r2 = new PerformanceRecorder({ dispatch: c => { sent.push(c); return { type: 'ack', commandId: c.id, status: 'queued', revision: 0 }; }, newId: () => `t${++n}` }, 'manual', { batchLeadSeconds: Infinity });
+ r2.handle({ type: 'session', session: engine.session });
+ r2.handle(engine.transport({ recordingStartFrame: next, pendingCommandIds: [] }));
+ r2.addOnsets([{ frame: Math.round(next + 2 * STEP), velocity: 0.8, confidence: 0.9, levelDb: -12 }], 0, CLOCK, engine.frame);
+ const op = sent[0].operation;
+ assert.ok(op.type === 'commit-performance' && !op.replacesCommandId);
+});
