@@ -99,3 +99,23 @@ Integrated validation: schema/type checks, complete Node suite, live service int
 ## Asynchronous recording acknowledgments
 
 Integrated f1e0434: a replaced batch that already applied is counted once and excluded from retries. Starting a new take drops and reports an unacknowledged old batch that the engine no longer lists as pending. Regression tests defer audio-thread acknowledgments across replacement and take changes. The integration branch retains its optional boundary submission window plus replacement support.
+
+## Real-microphone testing support (branch `ws2-mic-testing`)
+
+Defects reproduced on a real Windows laptop or against real WASM, and fixed with regression tests:
+
+| Defect | Evidence | Fix | Test |
+| --- | --- | --- | --- |
+| Latency calibration failed on real hardware (1/8, then 3/8 clicks matched) | The first clicks after silence reached the mic 15–20 dB quieter | `clickPlan`: 2 unscored lead-in clicks plus 10 counted clicks | `input-mic-testing`: the old 8-click run with 3 warm-up misses fails; the new plan recovers 120 ms latency |
+| Uncalibrated takes land late | Browser estimate 62 ms against ~120 ms measured | `calibrationStatus`; Record shows "(uncalibrated)" with a warning until silence is measured and timing calibrated (`noiseSource` is a new optional calibration field) | readiness cases, including calibrations saved before the field existed |
+| No feedback when input is too quiet or noisy | A tester's hits peaked at −46..−30 dBFS against a −39 dBFS floor; nothing was detected and nothing said why | `MicCheck` and `MicCheckPanel`: verdict (no signal, too quiet, ok, clipping), noisy-room warning, hit and note detections, and the processing settings the browser actually granted | verdict, window and detection cases |
+| Record dropped by a click during count-in | Real WASM: Record queued, then a mute, so Record was rejected as stale and recording stayed idle | `ui/command-client.ts`: UI commands use the engine's live revision. Queued absolute commands (record, tempo, clear, load-session) are re-issued when the revision moves, so they still make the same boundary. Undo is never re-issued. Plain-language status replaces raw ack strings | real WASM: the take starts at the first downbeat despite the click; two queued changes are both kept; undo is reported, not repeated |
+
+Also added: an input device picker (`input/devices.ts`); an opt-in **Copy test report** (`input/diagnostics.ts`, measurements only, no audio or device IDs or labels, with a clipboard timeout fallback); mic-check UI updates throttled to about 10 per second instead of about 43; and `docs/MIC-TESTING.md`, a 5-minute checklist for each teammate.
+
+Verified:
+- Node: full suite.
+- Built-in pane, through the real UI with the test signal: Record during count-in, a strip mute click, Record re-issued, and recording started at the same downbeat ("Record Kick: done").
+- Chrome with the **real microphone** on Windows: mic check showed Level OK at −10 dBFS peak, plus the noisy-room warning. The browser granted processing off at 48 kHz with **2 channels** (1 requested; the capture worklet downmixes). Record showed "(uncalibrated)". The report copied, with no device fields.
+
+Not done: a full calibrated take by a real performer (see MIC-TESTING.md). Speech capture is documented in `docs/SPEECH-CAPTURE.md` only; no audio transport is implemented pending an approved contract.

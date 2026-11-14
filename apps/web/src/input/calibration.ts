@@ -13,6 +13,8 @@ export interface InputCalibration {
   */
  latencyFrames: number;
  latencySource: 'default' | 'tap-along';
+ /** Whether noiseFloorDb was measured on this device (absent in calibrations saved before this field). */
+ noiseSource?: 'default' | 'measured';
  /** Spread (median absolute deviation) of the tap measurement, frames. */
  latencySpreadFrames: number | null;
  sampleRate: number;
@@ -64,4 +66,36 @@ export function estimateLatency(clickFrames: number[], onsetFrames: number[], op
 export function defaultCalibration(context: { sampleRate: number; baseLatency?: number; outputLatency?: number }, inputLatencySeconds = 0, deviceId: string | null = null): InputCalibration {
  const seconds = deviceId==='test-signal'?0:(context.baseLatency ?? 0) + (context.outputLatency ?? 0) + inputLatencySeconds;
  return { version: 1, noiseFloorDb: -60, peakDb: null, latencyFrames: Math.round(seconds * context.sampleRate), latencySource: 'default', latencySpreadFrames: null, sampleRate: context.sampleRate, deviceId };
+}
+
+/**
+ * Calibration click plan. Real hardware attenuates the first sounds after silence (speaker power
+ * saving, driver gain ramps): on a tested Windows laptop the first clicks of a run reached the
+ * microphone 15–20 dB quieter. Lead-in clicks are played but never matched.
+ */
+export interface ClickPlan { all: number[]; measured: number[] }
+export function clickPlan(startSeconds: number, options: { leadIn?: number; measured?: number; interval?: number } = {}): ClickPlan {
+ const leadIn = options.leadIn ?? 2, measured = options.measured ?? 10, interval = options.interval ?? 0.5;
+ const all = Array.from({ length: leadIn + measured }, (_, i) => startSeconds + i * interval);
+ return { all, measured: all.slice(leadIn) };
+}
+
+export type CalibrationStep = 'measure-silence' | 'calibrate-timing';
+export interface CalibrationStatus { ready: boolean; missing: CalibrationStep[]; advice: string }
+/**
+ * Whether a microphone is calibrated well enough for a take. The browser's latency estimate is a
+ * starting point only: on tested hardware it was 62 ms against a measured ~120 ms round trip,
+ * which places every hit about a 32nd note late at 120 BPM. Test signals bypass both issues.
+ */
+export function calibrationStatus(calibration: InputCalibration | null): CalibrationStatus {
+ if (!calibration) return { ready: false, missing: ['measure-silence', 'calibrate-timing'], advice: 'Enable the microphone first.' };
+ if (calibration.deviceId === 'test-signal') return { ready: true, missing: [], advice: 'Diagnostic test signal: no calibration needed.' };
+ const missing: CalibrationStep[] = [];
+ if (calibration.noiseSource !== 'measured') missing.push('measure-silence');
+ if (calibration.latencySource !== 'tap-along') missing.push('calibrate-timing');
+ const advice = !missing.length ? 'Calibrated.'
+  : missing.length === 2 ? 'Measure silence, then calibrate timing, before recording: uncalibrated takes land late.'
+  : missing[0] === 'measure-silence' ? 'Measure silence so quiet hits are not mistaken for background noise.'
+  : 'Calibrate timing before recording: the browser estimate is usually too short, so hits land late.';
+ return { ready: !missing.length, missing, advice };
 }

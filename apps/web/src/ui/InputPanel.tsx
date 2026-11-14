@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import type { SessionCommand, SessionState, Transport } from '@voicesynth/contracts';
 import type { VoiceInput, VoiceInputState } from '../input/voice-input.ts';
+import { listAudioInputs } from '../input/devices.ts';
+import { MicCheckPanel } from './MicCheckPanel.tsx';
 
 type Lane = 'kick' | 'snare' | 'closed-hat';
 type Target = SessionState['selected'];
@@ -46,12 +48,20 @@ export function InputPanel({ voice, session, transport, enabled, dispatch }: Pro
  for (const p of state.recorder.provisional) if (same(p.event.target, target)) for (let i = 0; i < p.duration; i++) cells[(p.step + i) % 64].pending = true;
  const micReady = state.microphone === 'on' || state.microphone === 'test-signal';
  const run = (task: () => Promise<void>) => { setBusy(true); task().catch(() => {}).finally(() => setBusy(false)); };
+ const [devices, setDevices] = useState<{ deviceId: string; label: string }[]>([]);
+ const [deviceId, setDeviceId] = useState<string>('');
+ useEffect(() => { if (state.microphone === 'on') listAudioInputs().then(setDevices).catch(() => setDevices([])); }, [state.microphone]);
+ const uncalibrated = state.microphone === 'on' && !state.readiness.ready;
 
  return <section aria-label="Voice recording" style={{ border: '1px solid #8884', borderRadius: 8, padding: 16, marginTop: 24 }}>
   <h2 style={{ marginTop: 0 }}>Record with your voice</h2>
   <p style={small}>Manual microphone takes: use the controls to start and stop. Speech recognition is not connected yet.</p>
   <div style={row}>
-   <button disabled={!enabled || busy || state.microphone === 'starting'} onClick={() => run(() => voice.enableMicrophone())}>{micReady ? 'Restart microphone' : 'Enable microphone'}</button>
+   <button disabled={!enabled || busy || state.microphone === 'starting'} onClick={() => run(() => voice.enableMicrophone(deviceId || undefined))}>{micReady ? 'Restart microphone' : 'Enable microphone'}</button>
+   {devices.length > 1 && <label style={small}>Input <select value={deviceId} disabled={busy || recordingState !== 'idle'} onChange={e => { setDeviceId(e.target.value); run(() => voice.enableMicrophone(e.target.value || undefined)); }}>
+    <option value="">System default</option>
+    {devices.map(d => <option key={d.deviceId} value={d.deviceId}>{d.label}</option>)}
+   </select></label>}
    <Meter db={state.levelDb} floor={state.calibration?.noiseFloorDb ?? -60} active={micReady} />
    <button disabled={!micReady || busy || !!state.calibrating} onClick={() => run(() => voice.calibrateNoise())}>Measure silence</button>
    <button disabled={!micReady || busy || !!state.calibrating || !!transport?.playing} title={transport?.playing ? 'Stop playback first' : undefined} onClick={() => run(() => voice.calibrateLatency())}>Calibrate timing</button>
@@ -60,13 +70,15 @@ export function InputPanel({ voice, session, transport, enabled, dispatch }: Pro
    {state.calibration ? <>Noise floor {state.calibration.noiseFloorDb.toFixed(0)} dBFS · latency {Math.round(state.calibration.latencyFrames / state.calibration.sampleRate * 1000)} ms ({state.calibration.latencySource === 'tap-along' ? 'calibrated' : 'browser estimate — calibrate for tight timing'})</> : 'Use headphones. Microphone audio is analysed locally and never stored.'}
    {state.analysisP95Ms !== null && <> · analysis p95 {state.analysisP95Ms.toFixed(1)} ms</>}
   </p>
+  {micReady && <MicCheckPanel state={state} onReport={() => voice.testReport()} />}
 
+  {uncalibrated && recordingState === 'idle' && <p role="note" style={{ ...small, color: '#e0a030' }}>⚠ {state.readiness.advice}</p>}
   <div style={row} role="group" aria-label="Recording target">
    {TARGETS.map(({ target: t, label: l }) => <button key={l} aria-pressed={same(target, t)} disabled={!enabled || recordingState !== 'idle'} style={same(target, t) ? selectedStyle : undefined} onClick={() => dispatch({ type: 'select', target: t })}>{l}</button>)}
   </div>
   <div style={row}>
    {recordingState === 'idle'
-    ? <button disabled={!enabled || !micReady} style={recordStyle} onClick={() => dispatch({ type: 'record', target }, 'next-loop')}>● Record {label}</button>
+    ? <button disabled={!enabled || !micReady} style={recordStyle} title={uncalibrated ? state.readiness.advice : undefined} onClick={() => dispatch({ type: 'record', target }, 'next-loop')}>● Record {label}{uncalibrated ? ' (uncalibrated)' : ''}</button>
     : <button disabled={!enabled} style={recordStyle} onClick={() => dispatch({ type: 'stop-recording' })}>■ Stop recording</button>}
    <button disabled={!enabled} onClick={() => dispatch({ type: 'play', playing: !transport?.playing })}>{transport?.playing ? 'Stop playback' : 'Play'}</button>
    <button disabled={!enabled || recordingState === 'recording'} onClick={() => dispatch({ type: 'clear', target }, 'next-loop')}>Clear {label}</button>
