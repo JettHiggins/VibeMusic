@@ -134,7 +134,7 @@ test('the copied test report includes the manual trim and the effective compensa
   now: new Date(0), browser: 'test', context: { sampleRate: SR },
   capture: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
   calibration: { version: 1, noiseFloorDb: -40, peakDb: null, latencyFrames: 5292, latencySource: 'tap-along', latencySpreadFrames: 100, sampleRate: SR, deviceId: 'secret', noiseSource: 'measured', offsetAdjustMs: 30 },
-  micCheck: new MicCheck(SR).state(-40), recorder: { mode: 'manual', capturing: false, provisional: [], committed: 0, dropped: 0, lastError: null, inFlight: null }, analysisP95Ms: null,
+  micCheck: new MicCheck(SR).state(-40), recorder: { mode: 'manual', capturing: false, provisional: [], timing: [], committed: 0, dropped: 0, lastError: null, inFlight: null }, analysisP95Ms: null,
  });
  assert.equal(report.calibration?.latencyMs, 120);
  assert.equal(report.calibration?.offsetAdjustMs, 30);
