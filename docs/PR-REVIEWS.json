@@ -30,5 +30,17 @@
     "pullRequest": 15,
     "headSha": "981e984fed542e9f3a9d30c5580acdf61093df0b",
     "body": "WS1 initial pipeline review (not approval): please incorporate the scoped coverage and duration/rate requirements requested on #14 before this stack merges. Add a same-clock gap/new-stream regression proving pre-gap pending events cannot become verified by the new stream.\n\nRecognized wake speech must be excluded even when the command is not understood: during recording, a transcript with the recognized Groove prefix should emit its measured command-span, then an error if interpretation fails, then only an appropriate watermark; no musical mutation. Otherwise speaking an invalid command can be recorded as notes/drums once its speech-verified message arrives. Add that ordering test.\n\nKeep energy segmentation and the SCRIPTED recognizer explicitly experimental/test-only. The app currently has no transcriber, which is honest and should remain so until a real provider is configured. Real transcription must run outside the event loop, and provider failures must hold verification and signal unavailability rather than fabricate coverage. Physical speech and latency signoff are still required. No provider or credential decision is implied by this review."
+  },
+  {
+    "pullRequest": 1,
+    "headSha": "3a6272409b4afc43c2eef24ed7b88922ee613092",
+    "retargetBase": "engine-integration",
+    "body": "Already integrated into engine-integration (the transcript service was merged in 19a7e0c and remains an ancestor of the current baseline). WS1 verified exact head 3a6272409b4afc43c2eef24ed7b88922ee613092 with git merge-base --is-ancestor. Retarget/close this obsolete foundation-era PR so its main base does not suggest the implementation is missing. This cleanup does not merge engine-integration into main; current STT/Deep Agents and real-device acceptance remain open in #9 and docs/STATUS.md."
+  },
+  {
+    "pullRequest": 2,
+    "headSha": "8fae6aac32bf44267d1321d4f0f3ec15b0b2c336",
+    "retargetBase": "engine-integration",
+    "body": "Already integrated into engine-integration. WS1 verified exact head 8fae6aac32bf44267d1321d4f0f3ec15b0b2c336 with git merge-base --is-ancestor against the current baseline. Retarget/close this obsolete stacked service/research PR. The original real-renderer/research pipeline and preview/acceptance UI are delivered; the newer #13 retrieval/listening-kit review and #14/#15 speech proposals are separate and still unmerged. This is metadata cleanup, not evidence of human listening or full voice acceptance."
   }
 ]
