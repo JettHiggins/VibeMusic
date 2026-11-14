@@ -13,9 +13,10 @@ from __future__ import annotations
 
 from collections import OrderedDict, deque
 from dataclasses import dataclass
-from typing import Any, Callable, Deque, Mapping, Optional
+from typing import Any, Callable, Deque, Mapping, Optional, Protocol, Sequence, Union
 
-from .intents import Command, Ignored, Interpretation, NotUnderstood, interpret, validate_operation
+from .intents import (MELODIC_TRACKS, AcceptCandidate, CancelSearch, Command, Ignored, Interpretation, NotUnderstood,
+                      SoundSearch, interpret, validate_operation)
 
 Interpreter = Callable[[str, Mapping[str, Any], bool], Interpretation]
 
@@ -39,13 +40,33 @@ class _InFlight:
     status: str = "sent"  # sent -> queued -> (removed on applied/rejected)
 
 
+class ResearchPort(Protocol):
+    """Starts and cancels research jobs; results come back through `Connection.observe_research`."""
+
+    def start(self, job_id: str, description: str, seeds: Optional[Sequence[dict]] = None) -> None: ...
+
+    def cancel(self, job_id: str) -> bool: ...
+
+
+@dataclass
+class _Search:
+    job_id: str
+    track_id: str
+    description: str
+    status: str = "running"
+    candidates: Sequence[dict] = ()
+
+
 def _error(request_id: str, message: str) -> dict:
     return {"type": "error", "requestId": request_id, "message": message}
 
 
 class Connection:
-    def __init__(self, interpreter: Interpreter = interpret, ack_timeout_s: float = DEFAULT_ACK_TIMEOUT_S) -> None:
+    def __init__(self, interpreter: Interpreter = interpret, ack_timeout_s: float = DEFAULT_ACK_TIMEOUT_S,
+                 research: Optional[ResearchPort] = None) -> None:
         self._interpret = interpreter
+        self._research = research
+        self._searches: "OrderedDict[str, _Search]" = OrderedDict()
         self._ack_timeout_s = ack_timeout_s
         self.session: Optional[dict] = None
         self.transport: Optional[dict] = None
@@ -71,10 +92,11 @@ class Connection:
         if kind == "utterance":
             return self._on_utterance(message, now)
         if kind == "sound-request":
-            return [{"type": "research", "jobId": message["id"], "status": "failed", "progress": 0, "candidates": [],
-                     "error": "sound research is not available in this build"}]
+            return self._start_search(message["id"], message["trackId"], message["description"], None)
         if kind == "cancel-job":
-            return [_error(message["jobId"], "no such research job")]
+            if self._research is not None and self._research.cancel(message["jobId"]):
+                return []  # the job answers with status "cancelled"
+            return [_error(message["jobId"], "no such running research job")]
         return [_error("unknown", f"unsupported message type {kind!r}")]
 
     def tick(self, now: float) -> list[dict]:
@@ -92,6 +114,62 @@ class Connection:
     @property
     def pending_command_ids(self) -> list[str]:
         return list(self._in_flight)
+
+    # -- research ----------------------------------------------------------------
+
+    def observe_research(self, message: Mapping[str, Any]) -> None:
+        """Record a research message on its way to the browser, so spoken accept/refine can refer to it."""
+        search = self._searches.get(message["jobId"])
+        if search is not None:
+            search.status = message["status"]
+            if message["candidates"] or message["status"] != "cancelled":
+                search.candidates = message["candidates"]
+
+    def _latest_search(self, with_candidates: bool = False) -> Optional[_Search]:
+        """Newest search; with_candidates skips ones that ended (or were cancelled) before producing any."""
+        for search in reversed(self._searches.values()):
+            if search.candidates or not with_candidates:
+                return search
+        return None
+
+    def _start_search(self, job_id: str, track_id: str, description: str, seeds: Optional[Sequence[dict]]) -> list[dict]:
+        def failed(reason: str) -> list[dict]:
+            return [{"type": "research", "jobId": job_id, "status": "failed", "progress": 0, "candidates": [],
+                     "error": reason}]
+        if job_id in self._searches:
+            return []
+        if track_id not in MELODIC_TRACKS:
+            return failed("sound search works on the three synth tracks; select one first")
+        if self._research is None:
+            return failed("sound research is not available in this build")
+        self._searches[job_id] = _Search(job_id, track_id, description)
+        while len(self._searches) > 16:
+            self._searches.popitem(last=False)
+        self._research.start(job_id, description, seeds)
+        return []
+
+    def _on_sound_intent(self, utterance_id: str, result: Interpretation) -> Union[list, _Proposal]:
+        if isinstance(result, CancelSearch):
+            running = self._latest_search()
+            if (running is None or running.status != "running" or self._research is None
+                    or not self._research.cancel(running.job_id)):
+                return [_error(utterance_id, "no sound search is running")]
+            return []
+        latest = self._latest_search(with_candidates=True)
+        if isinstance(result, AcceptCandidate):
+            if latest is None or not latest.candidates:
+                return [_error(utterance_id, "there are no sound candidates to accept yet")]
+            if result.index > len(latest.candidates):
+                return [_error(utterance_id, f"there are only {len(latest.candidates)} candidates")]
+            patch = latest.candidates[result.index - 1]["patch"]
+            return _Proposal(utterance_id, {"type": "apply-patch", "trackId": latest.track_id, "patch": patch}, "next-loop")
+        assert isinstance(result, SoundSearch)
+        if result.refine:
+            if latest is None or not latest.candidates:
+                return [_error(utterance_id, "describe a sound first, for example: make it sound like an electric piano")]
+            return self._start_search(f"{utterance_id}:job", latest.track_id, f"{latest.description}, {result.description}",
+                                      [candidate["patch"] for candidate in latest.candidates])
+        return self._start_search(f"{utterance_id}:job", self.session["selected"]["trackId"], result.description, None)
 
     # -- utterances --------------------------------------------------------------
 
@@ -116,10 +194,19 @@ class Connection:
             return []
         if isinstance(result, NotUnderstood):
             return [_error(utterance_id, result.reason)]
-        assert isinstance(result, Command)
-        problem = validate_operation(result.operation)
-        if problem is not None:
-            return [_error(utterance_id, problem)]
+        if isinstance(result, Command):
+            problem = validate_operation(result.operation)
+            if problem is not None:
+                return [_error(utterance_id, problem)]
+            proposal: Optional[_Proposal] = _Proposal(utterance_id, result.operation, result.boundary)
+        else:
+            outcome = self._on_sound_intent(utterance_id, result)
+            if isinstance(outcome, _Proposal):
+                proposal = outcome
+            elif outcome:
+                return outcome  # refused, so not a recognized command: no span
+            else:
+                proposal = None
 
         out: list[dict] = []
         if during_recording:
@@ -127,7 +214,8 @@ class Connection:
             # provisional musical events even if the command itself has to wait.
             out.append({"type": "command-span", "utteranceId": utterance_id, "clockId": message["clockId"],
                         "startFrame": message["startFrame"], "endFrame": message["endFrame"]})
-        proposal = _Proposal(utterance_id, result.operation, result.boundary)
+        if proposal is None:
+            return out
         if proposal.boundary == "next-loop" and self._next_loop_in_flight():
             if len(self._backlog) >= MAX_BACKLOG:
                 out.append(_error(utterance_id, "too many commands are waiting; try again after the next loop"))
