@@ -1,0 +1,218 @@
+import type { ClientMessage, PerformanceEvent, SessionCommand, SessionState, Transport } from '@voicesynth/contracts';
+import type { Onset } from './onset.ts';
+
+/**
+ * Turns analysed microphone onsets into verified, atomic `commit-performance` batches.
+ *
+ * The browser engine stays authoritative: events are provisional until the engine acknowledges
+ * the batch as applied. Exactly one batch is in flight, so a queued batch never makes a sibling stale.
+ *
+ * Verification modes:
+ * - `manual`: recording is started and stopped from the UI, with no voice commands during takes,
+ *   so there is no speech to exclude. The watermark follows analysed audio.
+ * - `speech`: frames are committed only after the speech pipeline reports, via verifyThrough(),
+ *   that it has classified them. Recognised command spans are excluded. If speech becomes
+ *   unavailable, capture stops accepting events but playback and the composition continue.
+ */
+export type VerificationMode = 'manual' | 'speech';
+export interface RecorderDeps {
+ dispatch(command: SessionCommand): ClientMessage;
+ newId(): string;
+}
+export interface Span { startFrame: number; endFrame: number }
+export interface ProvisionalEvent { event: Extract<PerformanceEvent, { kind: 'onset' }>; step: number; status: 'provisional' | 'submitted' }
+export interface RecorderStatus {
+ mode: VerificationMode;
+ capturing: boolean;
+ provisional: ProvisionalEvent[];
+ committed: number;
+ dropped: number;
+ lastError: string | null;
+ inFlight: string | null;
+}
+type Window = { clockId: string; startFrame: number; target: NonNullable<Transport['recordingTarget']>; tempo: number; open: boolean; cutoff: number };
+
+const MAX_EVENTS = 256, MAX_SPANS = 64, MAX_RETRIES = 4;
+/** The engine ignores events below this confidence (CONTRACTS.md); filter locally so counters stay honest. */
+export const MIN_CONFIDENCE = 0.6;
+const RETRYABLE = /Stale revision|Playback stopped/;
+
+export class PerformanceRecorder {
+ onChange: (status: RecorderStatus) => void = () => {};
+ private session: SessionState | null = null;
+ private transport: Transport | null = null;
+ private window: Window | null = null;
+ private events: ProvisionalEvent[] = [];
+ private spans: (Span & { clockId: string })[] = [];
+ private analysedThrough = 0;
+ private speechVerifiedThrough = -1;
+ private speechAvailable = false;
+ private inFlight: { id: string; ids: Set<string> } | null = null;
+ private retries = 0;
+ /** Revision from the last authoritative ack; never build a batch on an older snapshot. */
+ private minRevision = 0;
+ private committed = 0;
+ private dropped = 0;
+ private lastError: string | null = null;
+
+ constructor(private deps: RecorderDeps, private mode: VerificationMode = 'manual') {}
+
+ setMode(mode: VerificationMode) { this.mode = mode; this.speechVerifiedThrough = -1; this.changed(); }
+ /** Speech mode: whether recognition is connected. Losing it stops new commits immediately. */
+ setSpeechAvailable(available: boolean) {
+  this.speechAvailable = available;
+  if (!available && this.mode === 'speech') this.discardUnverified('Speech recognition disconnected; unverified hits were discarded');
+  this.changed();
+ }
+
+ handle(message: ClientMessage) {
+  if (message.type === 'session') { this.session = message.session; this.pump(); }
+  else if (message.type === 'transport') this.onTransport(message.transport);
+  else if (message.type === 'ack') this.onAck(message);
+ }
+
+ /** Recognised wake-phrase command, in capture-clock frames. */
+ addCommandSpan(span: Span & { clockId: string }) {
+  if (span.endFrame < span.startFrame) return;
+  this.spans.push(span);
+  if (this.spans.length > MAX_SPANS * 4) this.spans.splice(0, this.spans.length - MAX_SPANS * 4);
+  const before = this.events.length;
+  this.events = this.events.filter(e => e.status === 'submitted' || e.event.clockId !== span.clockId || !overlaps(e.event.captureFrame, span));
+  this.dropped += before - this.events.length;
+  this.changed();
+ }
+
+ verifyThrough(clockId: string, frame: number) {
+  if (this.window && clockId !== this.window.clockId) return;
+  this.speechVerifiedThrough = Math.max(this.speechVerifiedThrough, Math.floor(frame));
+  this.pump();
+ }
+
+ /**
+  * Onsets carry raw capture-worklet frames. latencyFrames is subtracted here and nowhere else.
+  * analysedThrough is the raw frame up to which analysis is complete.
+  */
+ addOnsets(onsets: Onset[], latencyFrames: number, clockId: string, analysedThrough: number) {
+  // Contract frames are integers: round events, floor watermarks (never claim a partial frame).
+  this.analysedThrough = Math.max(this.analysedThrough, Math.floor(analysedThrough - latencyFrames));
+  const w = this.window;
+  for (const onset of onsets) {
+   const frame = Math.round(onset.frame - latencyFrames);
+   if (!w || clockId !== w.clockId || !this.capturing || w.target.trackId !== 'drums' || !w.target.lane) { this.dropped++; continue; }
+   if (frame < w.startFrame || frame > w.cutoff && !w.open || onset.confidence < MIN_CONFIDENCE || onset.velocity <= 0) { this.dropped++; continue; }
+   if (this.spans.some(s => s.clockId === clockId && overlaps(frame, s))) { this.dropped++; continue; }
+   const event = { kind: 'onset' as const, id: this.deps.newId(), target: { trackId: w.target.trackId, lane: w.target.lane }, captureFrame: frame, clockId, confidence: onset.confidence, velocity: onset.velocity };
+   this.events.push({ event, step: this.stepOf(frame), status: 'provisional' });
+  }
+  this.pump();
+ }
+
+ get capturing() {
+  if (!this.window?.open) return false;
+  return this.mode === 'manual' || this.speechAvailable;
+ }
+
+ status(): RecorderStatus {
+  return { mode: this.mode, capturing: this.capturing, provisional: this.events.map(e => ({ ...e })), committed: this.committed, dropped: this.dropped, lastError: this.lastError, inFlight: this.inFlight?.id ?? null };
+ }
+
+ private stepOf(frame: number) {
+  const w = this.window!;
+  const stepFrames = (this.transport?.sampleRate ?? 44100) * 60 / (w.tempo * 4);
+  return ((Math.round((frame - w.startFrame) / stepFrames) % 64) + 64) % 64;
+ }
+
+ private onTransport(t: Transport) {
+  const previous = this.transport;
+  this.transport = t;
+  if (previous && previous.clockId !== t.clockId) { this.discardUnverified('Audio clock changed; pending hits were discarded'); this.window = null; this.spans = []; }
+  const active = t.recordingState === 'recording' || t.recording;
+  if (active && t.recordingTarget && t.recordingStartFrame !== undefined) {
+   if (!this.window || this.window.startFrame !== t.recordingStartFrame || this.window.clockId !== t.clockId) {
+    // A new take replaces the engine's window; unsent events from the old take can no longer apply.
+    if (this.window) this.discardUnverified('A new take started before earlier hits were verified');
+    this.window = { clockId: t.clockId, startFrame: t.recordingStartFrame, target: t.recordingTarget, tempo: this.session?.tempo ?? 120, open: true, cutoff: t.currentFrame };
+    this.speechVerifiedThrough = -1;
+   }
+   this.window.open = true; this.window.cutoff = t.currentFrame;
+  } else if (this.window?.open) {
+   // The engine ended the window somewhere after the last frame we saw recording; stay conservative.
+   this.window.open = false;
+   const cutoff = this.window.cutoff, before = this.events.length;
+   this.events = this.events.filter(e => e.status === 'submitted' || e.event.captureFrame <= cutoff);
+   this.dropped += before - this.events.length;
+  }
+  this.pump();
+ }
+
+ private watermark() {
+  const t = this.transport;
+  if (!t || !this.window) return -1;
+  // Never claim frames the engine has not reached, nor audio not yet analysed.
+  let mark = Math.min(t.currentFrame, this.analysedThrough);
+  if (this.mode === 'speech') mark = Math.min(mark, this.speechVerifiedThrough);
+  if (!this.window.open) mark = Math.min(mark, this.window.cutoff);
+  return Math.floor(mark);
+ }
+
+ private pump() {
+  if (this.inFlight || !this.session || !this.window || this.window.clockId !== this.transport?.clockId) { this.changed(); return; }
+  if (this.mode === 'speech' && !this.speechAvailable) { this.changed(); return; }
+  if (this.session.revision < this.minRevision) { this.changed(); return; }
+  const mark = this.watermark();
+  const ready = this.events.filter(e => e.status === 'provisional' && e.event.captureFrame <= mark).slice(0, MAX_EVENTS);
+  if (!ready.length) { this.changed(); return; }
+  this.submit(ready, mark);
+ }
+
+ private submit(batch: ProvisionalEvent[], mark: number) {
+  const first = Math.min(...batch.map(e => e.event.captureFrame)), last = Math.max(...batch.map(e => e.event.captureFrame));
+  const excludedSpans = this.spans.filter(s => s.clockId === this.window!.clockId && s.startFrame <= last && s.endFrame >= first).slice(-MAX_SPANS).map(({ startFrame, endFrame }) => ({ startFrame, endFrame }));
+  const command: SessionCommand = {
+   id: this.deps.newId(), expectedRevision: this.session!.revision, boundary: 'next-loop',
+   operation: { type: 'commit-performance', events: batch.map(e => e.event), excludedSpans, verifiedThroughFrame: mark },
+  };
+  batch.forEach(e => { e.status = 'submitted'; });
+  this.inFlight = { id: command.id, ids: new Set(batch.map(e => e.event.id)) };
+  this.changed();
+  let receipt: ClientMessage;
+  try { receipt = this.deps.dispatch(command); }
+  catch (error) { receipt = { type: 'ack', commandId: command.id, status: 'rejected', revision: this.session!.revision, reason: String(error) }; }
+  if (receipt.type === 'ack' && receipt.status === 'rejected') this.onAck(receipt);
+ }
+
+ private onAck(ack: Extract<ClientMessage, { type: 'ack' }>) {
+  const flight = this.inFlight;
+  if (!flight || ack.commandId !== flight.id || ack.status === 'queued') return;
+  this.inFlight = null;
+  this.minRevision = Math.max(this.minRevision, ack.revision);
+  const batch = this.events.filter(e => flight.ids.has(e.event.id));
+  if (ack.status === 'applied') {
+   this.events = this.events.filter(e => !flight.ids.has(e.event.id));
+   this.committed += batch.length; this.lastError = null; this.retries = 0;
+   this.pump(); return;
+  }
+  const reason = ack.reason ?? 'rejected';
+  if (RETRYABLE.test(reason) && this.retries < MAX_RETRIES) {
+   // Resubmit the same verified events under a new command ID against the current revision.
+   // If the newer session snapshot has not arrived yet, its arrival triggers pump().
+   this.retries++;
+   batch.forEach(e => { e.status = 'provisional'; });
+   this.pump(); return;
+  }
+  this.retries = 0;
+  this.events = this.events.filter(e => !flight.ids.has(e.event.id));
+  this.dropped += batch.length; this.lastError = `Engine rejected ${batch.length} hit(s): ${reason}`;
+  this.pump();
+ }
+
+ private discardUnverified(reason: string) {
+  const pending = this.events.filter(e => e.status === 'provisional');
+  if (pending.length) { this.dropped += pending.length; this.lastError = reason; }
+  this.events = this.events.filter(e => e.status === 'submitted');
+ }
+
+ private changed() { this.onChange(this.status()); }
+}
+
+function overlaps(frame: number, span: Span) { return frame >= span.startFrame && frame <= span.endFrame; }

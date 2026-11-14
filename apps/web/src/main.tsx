@@ -4,6 +4,8 @@ import {createSession,type SessionCommand,type Transport} from '@voicesynth/cont
 import {BrowserEngine} from './engine/browser.ts';
 import {WebSocketAgent} from './integration/agent.ts';
 import {SessionCoordinator} from './integration/coordinator.ts';
+import {VoiceInput} from './input/voice-input.ts';
+import {InputPanel} from './ui/InputPanel.tsx';
 const demo=createSession();
 demo.tracks[0].patch.engine=1;
 for(let bar=0;bar<4;bar++){
@@ -15,16 +17,19 @@ for(let bar=0;bar<4;bar++){
 const engine=new BrowserEngine(demo);
 const agent=new WebSocketAgent();
 const coordinator=new SessionCoordinator(engine,agent,()=>agent.connected);
+const voice=new VoiceInput(engine);
+// Development-only handle for driving the capture path with a test signal; absent from production builds.
+if(import.meta.env.DEV)Object.assign(globalThis,{__voicesynth:{engine,voice,coordinator}});
 function App(){
  const [session,setSession]=useState(engine.getSession());
  const [enabled,setEnabled]=useState(false),[busy,setBusy]=useState(false),[message,setMessage]=useState('Enable audio to load the four-bar demo.');
  const [connected,setConnected]=useState(false),[text,setText]=useState('select snare');
  const [transport,setTransport]=useState<Transport|null>(null);
  useEffect(()=>{
-  agent.onStatus=connected=>{setConnected(connected);coordinator.connectionChanged(connected);};
+  agent.onStatus=connected=>{setConnected(connected);coordinator.connectionChanged(connected);voice.setSpeechAvailable(connected);};
   agent.onError=e=>setMessage(e.message);
   coordinator.onError=e=>setMessage(e.message);
-  coordinator.onMessage=m=>{if(m.type==='error')setMessage(m.message);};
+  coordinator.onMessage=m=>{voice.handleServerMessage(m);if(m.type==='error')setMessage(m.message);};
   engine.onError=e=>{setMessage(e.message);setBusy(false);};return engine.subscribe(m=>{
   if(m.type==='session')setSession(m.session);
   if(m.type==='transport')setTransport(m.transport);
@@ -46,6 +51,7 @@ function App(){
   <p><button disabled={!enabled||busy} onClick={()=>command({type:'tempo',bpm:session.tempo===120?137:120},'next-loop')}>Change tempo next loop</button>{' '}
   <button disabled={!enabled||busy} onClick={()=>command({type:'clear',target:session.selected},'next-loop')}>Clear selected next loop</button>{' '}
   <button disabled={!enabled||busy} onClick={()=>command({type:'undo'},'next-loop')}>Undo next loop</button></p>
+  <InputPanel voice={voice} session={session} transport={transport} enabled={enabled} dispatch={command}/>
  <section aria-label="Agent integration"><h2>Local command service</h2>
   <button disabled={connected} onClick={()=>{void agent.connect().catch(e=>setMessage(String(e)));}}>Connect agent</button>
   <p>{connected?'Agent connected':'Agent disconnected'}</p>
