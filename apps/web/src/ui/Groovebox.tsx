@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useReducer, useState, type ReactNode } from 'react';
+import React, { useEffect, useMemo, useReducer, useRef, useState, type ReactNode } from 'react';
 import type { SessionCommand, SessionState, Transport } from '@voicesynth/contracts';
 import type { FirmwareMetadata } from '../engine/metadata.ts';
 import type { VoiceInput, VoiceInputState } from '../input/voice-input.ts';
@@ -26,6 +26,8 @@ export interface GrooveboxProps {
  dispatch: (operation: SessionCommand['operation'], boundary?: SessionCommand['boundary']) => void;
  /** Workstream 1/3 integration controls (agent connection, transcript harness, research). */
  agent: ReactNode;
+ /** Reveal voice-started results without requiring a click during performance. */
+ agentActivityKey?: string | null;
 }
 
 /**
@@ -33,7 +35,9 @@ export interface GrooveboxProps {
  * track's editor in the center (drum step lanes or a synth piano roll), and a compact sound/input
  * inspector on the right. No workspace tabs; session operations live in the transport's menu.
  */
-export function Groovebox({ engine, voice, session, transport, enabled, busy, message, onEnable, agent }: GrooveboxProps) {
+export function Groovebox({ engine, voice, session, transport, enabled, busy, message, onEnable, agent, agentActivityKey }: GrooveboxProps) {
+ const agentDetails = useRef<HTMLDetailsElement>(null);
+ useEffect(() => { if (agentActivityKey && agentDetails.current) agentDetails.current.open = true; }, [agentActivityKey]);
  const client = useMemo(() => new CommandClient({ getSession: () => engine.getSession(), dispatch: c => engine.dispatch(voice.prepareCommand(c)) }), [engine, voice]);
  const patterns = useMemo(() => new PatternEditQueue({ dispatch: c => engine.dispatch(c), newId: () => crypto.randomUUID() }), [engine]);
  const [result, setResult] = useState<CommandResult | null>(null);
@@ -102,7 +106,7 @@ export function Groovebox({ engine, voice, session, transport, enabled, busy, me
      <summary>Input</summary>
      <InputInspector voice={voice} state={input} transport={transport} enabled={enabled} melodic={trackId !== 'drums'} />
     </details>
-    <details>
+    <details ref={agentDetails}>
      <summary>Agent</summary>
      {agent}
     </details>
