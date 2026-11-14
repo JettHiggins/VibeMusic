@@ -76,7 +76,7 @@ Mock mode was exercised here only with synthetic metadata from the test fixtures
 - Deep Agents orchestration. `intents.interpret` is the seam a model-backed interpreter replaces; it needs API access.
 - Meaningful text-to-sound ranking. The real SLOOP renderer is integrated, but the LAION CLAP embedder is not implemented/configured yet. Sound relevance and musical quality remain unverified.
 - Research evaluation against preset-only retrieval with blind listening.
-- Full microphone and candidate UI integration. The production adapter/coordinator and real WASM core have transcript/research integration tests; actual speech recognition and candidate UI are still pending.
+- Physical microphone and speech integration remain pending. The browser Agent workspace now includes candidate previews, provenance and exact-candidate acceptance; its controller and the real WASM core have live research integration tests. Actual speech recognition and semantic ranking/listening gates are still pending.
 
 ## Layout
 

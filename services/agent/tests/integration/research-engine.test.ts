@@ -13,6 +13,7 @@ import {pathToFileURL} from 'node:url';
 import {createSession, type ClientMessage, type EngineAdapter, type ServerMessage} from '../../../../packages/contracts/src/index.ts';
 import {EngineCore} from '../../../../apps/web/src/engine/core.ts';
 import {WebSocketAgent} from '../../../../apps/web/src/integration/agent.ts';
+import {ResearchController} from '../../../../apps/web/src/integration/research.ts';
 import {SessionCoordinator} from '../../../../apps/web/src/integration/coordinator.ts';
 
 const enabled = process.env.VOICESYNTH_INTEGRATION === '1';
@@ -31,6 +32,7 @@ test('research candidates from real engine audio are accepted and undone by the 
   let logs = '';
   let coordinator: SessionCoordinator | undefined;
   let agent: WebSocketAgent | undefined;
+  let panel: ResearchController | undefined;
   try {
     await new Promise<void>((done, fail) => {
       const timeout = setTimeout(() => fail(new Error('Service startup timeout: ' + logs)), 20000);
@@ -53,6 +55,7 @@ test('research candidates from real engine audio are accepted and undone by the 
     const socket = agent;
     coordinator = new SessionCoordinator(engine, socket, () => socket.connected);
     const bridge = coordinator;
+    panel = new ResearchController(engine, socket, () => socket.connected);
     socket.onStatus = connected => { if (connected) bridge.sync(); };
     const errors: string[] = [];
     const research: Extract<ServerMessage, {type: 'research'}>[] = [];
@@ -82,11 +85,12 @@ test('research candidates from real engine audio are accepted and undone by the 
     const revision = core.getSession().revision;
 
     // Describe a sound; the corpus (every factory preset) is rendered by the real engine on first use.
-    socket.send({type: 'sound-request', id: 'job-1', trackId: 'synth-1', description: '80s electric piano'});
+    panel.request('synth-1', '80s electric piano');
     await until('research to finish', () => research.some(m => m.status !== 'running'), 150000);
     const final = research.at(-1)!;
     assert.equal(final.status, 'complete', final.error);
     assert.equal(final.candidates.length, 5);
+    assert.deepEqual(panel.getSnapshot().candidates, final.candidates);
     assert.ok(research.findIndex(m => m.candidates.length > 0) < research.length - 1, 'retrieval arrives before completion');
     const preview = await fetch(final.candidates[0].previewUrl);
     assert.equal(preview.status, 200);
@@ -105,6 +109,16 @@ test('research candidates from real engine audio are accepted and undone by the 
     const after = render(LOOP);
     assert.ok(after > 0.001, 'accepted patch is audible on the existing melody');
 
+    // The browser candidate controls also apply the exact chosen patch to the original search track.
+    panel.accept(final.candidates[0].id);
+    assert.equal(panel.getSnapshot().acceptance?.status, 'queued');
+    render(LOOP);
+    assert.equal(panel.getSnapshot().acceptance?.status, 'applied');
+    assert.deepEqual(core.getSession().tracks[0].patch, final.candidates[0].patch);
+    assert.deepEqual(core.getSession().tracks[0].notes, notes);
+    core.dispatch({id: 'undo-panel', expectedRevision: core.getSession().revision, boundary: 'next-loop', operation: {type: 'undo'}});
+    render(LOOP);
+
     // Undo restores the earlier sound, again at a boundary, once the backend has the new revision.
     await new Promise(r => setTimeout(r, 300));
     bridge.submitTranscript('undo');
@@ -115,7 +129,7 @@ test('research candidates from real engine audio are accepted and undone by the 
     assert.deepEqual(errors, []);
     console.log(`rms before ${before.toFixed(4)}, boundary loop ${during.toFixed(4)}, after ${after.toFixed(4)}; candidates: ${final.candidates.map(c => c.provenance.split(';')[0]).join(' | ')}`);
   } finally {
-    coordinator?.dispose(); agent?.dispose(); child.kill();
+    panel?.dispose(); coordinator?.dispose(); agent?.dispose(); child.kill();
     if (child.exitCode === null) await new Promise<void>(done => { child.once('exit', () => done()); setTimeout(() => { child.kill('SIGKILL'); done(); }, 2000).unref(); });
     rmSync(corpus, {recursive: true, force: true});
   }
