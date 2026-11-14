@@ -1,4 +1,4 @@
-import React, { useEffect, useState, type ReactNode } from 'react';
+import React, { useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { SessionCommand, SessionState, Transport } from '@voicesynth/contracts';
 import type { FirmwareMetadata } from '../engine/metadata.ts';
 import type { VoiceInput } from '../input/voice-input.ts';
@@ -6,6 +6,7 @@ import { InputPanel } from './InputPanel.tsx';
 import { PatternEditor, type EditorEngine } from './PatternEditor.tsx';
 import { SessionPanel } from './SessionPanel.tsx';
 import { SoundPanel } from './SoundPanel.tsx';
+import { CommandClient, type CommandResult } from './command-client.ts';
 
 type Tab = 'record' | 'edit' | 'sound' | 'session' | 'agent';
 const TABS: { id: Tab; label: string }[] = [{ id: 'record', label: 'Record' }, { id: 'edit', label: 'Edit' }, { id: 'sound', label: 'Sound' }, { id: 'session', label: 'Session' }, { id: 'agent', label: 'Agent' }];
@@ -20,6 +21,7 @@ export interface GrooveboxProps {
  busy: boolean;
  message: string;
  onEnable: () => void;
+ /** Kept for compatibility; UI commands go through the shared CommandClient (live revision, re-issue). */
  dispatch: (operation: SessionCommand['operation'], boundary?: SessionCommand['boundary']) => void;
  /** Workstream 1/3 integration controls (agent connection, transcript harness). */
  agent: ReactNode;
@@ -27,7 +29,11 @@ export interface GrooveboxProps {
 
 /** Compact groovebox: status display, four-channel strip, and tabbed workspace. */
 export function Groovebox(props: GrooveboxProps) {
- const { engine, voice, session, transport, enabled, busy, message, onEnable, dispatch, agent } = props;
+ const { engine, voice, session, transport, enabled, busy, message, onEnable, agent } = props;
+ const client = useMemo(() => new CommandClient(engine), [engine]);
+ const [result, setResult] = useState<CommandResult | null>(null);
+ useEffect(() => { client.onResult = setResult; return engine.subscribe(m => client.handle(m)); }, [engine, client]);
+ const dispatch = (operation: SessionCommand['operation'], boundary: SessionCommand['boundary'] = 'immediate') => { client.send(operation, boundary); };
  const [tab, setTab] = useState<Tab>('record');
  const selected = session.selected.trackId;
  const position = transport?.playing ? describe(transport, session.tempo) : null;
@@ -52,7 +58,7 @@ export function Groovebox(props: GrooveboxProps) {
     <button className="vs-key" disabled={!enabled || rec === 'recording' || session.tempo >= 240} aria-label="Tempo up" onClick={() => dispatch({ type: 'tempo', bpm: Math.min(240, session.tempo + 1) }, 'next-loop')}>+</button>
     <button className="vs-key" disabled={!enabled} onClick={() => dispatch({ type: 'undo' }, 'next-loop')}>Undo</button>
    </div>
-   <p role="status" style={{ margin: 0, fontSize: 12, opacity: 0.8, fontFamily: MONO }}>{message}</p>
+   <p role="status" style={{ margin: 0, fontSize: 12, opacity: 0.85, fontFamily: MONO, color: result?.error ? '#ff7b7b' : undefined }}>{result?.text ?? message}</p>
   </header>
 
   <div style={strip} role="group" aria-label="Tracks">

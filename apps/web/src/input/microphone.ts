@@ -2,6 +2,7 @@ import captureUrl from './capture-worklet.ts?worker&url';
 import type { AnalysisRequest, AnalysisResult } from './analysis-worker.ts';
 import type { Onset } from './onset.ts';
 import type { SungNote } from './pitch.ts';
+import type { CaptureSettings } from './diagnostics.ts';
 
 export interface AnalysisFrame { onsets: Onset[]; notes: SungNote[]; analysedThrough: number; levelDb: number; analysisMs: number }
 
@@ -15,6 +16,8 @@ export class MicrophoneInput {
  /** Device-reported capture latency in seconds (Chrome exposes MediaTrackSettings.latency). */
  inputLatencySeconds = 0;
  deviceId: string | null = null;
+ /** What the browser actually granted for the capture track (it may ignore requested constraints). */
+ captureSettings: CaptureSettings | null = null;
  private node: AudioWorkletNode | null = null;
  private sink: GainNode | null = null;
  private worker: Worker | null = null;
@@ -58,6 +61,8 @@ export class MicrophoneInput {
   const settings = track.getSettings() as MediaTrackSettings & { latency?: number };
   this.inputLatencySeconds = typeof settings.latency === 'number' ? settings.latency : 0;
   this.deviceId = settings.deviceId ?? null;
+  const { echoCancellation, noiseSuppression, autoGainControl, sampleRate, channelCount } = settings;
+  this.captureSettings = { echoCancellation, noiseSuppression, autoGainControl, sampleRate, channelCount, latency: settings.latency };
   track.onended = () => { this.onError(new Error('Microphone disconnected')); this.disconnectSource(); };
   this.source = this.context.createMediaStreamSource(stream);
   this.source.connect(this.node!);
@@ -72,7 +77,7 @@ export class MicrophoneInput {
   this.disconnectSource();
   const source = this.context.createBufferSource(); source.buffer = buffer;
   source.connect(this.node!); source.start(when);
-  this.source = source; this.inputLatencySeconds = 0; this.deviceId = 'test-signal';
+  this.source = source; this.inputLatencySeconds = 0; this.deviceId = 'test-signal'; this.captureSettings = null;
  }
 
  /** End any open sung note at a raw capture frame. */
