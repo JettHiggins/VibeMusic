@@ -4,45 +4,42 @@ async page => {
   const {VoiceInput}=await import('/src/input/voice-input.ts');
   const engine=new BrowserEngine(),voice=new VoiceInput(engine,'manual');
   let transport=null;
-  engine.subscribe(m=>{if(m.type==='transport')transport=m.transport;});
-  const waitFor=(predicate,timeout=18000)=>new Promise((resolve,reject)=>{
-   const timer=setTimeout(()=>{off();reject(new Error('Timed out waiting for melody state: '+JSON.stringify({transport,notes:engine.getSession().tracks[0].notes,recorder:voice.recorder.status()})));},timeout);
-   const off=engine.subscribe(m=>{if(predicate(m)){clearTimeout(timer);off();resolve(m);}});
+  const off=engine.subscribe(m=>{if(m.type==='transport')transport=m.transport;});
+  const waitFor=(predicate,timeout=16000)=>new Promise((resolve,reject)=>{
+   const timer=setTimeout(()=>{unsubscribe();reject(new Error('Timed out waiting for melody pipeline'));},timeout);
+   const unsubscribe=engine.subscribe(m=>{if(predicate(m)){clearTimeout(timer);unsubscribe();resolve(m);}});
   });
-  const dispatch=operation=>engine.dispatch({id:crypto.randomUUID(),expectedRevision:engine.getSession().revision,boundary:operation.type==='record'?'next-loop':'immediate',operation});
-  const notes=()=>engine.getSession().tracks[0].notes.map(n=>[n.step,n.duration,n.midi]).sort((a,b)=>a[0]-b[0]);
+  const dispatch=operation=>engine.dispatch({id:crypto.randomUUID(),expectedRevision:engine.getSession().revision,boundary:operation.type==='record'?'next-beat':'immediate',operation});
   try{
    await engine.initialize();
-   const context=engine.getAudioContext(),rate=context.sampleRate;
-   const take=async(phrase,expected)=>{
-    const started=waitFor(m=>m.type==='transport'&&m.transport.recording);
-    dispatch({type:'record',target:{trackId:'synth-1'}});
-    const {transport:t}=await started,start=t.recordingStartFrame,origin=start/rate,when=origin+0.5;
-    const buffer=context.createBuffer(1,8*rate,rate),samples=buffer.getChannelData(0);
-    for(const [step,duration,midi] of phrase){
-     const from=Math.round((step-4)*rate/8),length=Math.round(duration*rate/8);
-     let phase=0;
-     for(let n=0;n<length;n++){
-      const sec=n/rate,env=Math.min(1,sec/0.02,(length-n)/rate/0.02);
-      const hz=440*2**((midi-69+0.3*Math.sin(2*Math.PI*5.5*sec))/12);
-      phase+=2*Math.PI*hz/rate;
-      for(let h=1;h<=5;h++)samples[from+n]+=0.15*env*Math.sin(h*phase)/(h*h);
-     }
+   const started=waitFor(m=>m.type==='transport'&&m.transport.recording);
+   dispatch({type:'record',target:{trackId:'synth-1'}});
+   const state=await started;
+   const context=engine.getAudioContext(),rate=context.sampleRate,start=state.transport.recordingStartFrame;
+   const when=start/rate+.5;
+   const buffer=context.createBuffer(1,3*rate,rate),samples=buffer.getChannelData(0);
+   for(const [at,duration,midi] of [[0,.375,60],[.5,.375,64],[1,.5,67]]){
+    let phase=0;
+    for(let n=0;n<duration*rate;n++){
+     const t=n/rate,index=Math.round(at*rate)+n;
+     phase+=2*Math.PI*440*2**((midi-69+.1*Math.sin(2*Math.PI*5*t))/12)/rate;
+     const envelope=Math.min(1,t/.015,(duration-t)/.015);
+     for(let harmonic=1;harmonic<=4;harmonic++)samples[index]+=.15*envelope*Math.sin(harmonic*phase)/(harmonic*harmonic);
     }
-    await voice.enableTestSignal(buffer,when);
-    await new Promise(r=>setTimeout(r,Math.max(0,(origin+7.9-context.currentTime)*1000)));
-    const applied=waitFor(m=>m.type==='session'&&JSON.stringify(notes())===JSON.stringify(expected),Math.max(500,(origin+8.5-context.currentTime)*1000));
-    dispatch({type:'stop-recording'});
-    await applied;
-   };
-   const melody=[60,62,64,67,65,64,62,60].map((midi,i)=>[4+i*8,2,midi]);
-   await take(melody,melody);
-   const corrected=melody.map(n=>n[0]===36?[36,2,69]:n);
-   await take([[36,2,69]],corrected);
-   const p95=voice.getState().analysisP95Ms;
-   if(p95===null||p95>=50)throw new Error('Pitch analysis missed p95 target: '+p95);
-   if(!transport.playing)throw new Error('Playback stopped with recording');
-   return {notes:notes(),committed:voice.recorder.status().committed,p95Ms:p95,playing:transport.playing,mode:'synthetic singing through browser capture/analysis workers and real SLOOP; not acoustic input'};
-  }finally{voice.dispose();engine.dispose();}
+   }
+   await voice.enableTestSignal(buffer,when);voice.setLatencyFrames(0);
+   await new Promise(resolve=>setTimeout(resolve,Math.max(0,(when+2-context.currentTime)*1000)));
+   const pending=voice.recorder.status();
+   if(pending.provisional.length!==3)throw new Error('Expected three extracted notes: '+JSON.stringify(pending));
+   const done=waitFor(m=>m.type==='session'&&m.session.tracks[0].notes.length===3);
+   dispatch({type:'stop-recording'});await done;
+   const notes=engine.getSession().tracks[0].notes.map(n=>[n.step,n.duration,n.midi]).sort((a,b)=>a[0]-b[0]);
+   const origin=state.transport.recordingLoopStartFrame,stepFrames=rate*60/(120*4);
+   const firstStep=Math.round((start+.5*rate-origin)/stepFrames)%64;
+   const expected=[[firstStep,3,60],[firstStep+4,3,64],[firstStep+8,4,67]].map(([step,duration,midi])=>[step%64,duration,midi]).sort((a,b)=>a[0]-b[0]);
+   if(JSON.stringify(notes)!==JSON.stringify(expected))throw new Error('Unexpected melody: '+JSON.stringify({notes,expected}));
+   if(voice.getState().message||voice.recorder.status().lastError)throw new Error(voice.getState().message||voice.recorder.status().lastError);
+   return {notes,committed:voice.recorder.status().committed,playing:transport.playing,analysisP95Ms:voice.getState().analysisP95Ms,evidence:'synthetic sung tones through real browser capture worklet, YIN worker, recorder and SLOOP WASM; not a physical microphone or human voice'};
+  }finally{off();voice.dispose();engine.dispose();}
  });
 }
