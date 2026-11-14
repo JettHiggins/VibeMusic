@@ -90,6 +90,8 @@ export class MicrophoneInput {
  /** End any open sung note at a raw capture frame. */
  flush(frame: number) { this.request({ type: 'flush', frame }); }
 
+ reset(frame: number) { this.request({ type: 'reset', frame }); }
+
  configure(noiseFloorDb: number, sensitivity?: number) { this.request({ type: 'configure', noiseFloorDb, ...(sensitivity ? { sensitivity } : {}) }); }
 
  measureNoiseFloor(seconds = 1.5): Promise<number> {

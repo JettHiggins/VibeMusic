@@ -93,6 +93,13 @@ export class PatternEditQueue {
  /** IDs created by view() for edits the engine has not applied yet. */
  static isPlaceholder(id: string) { return id.startsWith('pending:'); }
 
+ /** Explicit Clear/Undo supersedes local intentions; never replay them on stale rejection. */
+ cancelPending(trackId?: TrackId) {
+  this.queued = this.queued.filter(e => trackId !== undefined && e.trackId !== trackId);
+  if (this.inFlight && (trackId === undefined || this.inFlight.edits.some(e => e.trackId === trackId))) this.inFlight = null;
+  this.retries = 0; this.lastError = null; this.onChange();
+ }
+
  get busy() { return !!this.inFlight || this.queued.length > 0; }
 
  private pump() {

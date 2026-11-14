@@ -39,7 +39,7 @@ export interface RecorderStatus {
  lastError: string | null;
  inFlight: string | null;
 }
-type Window = { clockId: string; startFrame: number; target: NonNullable<Transport['recordingTarget']>; tempo: number; open: boolean; cutoff: number };
+type Window = { clockId: string; startFrame: number; target: NonNullable<Transport['recordingTarget']>; tempo: number; epoch?: number; captureStart: number; gridOrigin: number; open: boolean; cutoff: number };
 
 const MAX_EVENTS = 256, MAX_SPANS = 64, MAX_RETRIES = 4;
 /** The engine ignores events below this confidence (CONTRACTS.md); filter locally so counters stay honest. */
@@ -84,7 +84,7 @@ export class PerformanceRecorder {
  }
 
  handle(message: ClientMessage) {
-  if (message.type === 'session') { this.session = message.session; this.pump(); }
+  if (message.type === 'session') { this.session = message.session; if (this.window) this.window.tempo = message.session.tempo; this.pump(); }
   else if (message.type === 'transport') this.onTransport(message.transport);
   else if (message.type === 'ack') this.onAck(message);
  }
@@ -144,13 +144,16 @@ export class PerformanceRecorder {
   if (w && !fits) return;
   // Late analysis results for audio before the cut-off still count after the take closes.
   if (!w || clockId !== w.clockId || (this.mode === 'speech' && !this.speechAvailable)) { this.dropped++; return; }
-  if (start < w.startFrame || (!w.open && start > w.cutoff) || confidence < MIN_CONFIDENCE || velocity <= 0) { this.dropped++; return; }
+  if (start < w.captureStart || (!w.open && start > w.cutoff) || confidence < MIN_CONFIDENCE || velocity <= 0) { this.dropped++; return; }
   if (this.spans.some(s => s.clockId === clockId && overlaps(start, end, s))) { this.dropped++; return; }
   const event = make({ ...w.target });
   const step = this.stepOf(start);
   const duration = kind === 'drums' ? 1 : Math.max(1, Math.min(64, this.stepOf(end, false) - this.stepOf(start, false)));
   this.events.push({ event, step, duration, status: 'provisional' });
  }
+
+ /** Includes submitted input: Undo must discard capture before consuming musical history. */
+ get hasPendingCapture() { return this.events.length > 0; }
 
  get capturing() {
   if (!this.window?.open) return false;
@@ -164,7 +167,7 @@ export class PerformanceRecorder {
  private stepOf(frame: number, wrap = true) {
   const w = this.window!;
   const stepFrames = (this.transport?.sampleRate ?? 44100) * 60 / (w.tempo * 4);
-  const step = Math.round((frame - w.startFrame) / stepFrames);
+  const step = Math.round((frame - w.gridOrigin) / stepFrames);
   return wrap ? ((step % 64) + 64) % 64 : step;
  }
 
@@ -172,6 +175,15 @@ export class PerformanceRecorder {
   const previous = this.transport;
   this.transport = t;
   if (previous && previous.clockId !== t.clockId) { this.discardUnverified('Audio clock changed; pending hits were discarded'); this.window = null; this.spans = []; }
+  // Epoch resets arrive before cancelled-batch acks. Forget every old ID, retry and event;
+  // later terminal acks intentionally have nothing to match and cannot resurrect old audio.
+  const epochReset = t.recordingEpoch !== undefined && this.window && this.window.epoch !== t.recordingEpoch;
+  if (epochReset) {
+   this.events = []; this.inFlight = null; this.replaced.clear(); this.retries = 0;
+   this.lastError = null; this.analysedThrough = -1; this.speechVerifiedThrough = -1;
+   this.window = { ...this.window!, epoch: t.recordingEpoch, captureStart: t.captureStartFrame ?? t.recordingStartFrame ?? t.currentFrame,
+    gridOrigin: t.recordingLoopStartFrame ?? t.loopStartFrame, tempo: this.session?.tempo ?? 120 };
+  }
   const active = t.recordingState === 'recording' || t.recording;
   if (active && t.recordingTarget && t.recordingStartFrame !== undefined) {
    if (!this.window || this.window.startFrame !== t.recordingStartFrame || this.window.clockId !== t.clockId) {
@@ -185,7 +197,7 @@ export class PerformanceRecorder {
      this.dropped += lost.size; this.inFlight = null; this.replaced.clear();
      this.lastError = "The previous take's last batch was not acknowledged by the engine";
     }
-    this.window = { clockId: t.clockId, startFrame: t.recordingStartFrame, target: t.recordingTarget, tempo: this.session?.tempo ?? 120, open: true, cutoff: t.currentFrame };
+    this.window = { clockId: t.clockId, startFrame: t.recordingStartFrame, target: t.recordingTarget, tempo: this.session?.tempo ?? 120, epoch: t.recordingEpoch, captureStart: t.captureStartFrame ?? t.recordingStartFrame, gridOrigin: t.recordingLoopStartFrame ?? t.recordingStartFrame, open: true, cutoff: t.currentFrame };
     this.speechVerifiedThrough = -1;
    }
    this.window.open = true; this.window.cutoff = t.currentFrame;
@@ -237,7 +249,7 @@ export class PerformanceRecorder {
   const excludedSpans = this.spans.filter(s => s.clockId === this.window!.clockId && s.startFrame <= last && s.endFrame >= first).slice(-MAX_SPANS).map(({ startFrame, endFrame }) => ({ startFrame, endFrame }));
   const command: SessionCommand = {
    id: this.deps.newId(), expectedRevision: this.session!.revision, boundary: 'next-loop',
-   operation: { type: 'commit-performance', events: batch.map(e => e.event), excludedSpans, verifiedThroughFrame: mark, ...(replacesCommandId?{replacesCommandId}:{}) },
+   operation: { type: 'commit-performance', ...(this.window!.epoch === undefined ? {} : { recordingEpoch: this.window!.epoch }), events: batch.map(e => e.event), excludedSpans, verifiedThroughFrame: mark, ...(replacesCommandId?{replacesCommandId}:{}) },
   };
   batch.forEach(e => { e.status = 'submitted'; });
   if (replacesCommandId && this.inFlight) this.replaced.set(replacesCommandId, this.inFlight.ids);

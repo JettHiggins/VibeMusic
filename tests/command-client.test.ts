@@ -17,7 +17,8 @@ async function harness() {
  const listeners: ((m: ClientMessage) => void)[] = [];
  const core = new EngineCore(new FirmwareAudio(module), metadata, createSession(), 'c', m => listeners.forEach(l => l(m)));
  let n = 0;
- const client = new CommandClient({ dispatch: (c: SessionCommand) => core.dispatch(c), getSession: () => core.getSession() }, () => `c${++n}`);
+ const sent:SessionCommand[]=[];
+ const client = new CommandClient({ dispatch: (c: SessionCommand) => { sent.push(c);return core.dispatch(c); }, getSession: () => core.getSession() }, () => `c${++n}`);
  const results: string[] = [];
  client.onResult = r => results.push(`${r.status}: ${r.text}`);
  listeners.push(m => client.handle(m));
@@ -28,28 +29,29 @@ async function harness() {
  const loop = Math.ceil(44100 * 960 / 120);
  client.send({ type: 'play', playing: true });
  render(1280);
- return { core, client, results, render, other, loop };
+ return { core, client, results, render, other, loop, sent };
 }
 
-test('a click during count-in no longer drops Record; the take starts at the same downbeat', { skip: !ready }, async () => {
- const { core, client, results, render, other } = await harness();
- client.send({ type: 'record', target: { trackId: 'drums', lane: 'snare' } }, 'next-loop');
- render(44100);
+test('an unrelated edit never re-issues next-beat Record or moves its deadline', { skip: !ready }, async () => {
+ const { core, client, results, render, other, sent } = await harness();
+ client.send({ type: 'record', target: { trackId: 'drums', lane: 'snare' } }, 'next-beat');
+ render(128);
  other({ type: 'mute', trackId: 'synth-2', muted: true });
  // Before the fix the record was rejected as stale here and recording stayed idle.
  let frames = 0;
  while (core.transport().recordingState !== 'recording' && frames < 44100 * 9) { render(1280); frames += 1280; }
  assert.equal(core.transport().recordingState, 'recording');
- assert.ok(frames < 44100 * 8, 'starts at the first downbeat, not one loop later');
+ assert.ok(frames < 44100 * .6, 'starts at the next beat');
+ assert.equal(sent.filter(c=>c.operation.type==='record').length,1,'the pinned intent is sent only once');
  assert.deepEqual(core.transport().recordingTarget, { trackId: 'drums', lane: 'snare' });
  assert.ok(!results.some(r => r.startsWith('rejected')), results.join('\n'));
 });
 
-test('two queued changes in one loop are both kept; undo is never re-issued', { skip: !ready }, async () => {
+test('explicit Clear is immediate and never replayed; queued Undo is never re-issued', { skip: !ready }, async () => {
  const { core, client, results, render, loop } = await harness();
  const kicksBefore = core.getSession().tracks[3].hits.length;
  client.send({ type: 'tempo', bpm: 100 }, 'next-loop');
- client.send({ type: 'clear', target: { trackId: 'synth-1' } }, 'next-loop');
+ client.send({ type: 'clear', target: { trackId: 'synth-1' } }, 'immediate');
  render(loop * 3);
  assert.equal(core.getSession().tempo, 100);
  assert.ok(results.some(r => r === 'applied: Clear Synth 1: done'), results.join('\n'));
@@ -66,7 +68,7 @@ test('two queued changes in one loop are both kept; undo is never re-issued', { 
 
 test('status text is plain language', () => {
  assert.equal(describe({ type: 'tempo', bpm: 100 }, 'queued'), 'Tempo 100 BPM: applies at the next loop');
- assert.equal(describe({ type: 'record', target: { trackId: 'drums', lane: 'kick' } }, 'queued'), 'Record Kick: count-in, starts at the next downbeat');
+ assert.equal(describe({ type: 'record', target: { trackId: 'drums', lane: 'kick' } }, 'queued'), 'Record Kick: armed (next beat, or four count-in beats from stopped)');
  assert.equal(describe({ type: 'clear', target: { trackId: 'drums', lane: 'snare' } }, 'rejected', 'Error: Stale revision'), 'Clear Snare not applied: the session changed before it could apply; press it again');
  assert.equal(describe({ type: 'tempo', bpm: 90 }, 'rejected', 'Error: Stop recording before changing tempo'), 'Tempo 90 BPM not applied: stop recording before changing tempo');
 });

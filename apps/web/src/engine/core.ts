@@ -141,6 +141,14 @@ export class EngineCore {
    else{if(this.recording&&this.recording.endFrame===null)this.recording.endFrame=this.frame;for(const queued of this.pending)this.ack(queued,'rejected','Playback stopped');this.pending=[];this.scheduledBeats.clear();}
   }
   this.sync();
+  // Explicit live edits supersede queued pattern intentions, including discard-only Undo
+  // (which deliberately leaves revision unchanged). Do not let them reappear at the loop.
+  if(c.boundary==='immediate'&&(c.operation.type==='clear'||c.operation.type==='undo')){
+   const operation=c.operation;
+   const cancelled=this.pending.filter(p=>p.operation.type==='edit-pattern'&&(operation.type==='undo'||p.operation.trackId===operation.target.trackId));
+   this.pending=this.pending.filter(p=>!cancelled.includes(p));
+   for(const queued of cancelled)this.ack(queued,'rejected','Pattern edit discarded by live edit');
+  }
   const clear=c.operation.type==='clear'?c.operation.target:null;
   const conflicts=clear&&this.recording&&clear.trackId===this.recording.target.trackId&&(!clear.lane||clear.lane===this.recording.target.lane);
   if(this.recording&&(c.operation.type==='undo'||conflicts)){
