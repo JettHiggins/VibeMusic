@@ -1,4 +1,4 @@
-import type {PerformanceEvent,SessionState,SessionCommand} from '@voicesynth/contracts';
+import {snapMidiToScale,type PerformanceEvent,type SessionState,type SessionCommand} from '@voicesynth/contracts';
 export interface RecordingWindow {startFrame:number;endFrame:number|null;loopStartFrame:number;tempo:number;target:SessionState['selected'];captureStartFrame?:number;erasedThrough?:Record<string,number>}
 export type PerformanceOperation=Extract<SessionCommand['operation'],{type:'commit-performance'}>;
 function cells(start:number,length:number){return new Set(Array.from({length},(_,i)=>(start+i)%64));}
@@ -41,7 +41,7 @@ export function commitPerformance(state:SessionState,op:PerformanceOperation,win
    const duration=Math.max(1,Math.min(64,Math.round((end-window.loopStartFrame)/stepFrames)-unwrapped));
    const occupied=cells(step,duration);
    track.notes=track.notes.filter(note=>![...cells(note.step,note.duration)].some(i=>occupied.has(i)));
-   track.notes.push({id:event.id,step,duration,midi:event.midi,velocity:event.velocity});
+   track.notes.push({id:event.id,step,duration,midi:snapMidiToScale(event.midi,state.pitchSnap),velocity:event.velocity});
   }
  }
  return result;

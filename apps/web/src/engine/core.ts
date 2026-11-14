@@ -1,4 +1,4 @@
-import { AuditionEvent, SessionCommand, type SessionState, type ClientMessage, type Transport, type CaptureErasure } from '@voicesynth/contracts';
+import { AuditionEvent, SessionCommand, snapMidiToScale, type SessionState, type ClientMessage, type Transport, type CaptureErasure } from '@voicesynth/contracts';
 import type { FirmwareMetadata } from './metadata.ts';
 import {OutputTransition} from './output-transition.ts';
 import { firmwareSnapshot } from './snapshot.ts';
@@ -49,11 +49,12 @@ export class EngineCore {
   try{
    if(c.operation.type==='undo'&&c.boundary==='immediate'&&this.pending.some(p=>p.operation.type==='commit-performance'))c.operation.discardCaptureOnly=true;
    this.propose(c);
-   const requiresBoundary=['tempo','apply-patch','commit-performance','edit-pattern','load-session'].includes(c.operation.type);
+   const requiresBoundary=['tempo','apply-patch','commit-performance','edit-pattern','load-session','snap-notes'].includes(c.operation.type);
    if(c.operation.type==='record'&&!['next-beat','next-loop'].includes(c.boundary))throw new Error('Record requires next-beat or next-loop boundary');
    if(c.boundary==='next-beat'&&c.operation.type!=='record')throw new Error('Next-beat boundary is only supported for record');
    if(requiresBoundary && c.boundary!=='next-loop')throw new Error('Operation requires next-loop boundary');
    if(c.operation.type==='metronome'&&c.boundary!=='immediate')throw new Error('Metronome requires immediate boundary');
+   if(c.operation.type==='set-pitch-snap'&&c.boundary!=='immediate')throw new Error('Pitch snap setting requires immediate boundary');
    if(c.operation.type==='erase-event'&&c.boundary!=='immediate')throw new Error('Erase requires immediate boundary');
    if(c.operation.type==='commit-performance'&&c.operation.replacesCommandId){
     const replacesCommandId=c.operation.replacesCommandId;
@@ -98,6 +99,17 @@ export class EngineCore {
   const target='target' in op?op.target:undefined;
   if(target && ((target.trackId==='drums' && !target.lane && ['select','record','erase-event'].includes(op.type)) || (target.trackId!=='drums' && target.lane)))throw new Error('Invalid lane for target');
   switch(op.type){
+   case 'set-pitch-snap':{
+    if(op.settings?(state.pitchSnap?.root===op.settings.root&&state.pitchSnap?.scale===op.settings.scale):!state.pitchSnap)return state;
+    state.pitchSnap=copy(op.settings);break;
+   }
+   case 'snap-notes':{
+    if(!state.pitchSnap)throw new Error('Choose a key and scale before snapping existing notes');
+    const track=state.tracks.find(t=>t.id===op.trackId)!;
+    const notes=track.notes.map(note=>({...note,midi:snapMidiToScale(note.midi,state.pitchSnap)}));
+    if(notes.every((note,index)=>note.midi===track.notes[index].midi))return state;
+    track.notes=notes;break;
+   }
    case 'metronome':break;
    case 'erase-event':{
     const track=state.tracks.find(t=>t.id===op.target.trackId)!;
