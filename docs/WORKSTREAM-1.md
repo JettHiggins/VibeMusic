@@ -16,4 +16,4 @@ Use a fresh owner-specific repair branch from reviewed engine-integration; prese
 
 ## Current checkpoints
 
-Plan/goals publication: 0cd088e. Shared metronome/erase/countdown interfaces: 5560129. Transport/empty-startup implementation ready for review: ws1/transport-playtest-repair d856621. Targeted erase implementation remains WS1's next independent task; do not mark the full repair or human fun gate complete.
+Plan/goals publication: 0cd088e. Shared metronome/erase/countdown interfaces: 5560129. Ready for peer review: ws1/transport-playtest-repair d856621 and ws1/targeted-erasure ab9342b. Next: review incoming WS2/WS3 repairs, obtain review on WS1 capabilities, integrate/check them and publish the frozen test commit. Do not mark the full repair or human fun gate complete.
