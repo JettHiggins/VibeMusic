@@ -8,7 +8,7 @@ Coordination issue: **Team restart: recording usability and real-device fixes**.
 
 - Restart baseline: engine-integration at 0c1c996 or its reviewed successors. Main is the older documentation baseline. Preserve local work and create fresh capability branches from origin/engine-integration.
 - CI passed at 0c1c996, including software checks on Linux/macOS/Windows. This is not physical microphone or audible-glitch signoff.
-- WS1 / Jett / @JettHiggins: real pinned SLOOP WASM, four-bar clock, engine commands/recording windows, renderer, contracts, integration and CI delivered. A local five-millisecond patch-transition change and tests exist but are not published in that baseline.
+- WS1 / Jett / @JettHiggins: real pinned SLOOP WASM, four-bar clock, engine commands/recording windows, renderer, contracts, integration and CI delivered. Five-millisecond patch-transition smoothing is published in 735f122; human listening remains open.
 - WS2 / Leo / @leoAndrade2332: UI, editing/persistence, calibration, drum onset capture, YIN melody capture/correction and buffering integrated. Synthetic browser input tests pass; real-device acceptance is open.
 - WS3 / Lenny / @lennyyanza: local transcript service, sound jobs/previews/acceptance and research framework integrated. Original CLAP music inference is working locally; 153 presets and 128 variations were exercised. Search quality and blind listening are open.
 - Candidate preview/acceptance UI already exists. Recording/count-in and the original music checkpoint are no longer blocked as described in old issue #3.
@@ -58,3 +58,11 @@ Help capture/reproduce the synth error on Lenny's device. Keep work inside servi
 - Presets audition or report a specific loading failure. The main workflow requires no tabs.
 - Human results include commit, OS/browser, input/output devices, calibration values, observed failures and exact errors. Raw microphone recordings remain opt-in and uncommitted.
 - Ten-minute audible playback, speech acknowledgments, blind listening and full hands-free cross-platform acceptance remain separate outstanding gates.
+
+## Recording contract ready for review (not merged)
+
+WS1 capability is on `ws1/recording-usability` at `bd1428b`. Review: https://github.com/JettHiggins/VoiceSynthesizer/compare/engine-integration...ws1/recording-usability. Read docs/RECORDING-USABILITY.md on that branch. It includes next-beat starts, four-beat stopped count-in, immediate Clear/Undo, reset-before-ack recordingEpoch/captureStartFrame feedback, optional epoch-tagged batches and a fixed composition grid origin for mid-loop capture. Armed Record checks revision on receipt, then pins its target/deadline through unrelated edits. Other queued musical commands retain application-time revision checks.
+
+Local shared checks, complete Node suite, real Python/WebSocket/WASM integration, 99 base backend tests and production build pass. Human/device acceptance and consumer UI wiring remain open. Repository settings prohibit Actions from creating PRs; the workflow posted the review link in issue #9. A collaborator must open the PR or explicitly enable authenticated PR creation. No PR review/merge is claimed.
+
+WS2 PR #7 has real-device evidence (browser estimate ~62 ms versus ~120 ms measured), diagnostics and device-selection work worth preserving. On integration remove its automatic re-issue of an already armed Record; the new engine preserves that original count-in. Update calibration from 2 warm-up/10 measured clicks to the approved preparation + 4 practice/8 measured flow. Integrate epoch/cutoff reset and provisional Undo per the capability handoff. WS2 PR #8 documents speech capture requirements; speech transport is still a separate proposal.
