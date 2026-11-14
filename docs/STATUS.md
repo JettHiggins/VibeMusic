@@ -16,7 +16,7 @@ Jett chose mouse+voice individual erasure; metronome while playing and recording
 | WS2 / Leo / @leoAndrade2332 | Aggressive Noisy room profile, reference/calibration per device/profile, avoid learning foreground as noise, all-synth diagnostics, intuitive committed/provisional erasure and timing/click feedback. | Can reproduce independently now; wait for WS1's published metronome/erase interfaces before wiring. Read WORKSTREAM-2.md. |
 | WS3 / Lenny / @lennyyanza | Noisy-room classification/coverage and target continuity; deterministic spoken erase/metronome; offline-test review. | Can reproduce independently now; wait for published shared command interfaces. Read WORKSTREAM-3.md. |
 
-**Repair interfaces are published on ws1/playtest-repair** in PLAYTEST-REPAIR-CONTRACT.md, exported schemas and fixtures/PlaytestRepair.json. Engine support remains pending; unsupported new operations reject rather than fake completion. WS2/WS3 may implement against these exact interfaces/examples, but integrated enablement waits for the engine capability. No competing wire shapes. Shared checks and Node 170 passed/one optional skip; no human repair pass claimed.
+**Repair interfaces are integrated at 5560129** in PLAYTEST-REPAIR-CONTRACT.md, exported schemas and fixtures/PlaytestRepair.json. Engine support remains pending; unsupported new operations reject rather than fake completion. WS2/WS3 may implement against these exact interfaces/examples, but integrated enablement waits for the engine capability. No competing wire shapes. Shared checks and Node 170 passed/one optional skip; no human repair pass claimed.
 
 ## Baseline and preserved work
 
@@ -33,3 +33,9 @@ New Record from stopped must become recording after four beats, while continuous
 WS1 merges reviewed repair PRs and publishes one frozen commit. Test ten minutes on Lenny's device with no code changes during play; assess timing/corrections/usability/fun. All-three-device acceptance, original module-load reproduction, blind listening and complete hands-free sound design remain larger unfinished gates. Do not mark the whole project complete when this repair passes.
 
 WS1 reproduced a count-in clock-reset defect: after play/stop at firmware beat 80, Record stays armed after four beats because the pending target was compared with the reset counter. Fresh stopped count-in passed, so the exact first-press laptop sequence still needs browser confirmation. WS1 is implementing fixed audio-frame deadlines.
+
+## WS1 transport repair ready for review
+
+ws1/transport-playtest-repair **d856621** implements fixed audio-frame Record deadlines, worklet nonzero-origin initialization, no armed Record/Play restart, fractional-tempo countdown feedback, default-on playback/capture metronome with immediate transport-only mute, and empty startup. Node 175 passed/one optional skip, shared checks, live-service/WASM integration and build pass. Actual Chromium controls/WASM with synthetic silence passed fresh Record-before-Play, displayed-deadline activation, stopped restart, empty capture and non-mutating engine mute. Human test is still required. Handoff: docs/TRANSPORT-PLAYTEST-REPAIR.md on that branch.
+
+Not yet shared engine implementation: request a peer-created/reviewed PR against engine-integration. WS1 is next implementing targeted erasure separately; erase-event still rejects explicitly. WS2 can wire the published countdown/metronome fields against this review source while keeping a focused consumer PR, and continue noisy-room reproduction independently. Preserve old sound-search work.

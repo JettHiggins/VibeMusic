@@ -13,3 +13,7 @@ Current scope and acceptance: [PLAYTEST-REPAIR.md](PLAYTEST-REPAIR.md). Read [ST
 ## Handoff requirements
 
 Use a fresh owner-specific repair branch from reviewed engine-integration; preserve existing work, .env and assets. Small PRs to engine-integration, merged by WS1. Include exact commit/PR, reproduction, behavior, checks, limitations and next integration step. Never commit secrets/raw microphone audio/models. Do not count synthetic evidence as human acceptance.
+
+## Current checkpoints
+
+Plan/goals publication: 0cd088e. Shared metronome/erase/countdown interfaces: 5560129. Transport/empty-startup implementation ready for review: ws1/transport-playtest-repair d856621. Targeted erase implementation remains WS1's next independent task; do not mark the full repair or human fun gate complete.
