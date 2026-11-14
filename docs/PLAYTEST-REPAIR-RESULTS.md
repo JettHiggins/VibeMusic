@@ -41,7 +41,7 @@ For a capture failure, note what the meter, pitch reading, provisional notes, sp
 - Could you make the groove you intended? Pending
 - Most frustrating interaction, if any: pending
 - Would you keep playing? Why? Pending
-- Repair milestone accepted by Jett: **No — test pending**
+- Repair milestone accepted by Jett: **Not established — qualitative improvement reported; remaining hands-free failures are assigned in HANDSFREE-COMPLETION.md**
 
 Post the filled result as a comment on coordination issue #9 or a linked test issue, identifying the frozen commit. WS1 records failures and assigns repairs before another freeze. This gate does not replace the larger all-device, hands-free sound-design and blind-listening gates in PLAN.md.
 
