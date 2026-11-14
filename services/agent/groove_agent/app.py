@@ -20,6 +20,8 @@ from . import __version__
 from .connection import Connection
 from .contracts import ContractError, contracts_dir, validate
 from .research.service import ResearchService, backend_from_env
+from .speech_pipeline import ThreadedSpeechWorker
+from .stt import transcriber_from_env
 
 log = logging.getLogger("groove_agent")
 TICK_SECONDS = 1.0
@@ -29,13 +31,16 @@ app = FastAPI(title="VoiceSynthesizer agent service", version=__version__)
 # No research backend unless GROOVE_RESEARCH is set; a misconfigured one fails at startup, not mid-session.
 research_service = ResearchService(backend_from_env(contracts_dir().parents[1]),
                                      os.environ.get("GROOVE_PUBLIC_URL", "http://127.0.0.1:8000"))
+# No speech recognition unless GROOVE_STT is set (local faster-whisper); loaded once and shared.
+transcriber = transcriber_from_env()
 
 
 @app.get("/healthz")
 def healthz() -> dict:
     backend = research_service.backend
     return {"status": "ok", "version": __version__, "contract": 1,
-            "research": backend.label if backend else "not configured"}
+            "research": backend.label if backend else "not configured",
+            "speech": transcriber.name if transcriber else "not configured"}
 
 
 @app.get("/previews/{token}.wav")
@@ -107,8 +112,19 @@ async def session_socket(websocket: WebSocket) -> None:
         except RuntimeError:
             pass  # loop already closed during shutdown
 
+    def from_speech(job, text, error) -> None:
+        """Called on the speech worker thread; results are applied on the event loop, in order."""
+        def deliver() -> None:
+            for reply in connection.speech_result(job, text, error, time.monotonic()):
+                outbox.put_nowait(reply)
+        try:
+            loop.call_soon_threadsafe(deliver)
+        except RuntimeError:
+            pass
+
     port = research_service.port(from_worker)
-    connection = Connection(research=port)
+    speech = ThreadedSpeechWorker(transcriber, from_speech) if transcriber is not None else None
+    connection = Connection(research=port, speech=speech)
 
     async def tick() -> None:
         while True:
@@ -138,5 +154,7 @@ async def session_socket(websocket: WebSocket) -> None:
     finally:
         # Pending proposals and research jobs die with the connection; nothing is replayed after a reconnect.
         port.close()
+        if speech is not None:
+            speech.close()
         for task in tasks:
             task.cancel()

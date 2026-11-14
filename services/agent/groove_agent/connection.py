@@ -15,8 +15,8 @@ from collections import OrderedDict, deque
 from dataclasses import dataclass
 from typing import Any, Callable, Deque, Mapping, Optional, Protocol, Sequence, Union
 
-from .intents import (MELODIC_TRACKS, AcceptCandidate, CancelSearch, Command, Ignored, Interpretation, NotUnderstood,
-                      SoundSearch, interpret, validate_operation)
+from .intents import (MELODIC_TRACKS, WAKE_WORDS, AcceptCandidate, CancelSearch, Command, Ignored, Interpretation,
+                      NotUnderstood, SoundSearch, interpret, tokenize, validate_operation)
 from .speech import ChunkError, StreamTracker, decode_chunk
 from .speech_pipeline import EnergySegmenter, SpeechJob, SpeechWorker
 
@@ -25,6 +25,9 @@ Interpreter = Callable[..., Interpretation]  # (text, session, during_recording,
 DEFAULT_ACK_TIMEOUT_S = 60.0  # longer than the slowest loop (4 bars at 40 BPM = 24 s) plus count-in
 MAX_BACKLOG = 8
 REMEMBERED_UTTERANCES = 256
+# People pause after the wake word ("Groove, ... stop"); segmentation then splits it off.
+# A segment that is only the wake word waits this long for the command that follows it.
+WAKE_JOIN_SECONDS = 2.0
 # Without a configured recognizer, speech-audio is validated and dropped and speech-verified is
 # never sent: nothing was classified.
 SPEECH_UNAVAILABLE = {"type": "speech-status", "available": False, "provider": "none",
@@ -48,6 +51,7 @@ class _SpeechStream:
     pending: "Deque[SpeechJob]"
     verified: int = -1
     failed: bool = False
+    held_wake: Optional[tuple] = None  # (job, text): a bare wake word waiting for its command
 
 
 @dataclass
@@ -80,6 +84,12 @@ class _Search:
     description: str
     status: str = "running"
     candidates: Sequence[dict] = ()
+
+
+def _bare_wake(text: str) -> bool:
+    """The transcript is only the wake word ("Groove." / "Grove"), with nothing after it."""
+    tokens = tokenize(text)
+    return len(tokens) == 1 and tokens[0] in WAKE_WORDS
 
 
 def _error(request_id: str, message: str) -> dict:
@@ -171,7 +181,7 @@ class Connection:
             job = SpeechJob(f"{stream_id}:speech-{self._segment_count}", stream_id, chunk.clock_id, segment)
             state.pending.append(job)
             self._speech.submit(job)  # transcribed off the event loop; see speech_result
-        out.extend(self._advance_speech(stream_id, chunk.clock_id))
+        out.extend(self._advance_speech(stream_id, chunk.clock_id, now))
         return out
 
     def speech_result(self, job: SpeechJob, text: Optional[str], error: Optional[str], now: float) -> list[dict]:
@@ -192,31 +202,59 @@ class Connection:
                      "provider": self._speech.name if self._speech else "none",
                      "reason": "recognition failed; speech-verified stopped for this stream; hold speech-dependent commits"}]
         out: list[dict] = []
-        if text and text.strip():
-            segment = job.segment
-            window = self._window_at(segment.start_frame)  # capture-time context, not delivery-time
-            out.extend(self._on_utterance({
-                "type": "utterance", "id": job.job_id, "text": text.strip(), "clockId": job.clock_id,
-                "startFrame": segment.start_frame, "endFrame": segment.last_frame,
-                "duringRecording": window is not None and window.kind == "recording"}, now,
-                take_armed=window is not None and window.kind == "armed", obsolete=self._obsolete(window)))
-        out.extend(self._advance_speech(job.stream_id, job.clock_id))
+        text = (text or "").strip()
+        held = state.held_wake
+        if held is not None and text:
+            state.held_wake = None
+            wake_job, wake_text = held
+            if job.segment.start_frame - wake_job.segment.last_frame <= self._wake_join_frames():
+                out.extend(self._speech_utterance(wake_job, f"{wake_text} {text}", now, end=job.segment.last_frame))
+                text = ""
+            else:
+                out.extend(self._speech_utterance(wake_job, wake_text, now))
+        if text:
+            if _bare_wake(text):
+                state.held_wake = (job, text)
+            else:
+                out.extend(self._speech_utterance(job, text, now))
+        out.extend(self._advance_speech(job.stream_id, job.clock_id, now))
         return out
 
-    def _advance_speech(self, stream_id: str, clock_id: str) -> list[dict]:
-        """speech-verified for one stream: never past an open or still-transcribing segment."""
+    def _speech_utterance(self, job: SpeechJob, text: str, now: float, end: Optional[int] = None) -> list[dict]:
+        segment = job.segment
+        window = self._window_at(segment.start_frame)  # capture-time context of the first word spoken
+        return self._on_utterance({
+            "type": "utterance", "id": job.job_id, "text": text, "clockId": job.clock_id,
+            "startFrame": segment.start_frame, "endFrame": segment.last_frame if end is None else end,
+            "duringRecording": window is not None and window.kind == "recording"}, now,
+            take_armed=window is not None and window.kind == "armed", obsolete=self._obsolete(window))
+
+    def _wake_join_frames(self) -> int:
+        return round(WAKE_JOIN_SECONDS * (self.transport or {}).get("sampleRate", 44100))
+
+    def _advance_speech(self, stream_id: str, clock_id: str, now: float) -> list[dict]:
+        """speech-verified for one stream: never past an open, still-transcribing or held segment."""
         state = self._speech_state.get(stream_id)
         first_frame = self._speech_streams.first_frame(stream_id)
         if state is None or state.failed or first_frame is None:
             return []
-        bound = state.segmenter.decided_through
+        out: list[dict] = []
+        decided = state.segmenter.decided_through
+        if (state.held_wake is not None and not state.pending
+                and decided >= state.held_wake[0].segment.last_frame + self._wake_join_frames()):
+            wake_job, wake_text = state.held_wake  # no command followed: excluded, then not understood
+            state.held_wake = None
+            out.extend(self._speech_utterance(wake_job, wake_text, now))
+        bound = decided
         if state.pending:
             bound = min(bound, state.pending[0].segment.start_frame - 1)
+        if state.held_wake is not None:
+            bound = min(bound, state.held_wake[0].segment.start_frame - 1)
         if bound < first_frame or bound <= state.verified:
-            return []
+            return out
         state.verified = bound
-        return [{"type": "speech-verified", "clockId": clock_id, "streamId": stream_id,
-                 "fromFrame": first_frame, "throughFrame": bound}]
+        return out + [{"type": "speech-verified", "clockId": clock_id, "streamId": stream_id,
+                       "fromFrame": first_frame, "throughFrame": bound}]
 
     # -- capture-time recording context ----------------------------------------------------
 

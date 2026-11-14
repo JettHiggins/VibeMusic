@@ -53,14 +53,15 @@ class EnergySegmenter:
     sample_rate: int  # payload rate
     window_s: float = 0.02
     threshold_dbfs: float = -40.0
-    min_speech_s: float = 0.15
-    hangover_s: float = 0.30
+    min_speech_s: float = 0.15  # one continuous loud run this long makes a segment speech
+    burst_gap_s: float = 0.10  # quiet that ends a candidate with only short bursts (beatboxed hits)
+    hangover_s: float = 0.60  # keeps "Groove, <pause> stop" in one segment (measured pause ~0.5 s)
     max_segment_s: float = 4.0
     _samples: np.ndarray = field(default_factory=lambda: np.zeros(0, np.float32))
     _frames: np.ndarray = field(default_factory=lambda: np.zeros(0, np.int64))
     _received_through: int = -1
     _decided_through: int = -1
-    _open: Optional[list] = None  # [start index into history, loud windows, quiet windows since last loud]
+    _open: Optional[list] = None  # [current loud run, longest loud run, quiet windows since last loud]
     _history_s: list = field(default_factory=list)
     _history_f: list = field(default_factory=list)
 
@@ -103,21 +104,26 @@ class EnergySegmenter:
         self._history_f.append(win_frames)
         state = self._open
         if loud:
-            state[1] += 1
+            state[0] += 1
+            state[1] = max(state[1], state[0])
             state[2] = 0
         else:
+            state[0] = 0
             state[2] += 1
-        if state[2] < windows(self.hangover_s) and len(self._history_s) < windows(self.max_segment_s):
+        speech = state[1] >= windows(self.min_speech_s)
+        # Short bursts close after a brief gap, so beatboxing never holds the watermark for the
+        # speech hangover; speech keeps the longer hangover that spans "Groove, <pause> stop".
+        wait = windows(self.hangover_s) if speech else windows(self.burst_gap_s)
+        if state[2] < wait and len(self._history_s) < windows(self.max_segment_s):
             return None
         # Close: drop trailing quiet windows from the segment; they are decided as quiet.
         keep = len(self._history_s) - state[2]
-        loud_windows = state[1]
         samples = np.concatenate(self._history_s[:keep]) if keep else np.zeros(0, np.float32)
         frames = np.concatenate(self._history_f[:keep]) if keep else np.zeros(0, np.int64)
         self._open, self._history_s, self._history_f = None, [], []
         self._decided_through = int(win_frames[-1])
-        if loud_windows < windows(self.min_speech_s) or not len(frames):
-            return None  # a short burst such as a beatboxed hit: not speech
+        if not speech or not len(frames):
+            return None  # only short bursts such as beatboxed hits: not speech
         return Segment(int(frames[0]), int(frames[-1]), samples, self.sample_rate)
 
     @property
