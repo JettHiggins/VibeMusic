@@ -96,13 +96,15 @@ test('the mic test report holds measurements only', () => {
  const report = buildMicTestReport({
   now: new Date('2026-11-14T00:00:00Z'), browser: 'Chrome 140 / Windows',
   context: { sampleRate: SR, baseLatency: 0.01, outputLatency: 0.042 },
-  capture: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, sampleRate: 48000, latency: 0.01, channelCount: 1, ...({ deviceId: 'secret-id', label: 'My Headset' } as object) },
+  capture: { echoCancellation: false, noiseSuppression: true, autoGainControl: false, sampleRate: 48000, latency: 0.01, channelCount: 1, ...({ deviceId: 'secret-id', label: 'My Headset' } as object) },
+  processingProfile: 'noisy-room',
   calibration: cal({ noiseSource: 'measured', noiseFloorDb: -38.94, latencySource: 'tap-along', latencyFrames: 5292, latencySpreadFrames: 220 }),
   micCheck: check.state(-38.9),
   recorder: { mode: 'manual', capturing: false, provisional: [], committed: 4, dropped: 1, lastError: null, inFlight: null },
   analysisP95Ms: 3.21,
  });
- assert.equal(report.capture.processingDisabledAsRequested, true);
+ assert.equal(report.capture.processingProfile, 'noisy-room');
+ assert.equal(report.capture.processingMatchesProfile, true);
  assert.equal(report.calibration?.latencyMs, 120);
  assert.equal(report.context.outputLatencyMs, 42);
  const text = JSON.stringify(report);

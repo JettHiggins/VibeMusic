@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { SessionState } from '@voicesynth/contracts';
-import { PatternEditQueue, deleteNote, moveNote, placeNote, resizeNote, type PatternOp } from './pattern-edit.ts';
+import { PatternEditQueue, moveNote, placeNote, resizeNote, type PatternOp } from './pattern-edit.ts';
 import { STEPS, cellAt, centerPitch, isBlackKey, visibleRows } from './piano-roll-geometry.ts';
 import { noteName } from './labels.ts';
 import { C, MONO } from './theme.ts';
@@ -13,6 +13,7 @@ interface Props {
  playhead: number | null;
  disabled: boolean;
  onEdit: (op: PatternOp) => void;
+ onErase: (step: number) => void;
  onAudition?: (midi: number, on: boolean) => void;
  label: string;
 }
@@ -26,7 +27,7 @@ const ROWS = 25, ROW_H = 14, KEYS_W = 46;
  * double-click). Synth tracks are monophonic, so notes a change lands on are replaced, as in the
  * engine. Edits apply through the pattern queue at the next loop.
  */
-export function PianoRoll({ notes, provisional, playhead, disabled, onEdit, onAudition, label }: Props) {
+export function PianoRoll({ notes, provisional, playhead, disabled, onEdit, onErase, onAudition, label }: Props) {
  const [center, setCenter] = useState(() => centerPitch(notes));
  const [length, setLength] = useState(2);
  const [selected, setSelected] = useState<string | null>(null);
@@ -43,11 +44,13 @@ export function PianoRoll({ notes, provisional, playhead, disabled, onEdit, onAu
   const key = (e: KeyboardEvent) => {
    if (!selected || disabled || (e.key !== 'Delete' && e.key !== 'Backspace')) return;
    if ((e.target as HTMLElement)?.closest('input,select,textarea')) return;
-   e.preventDefault(); onEdit(deleteNote(selected)); setSelected(null);
+   const note = notes.find(n => n.id === selected);
+   if (!note) return;
+   e.preventDefault(); onErase(note.step); setSelected(null);
   };
   window.addEventListener('keydown', key);
   return () => window.removeEventListener('keydown', key);
- }, [selected, disabled, onEdit]);
+ }, [selected, disabled, onErase, notes]);
 
  const local = (e: React.PointerEvent) => { const r = grid.current!.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top, w: r.width }; };
 
@@ -112,11 +115,13 @@ export function PianoRoll({ notes, provisional, playhead, disabled, onEdit, onAu
      ].join(','), backgroundColor: C.panel }}>
     {rows.map((m, i) => isBlackKey(m) && <div key={m} style={{ position: 'absolute', left: 0, right: 0, top: i * ROW_H, height: ROW_H, background: '#0000002e', pointerEvents: 'none' }} />)}
     {provisional.flatMap((p, i) => rowOf(p.midi) < 0 ? [] : segments(p.step, p.duration).map(([s, d], k) =>
-     <div key={`p${i}-${k}`} style={{ position: 'absolute', left: `${s / STEPS * 100}%`, width: `${d / STEPS * 100}%`, top: rowOf(p.midi) * ROW_H + 1, height: ROW_H - 2, border: `1px dashed ${C.pending}`, borderRadius: 2, boxSizing: 'border-box', pointerEvents: 'none' }} />))}
+     <button key={`p${i}-${k}`} type="button" aria-label={`Erase provisional ${noteName(p.midi)} step ${s + 1}`} disabled={disabled}
+      onPointerDown={e => e.stopPropagation()} onClick={e => { e.stopPropagation(); onErase(s); }}
+      style={{ position: 'absolute', left: `${s / STEPS * 100}%`, width: `${d / STEPS * 100}%`, top: rowOf(p.midi) * ROW_H + 1, height: ROW_H - 2, minWidth: 0, padding: 0, border: `1px dashed ${C.pending}`, borderRadius: 2, boxSizing: 'border-box', background: 'transparent', cursor: 'pointer' }} />))}
     {notes.map(shape).flatMap(n => rowOf(n.midi) < 0 ? [] : segments(n.step, n.duration).map(([s, d], k) => {
      const sel = n.id === selected, pending = PatternEditQueue.isPlaceholder(n.id);
      return <div key={`${n.id}-${k}`} role="gridcell" aria-label={`${noteName(n.midi)} step ${n.step + 1} length ${n.duration}`} aria-selected={sel}
-      onPointerDown={e => onNoteDown(e, notes.find(x => x.id === n.id)!, 'move')} onDoubleClick={e => { e.stopPropagation(); if (!disabled && !pending) { onEdit(deleteNote(n.id)); setSelected(null); } }}
+      onPointerDown={e => onNoteDown(e, notes.find(x => x.id === n.id)!, 'move')} onDoubleClick={e => { e.stopPropagation(); if (!disabled && !pending) { const { x, y, w } = local(e); const cell = cellAt(x, y, w, ROW_H, rows); if (cell) onErase(cell.step); setSelected(null); } }}
       style={{ position: 'absolute', left: `${s / STEPS * 100}%`, width: `${d / STEPS * 100}%`, top: rowOf(n.midi) * ROW_H + 1, height: ROW_H - 2, boxSizing: 'border-box',
        background: pending ? C.pending : sel ? C.noteSelected : C.note, border: `1px solid ${sel ? C.accent : '#0008'}`, borderRadius: 2, cursor: disabled || pending ? 'default' : 'grab',
        fontSize: 9, color: '#111', fontFamily: MONO, overflow: 'hidden', whiteSpace: 'nowrap', paddingLeft: 2 }}>

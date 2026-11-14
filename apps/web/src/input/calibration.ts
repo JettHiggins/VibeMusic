@@ -1,4 +1,5 @@
 import { toDb } from './onset.ts';
+import type { PitchReading } from './pitch.ts';
 
 /** Per-device calibration persisted by the UI (not musical state; never contains audio). */
 export interface InputCalibration {
@@ -37,6 +38,11 @@ export function measureNoiseFloor(samples: Float32Array, windowFrames = 1024): n
  }
  levels.sort((a, b) => a - b);
  return levels[Math.min(levels.length - 1, Math.floor(levels.length * 0.9))];
+}
+
+/** Keep recognized/open sung notes out of room-noise calibration. */
+export function isQuietCalibrationFrame(pitch: PitchReading | null, noteOpen: boolean): boolean {
+ return !noteOpen && pitch !== null && pitch.state !== 'pitch';
 }
 
 export interface LatencyEstimate { latencyFrames: number; spreadFrames: number; matched: number }

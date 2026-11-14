@@ -14,6 +14,7 @@ export function TransportBar({ session, transport, enabled, busy, onEnable, send
  const rec = transport?.recordingState ?? 'idle';
  const pos = playheadStep(transport, session.tempo);
  const pending = transport?.pendingCommandIds.length ?? 0;
+ const metronomeEnabled = transport?.metronomeEnabled ?? true;
  return <header aria-label="Transport" style={{ position: 'sticky', top: 0, zIndex: 30, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '8px 12px', background: C.panel, borderBottom: `1px solid ${C.line}` }}>
   <strong style={{ letterSpacing: '.2em', fontSize: 12 }}>VOICESYNTH</strong>
   {!enabled && <button onClick={onEnable} disabled={busy} style={{ background: C.accent, color: '#111' }}>Enable audio</button>}
@@ -21,7 +22,8 @@ export function TransportBar({ session, transport, enabled, busy, onEnable, send
   {rec === 'idle'
    ? <button className="rec" disabled={!enabled || !canRecord} title={recordHint ?? undefined} onClick={() => send({ type: 'record', target }, 'next-beat')}>● Rec {targetLabel(target)}</button>
    : <button className="rec on" disabled={!enabled} onClick={() => send({ type: 'stop-recording' })}>■ Stop rec</button>}
-  <span style={{ fontFamily: MONO, color: rec === 'idle' ? C.faint : C.rec }}>{rec === 'recording' ? '● REC' : rec === 'armed' ? 'COUNT-IN' : 'REC OFF'}</span>
+  <span style={{ fontFamily: MONO, color: rec === 'idle' ? C.faint : C.rec }}>{rec === 'recording' ? '● REC' : rec === 'armed' ? (transport?.countInBeatsRemaining === undefined ? 'NEXT BEAT' : `COUNT-IN ${transport.countInBeatsRemaining}`) : 'REC OFF'}</span>
+  <button aria-label="Metronome" aria-pressed={metronomeEnabled} disabled={!enabled} onClick={() => send({ type: 'metronome', enabled: !metronomeEnabled }, 'immediate')}>Metronome {metronomeEnabled ? 'On' : 'Off'}</button>
   <span style={{ width: 1, height: 20, background: C.line }} />
   <button disabled={!enabled} onClick={() => send({ type: 'undo' }, 'immediate')}>Undo</button>
   <button disabled={!enabled} onClick={() => send({ type: 'clear', target }, 'immediate')}>Clear {targetLabel(target)}</button>

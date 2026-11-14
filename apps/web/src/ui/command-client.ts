@@ -109,6 +109,8 @@ export function describe(op: Operation, status: CommandResult['status'], reason?
   : op.type === 'undo' ? (op.discardCaptureOnly ? 'Discard pending input' : 'Undo')
   : op.type === 'load-session' ? 'Load session'
   : op.type === 'volume' ? `${nameOf({ trackId: op.trackId })} volume ${Math.round(op.volume * 100)}%`
+  : op.type === 'erase-event' ? `Erase ${nameOf(op.target)} step ${op.step + 1}`
+  : op.type === 'metronome' ? `Metronome ${op.enabled ? 'on' : 'off'}`
   : op.type;
  if (status === 'queued') return op.type === 'record' ? `${what}: armed (next beat, or four count-in beats from stopped)` : `${what}: applies at the next loop`;
  if (status === 'retrying') return `${what}: another change landed first; re-sent for the next loop`;

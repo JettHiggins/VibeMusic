@@ -29,6 +29,11 @@ export function InputInspector({ voice, state, transport, enabled, melodic }: { 
    <option value="">System default</option>
    {devices.map(d => <option key={d.deviceId} value={d.deviceId}>{d.label}</option>)}
   </select></label>}
+  <label>Capture profile <select aria-label="Capture profile" value={state.processingProfile} disabled={busy || recording} onChange={e => run(() => voice.setProcessingProfile(e.target.value as 'noisy-room' | 'music'))}>
+   <option value="noisy-room">Noisy room · cleanup on</option>
+   <option value="music">Music · less processing</option>
+  </select></label>
+  <small>{state.processingProfile === 'noisy-room' ? 'Recommended with background conversation. Browser noise suppression may soften attacks.' : 'Keeps microphone audio less processed; background noise can mask notes.'}</small>
   <label><input type="checkbox" checked={state.speech.enabled} onChange={e=>{if(e.target.checked)void voice.enableHandsFree();else voice.setHandsFree(false);}} /> Hands-free commands (local service)</label>
   {state.speech.enabled && <div role="status">{state.speech.message ?? 'Checking local speech recognition…'}{state.speech.status==='unavailable' && <button onClick={()=>{void voice.enableHandsFree();}}>Retry speech</button>}</div>}
   {state.speech.enabled && <small>Microphone audio streams continuously to your local service. Recording requires verified speech coverage.</small>}

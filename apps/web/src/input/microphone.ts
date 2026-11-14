@@ -5,6 +5,7 @@ import type { PitchReading, SungNote } from './pitch.ts';
 import type { SpeechRequest, SpeechResult } from './speech-worker.ts';
 import type { CaptureSettings } from './diagnostics.ts';
 import { formatWorkerLoadError } from './worker-load-error.ts';
+import { captureConstraints, type ProcessingProfile } from './processing-profile.ts';
 
 export interface AnalysisFrame {
  onsets: Onset[]; notes: SungNote[];
@@ -14,6 +15,8 @@ export interface AnalysisFrame {
  processedThrough?: number;
  levelDb: number; analysisMs: number; pitch?: PitchReading | null;
 }
+
+export type { ProcessingProfile } from './processing-profile.ts';
 
 /**
  * Connects an input (the microphone, or a diagnostic test signal) to the capture worklet on the
@@ -61,11 +64,12 @@ export class MicrophoneInput {
  private request(message: AnalysisRequest, transfer: Transferable[] = []) { this.worker?.postMessage(message, transfer); }
 
  /** Must be called from a user gesture the first time so the permission prompt can appear. */
- async startMicrophone(deviceId?: string) {
+ async startMicrophone(deviceId?: string, profile: ProcessingProfile = 'noisy-room') {
   await this.ensureGraph();
   this.disconnectSource();
-  // Processing designed for calls smears transients and pumps levels; disable it for performance capture.
-  const stream = await navigator.mediaDevices.getUserMedia({ audio: { deviceId: deviceId ? { exact: deviceId } : undefined, echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 } });
+  // Noise suppression is requested only for the noisy-room profile. AGC and echo
+  // cancellation stay off so capture level and timing remain predictable.
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: captureConstraints(deviceId, profile) });
   this.stream = stream;
   const track = stream.getAudioTracks()[0];
   const settings = track.getSettings() as MediaTrackSettings & { latency?: number };

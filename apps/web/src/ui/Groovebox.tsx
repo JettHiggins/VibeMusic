@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useReducer, useState, type ReactNode } from 'react';
-import type { SessionCommand, SessionState, Transport } from '@voicesynth/contracts';
+import type { SessionCommand, SessionState, Target, Transport } from '@voicesynth/contracts';
 import type { FirmwareMetadata } from '../engine/metadata.ts';
 import type { VoiceInput, VoiceInputState } from '../input/voice-input.ts';
 import { CommandClient, type CommandResult } from './command-client.ts';
@@ -43,7 +43,14 @@ export function Groovebox({ engine, voice, session, transport, enabled, busy, me
   client.onResult = setResult;
   patterns.onChange = refresh;
   patterns.handle({ type: 'session', session: engine.getSession() });
-  return engine.subscribe(m => { client.handle(m); patterns.handle(m); });
+  const seenErasureCommands = new Set<string>();
+  return engine.subscribe(m => {
+   client.handle(m); patterns.handle(m);
+   if (m.type === 'transport' && m.transport.captureErasure && !seenErasureCommands.has(m.transport.captureErasure.commandId)) {
+    seenErasureCommands.add(m.transport.captureErasure.commandId);
+    patterns.cancelPending(m.transport.captureErasure.target.trackId as TrackId);
+   }
+  });
  }, [engine, client, patterns]);
  useEffect(() => {
   voice.onChange = setInput;
@@ -68,6 +75,7 @@ export function Groovebox({ engine, voice, session, transport, enabled, busy, me
  const micReady = input.microphone === 'on' || input.microphone === 'test-signal';
  const uncalibrated = input.microphone === 'on' && !input.readiness.ready;
  const edit = (op: PatternOp) => patterns.edit(trackId, op);
+ const erase = (target: Target, step: number) => client.send({ type: 'erase-event', target, step }, 'immediate');
  const selectTrack = (id: TrackId) => send({ type: 'select', target: id === 'drums' ? { trackId: 'drums', lane } : { trackId: id } });
  const provisional = input.recorder.provisional.filter(p => p.event.target.trackId === trackId);
  const status = patterns.lastError ?? result?.text ?? engineMessage ?? '';
@@ -86,12 +94,12 @@ export function Groovebox({ engine, voice, session, transport, enabled, busy, me
     {trackId === 'drums'
      ? <DrumGrid hits={view.hits} playhead={playhead} lane={lane} disabled={!enabled}
        provisional={provisional.flatMap(p => p.event.target.lane ? [{ lane: p.event.target.lane as Lane, step: p.step }] : [])}
-       onEdit={edit} onSelectLane={l => send({ type: 'select', target: { trackId: 'drums', lane: l } })}
+       onEdit={edit} onErase={(l, step) => erase({ trackId: 'drums', lane: l }, step)} onSelectLane={l => send({ type: 'select', target: { trackId: 'drums', lane: l } })}
        onAudition={engine.audition ? l => engine.audition!({ kind: 'drum', lane: l, velocity: 0.9 }) : undefined} />
-     : <PianoRoll key={trackId} label={TRACK_LABEL[trackId]} notes={view.notes} playhead={playhead} disabled={!enabled} onEdit={edit}
+     : <PianoRoll key={trackId} label={TRACK_LABEL[trackId]} notes={view.notes} playhead={playhead} disabled={!enabled} onEdit={edit} onErase={step => erase({ trackId }, step)}
        provisional={provisional.flatMap(p => p.event.kind === 'note' ? [{ step: p.step, duration: p.duration, midi: p.event.midi }] : [])}
        onAudition={engine.audition ? (midi, on) => engine.audition!({ kind: 'note', trackId: trackId as Exclude<TrackId, 'drums'>, midi, velocity: on ? 0.8 : 0, on }) : undefined} />}
-    {rec !== 'idle' && <p style={{ color: C.rec, marginTop: 8 }} role="status">{rec === 'armed' ? 'Armed: next beat during playback; four count-in beats from stopped' : `Recording ${TRACK_LABEL[trackId]}: ${trackId === 'drums' ? 'beatbox now' : 'sing now; sing over a phrase to replace it'}`}</p>}
+    {rec !== 'idle' && <p style={{ color: C.rec, marginTop: 8 }} role="status">{rec === 'armed' ? (transport?.countInBeatsRemaining === undefined ? 'Armed: starts on the next beat' : `Count-in: ${transport.countInBeatsRemaining} beat(s) until recording`) : `Recording ${TRACK_LABEL[trackId]}: ${trackId === 'drums' ? 'beatbox now' : 'sing now; sing over a phrase to replace it'}`}</p>}
    </main>
    <aside className="vs-right" style={{ ...pane, display: 'grid', gap: 10, alignContent: 'start' }} aria-label="Inspector">
     <details open>

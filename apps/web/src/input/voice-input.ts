@@ -3,6 +3,7 @@ import { calibrationProgress, calibrationStatus, clickPlan, defaultCalibration, 
 import { MicCheck, type MicCheckState } from './mic-check.ts';
 import { buildMicTestReport, type CaptureSettings, type MicTestReport } from './diagnostics.ts';
 import type { AnalysisFrame } from './microphone.ts';
+import type { ProcessingProfile } from './processing-profile.ts';
 import { SpeechSession, SPEECH_PENDING_SECONDS } from './speech-session.ts';
 import type { SpeechResult } from './speech-worker.ts';
 import { handleSpeechMessage } from './speech-messages.ts';
@@ -23,7 +24,7 @@ export interface MicLike {
  inputLatencySeconds: number;
  deviceId: string | null;
  captureSettings: CaptureSettings | null;
- startMicrophone(deviceId?: string): Promise<void>;
+ startMicrophone(deviceId?: string, profile?: ProcessingProfile): Promise<void>;
  startTestSignal(buffer: AudioBuffer, when: number): Promise<void>;
  configure(noiseFloorDb: number, sensitivity?: number): void;
  measureNoiseFloor(seconds?: number): Promise<number>;
@@ -44,6 +45,7 @@ export type SilenceProgress = { phase: 'countdown'; countdownLeft: number } | { 
 export interface VoiceInputState {
  speech: {enabled:boolean;status:'off'|'waiting'|'ready'|'unavailable';message:string|null};
  microphone: 'off' | 'starting' | 'on' | 'test-signal';
+ processingProfile: ProcessingProfile;
  levelDb: number;
  calibration: InputCalibration | null;
  calibrating: 'noise' | 'latency' | null;
@@ -92,7 +94,7 @@ export class VoiceInput {
  constructor(private engine: EngineLike, mode: VerificationMode = 'manual', private options: VoiceInputOptions = {}) {
   this.createMic = options.createMic ?? (async context => new (await import('./microphone.ts')).MicrophoneInput(context));
   this.recorder = new PerformanceRecorder({ dispatch: c => engine.dispatch(c), newId: () => crypto.randomUUID() }, mode);
-  this.state = { speech:{enabled:false,status:'off',message:null}, microphone: 'off', levelDb: -120, calibration: null, calibrating: null, recorder: this.recorder.status(), analysisP95Ms: null, message: null, micCheck: null, capture: null, readiness: calibrationStatus(null), calibrationRun: null, silenceRun: null, calibrationResult: null };
+  this.state = { speech:{enabled:false,status:'off',message:null}, microphone: 'off', processingProfile: 'noisy-room', levelDb: -120, calibration: null, calibrating: null, recorder: this.recorder.status(), analysisP95Ms: null, message: null, micCheck: null, capture: null, readiness: calibrationStatus(null), calibrationRun: null, silenceRun: null, calibrationResult: null };
   this.recorder.onChange = recorder => this.update({ recorder });
   this.unsubscribe = engine.subscribe(message => {
    if(message.type==='session')this.latestRevision=message.session.revision;
@@ -198,7 +200,8 @@ export class VoiceInput {
     this.update({ message: error.message, ...(disconnected ? { microphone: 'off' as const } : {}) });
    };
    await start(this.mic);
-   const calibration = (kind === 'on' ? loadCalibration(this.mic.deviceId) : null) ?? defaultCalibration(context, this.mic.inputLatencySeconds, this.mic.deviceId);
+   const profile = kind === 'on' ? this.state.processingProfile : 'music';
+   const calibration = (kind === 'on' ? loadCalibration(this.mic.deviceId, undefined, profile) : null) ?? defaultCalibration(context, this.mic.inputLatencySeconds, this.mic.deviceId);
    this.mic.configure(calibration.noiseFloorDb);
    this.check = new MicCheck(context.sampleRate);
    this.update({ microphone: kind, calibration, capture: this.mic.captureSettings, micCheck: null });
@@ -208,7 +211,16 @@ export class VoiceInput {
   }
  }
 
- enableMicrophone(deviceId?: string) { return this.connect(mic => mic.startMicrophone(deviceId), 'on'); }
+ enableMicrophone(deviceId?: string, profile: ProcessingProfile = this.state.processingProfile) {
+  this.update({ processingProfile: profile });
+  return this.connect(mic => mic.startMicrophone(deviceId, profile), 'on');
+ }
+ setProcessingProfile(profile: ProcessingProfile) {
+  if (profile === this.state.processingProfile) return Promise.resolve();
+  this.update({ processingProfile: profile });
+  if (this.state.microphone !== 'on') return Promise.resolve();
+  return this.enableMicrophone(this.mic?.deviceId ?? undefined, profile);
+ }
  /** Diagnostic: feed a known buffer through the identical analysis path. */
  enableTestSignal(buffer: AudioBuffer, when: number) { return this.connect(mic => mic.startTestSignal(buffer, when), 'test-signal'); }
 
@@ -264,7 +276,7 @@ export class VoiceInput {
    if (cancelled || outcome === null) { keep('Silence measurement cancelled; the previous noise floor was kept.'); return; }
    if ('error' in outcome) { keep(`${outcome.error instanceof Error ? outcome.error.message : String(outcome.error)}. The previous noise floor was kept.`); return; }
    const calibration: InputCalibration = { ...(this.state.calibration ?? previous), noiseFloorDb: outcome.db, noiseSource: 'measured' };
-   mic.configure(outcome.db); saveCalibration(calibration);
+   mic.configure(outcome.db); saveCalibration(calibration, undefined, this.state.processingProfile);
    this.check?.reset();
    this.update({ calibration, calibrationResult: { ok: true, text: `Noise floor ${outcome.db.toFixed(1)} dBFS${outcome.db > -45 ? ' (noisy room: quiet hits may be missed)' : ''}` } });
   } finally { this.update({ calibrating: null, silenceRun: null }); }
@@ -310,7 +322,7 @@ export class VoiceInput {
     return;
    }
    const calibration: InputCalibration = { ...(this.state.calibration ?? previous), latencyFrames: estimate.latencyFrames, latencySpreadFrames: estimate.spreadFrames, latencySource: 'tap-along' };
-   saveCalibration(calibration);
+   saveCalibration(calibration, undefined, this.state.processingProfile);
    const latencyMs = estimate.latencyFrames / sr * 1000, spreadMs = estimate.spreadFrames / sr * 1000;
    this.update({ calibration, calibrationResult: { ok: true, latencyMs, spreadMs, matched: estimate.matched, of: plan.measured.length,
     text: `Offset ${latencyMs.toFixed(0)} ms, consistency ±${spreadMs.toFixed(0)} ms, ${estimate.matched}/${plan.measured.length} taps matched` } });
@@ -326,7 +338,7 @@ export class VoiceInput {
  setOffsetAdjust(ms: number) {
   if (!this.state.calibration) return;
   const calibration: InputCalibration = { ...this.state.calibration, offsetAdjustMs: Math.max(-150, Math.min(150, Math.round(ms))) };
-  if (calibration.deviceId !== 'test-signal') saveCalibration(calibration);
+  if (calibration.deviceId !== 'test-signal') saveCalibration(calibration, undefined, this.state.processingProfile);
   this.update({ calibration });
  }
 
@@ -337,7 +349,7 @@ export class VoiceInput {
  testReport(): MicTestReport {
   const context = this.context();
   return buildMicTestReport({
-   browser: navigator.userAgent, context, capture: this.state.capture ?? {}, calibration: this.state.calibration,
+   browser: navigator.userAgent, context, capture: this.state.capture ?? {}, processingProfile: this.state.processingProfile, calibration: this.state.calibration,
    micCheck: this.check?.state(this.state.calibration?.noiseFloorDb ?? -60) ?? new MicCheck(context.sampleRate).state(-60),
    recorder: this.recorder.status(), analysisP95Ms: this.state.analysisP95Ms,
   });
