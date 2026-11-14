@@ -1,0 +1,50 @@
+name: Open WS1 recording capability review
+
+on:
+  push:
+    branches: [ws1/recording-usability]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: ws1-recording-capability-review
+  cancel-in-progress: false
+
+jobs:
+  open-review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        with:
+          script: |
+            const fs = require('node:fs');
+            const {owner, repo} = context.repo;
+            const head = 'ws1/recording-usability';
+            const base = 'engine-integration';
+            const prs = (await github.rest.pulls.list({owner, repo, head: `${owner}:${head}`, base, state: 'open'})).data;
+            let pr = prs[0];
+            if (!pr) {
+              try {
+                pr = (await github.rest.pulls.create({owner, repo, head, base,
+                  title: 'Recording: next-beat start and immediate Clear/Undo with capture invalidation',
+                  body: fs.readFileSync('docs/RECORDING-USABILITY.md', 'utf8')})).data;
+              } catch (error) {
+                await github.rest.issues.createComment({owner, repo, issue_number: 9,
+                  body: `@leoAndrade2332 @lennyyanza — WS1 recording contract/engine capability is pushed at ${context.sha}. Automatic PR creation failed: ${error.message}. Review/PR link: https://github.com/${owner}/${repo}/compare/${base}...${head}. Read docs/RECORDING-USABILITY.md on that branch; integrate only its reviewed merge.`});
+                throw error;
+              }
+            }
+            const marker = `<!-- recording-review:${pr.number} -->`;
+            const comments = await github.paginate(github.rest.issues.listComments, {owner, repo, issue_number: 9, per_page: 100});
+            if (!comments.some(c => c.user.login === 'github-actions[bot]' && c.body.includes(marker))) {
+              await github.rest.issues.createComment({owner, repo, issue_number: 9,
+                body: `${marker}\n@leoAndrade2332 @lennyyanza — WS1 contract and engine are ready for review: ${pr.html_url}. Includes next-beat recording, one-bar stopped count-in, immediate Clear/Undo, recordingEpoch/captureStartFrame reset-before-ack feedback, optional epoch-tagged batches and grid origin. Please review the handoff, then integrate the approved merge commit. Leo owns input/UI reset wiring; Lenny owns backend proposal boundaries. Your independent calibration/UI/research work can continue.`});
+            }
+            core.notice(`Review: ${pr.html_url}`);

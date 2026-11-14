@@ -1,5 +1,5 @@
 import type {PerformanceEvent,SessionState,SessionCommand} from '@voicesynth/contracts';
-export interface RecordingWindow {startFrame:number;endFrame:number|null;loopStartFrame:number;tempo:number;target:SessionState['selected']}
+export interface RecordingWindow {startFrame:number;endFrame:number|null;loopStartFrame:number;tempo:number;target:SessionState['selected'];captureStartFrame?:number}
 export type PerformanceOperation=Extract<SessionCommand['operation'],{type:'commit-performance'}>;
 function cells(start:number,length:number){return new Set(Array.from({length},(_,i)=>(start+i)%64));}
 /** Input frames are already calibrated to the AudioContext clock; never subtract latency twice. */
@@ -15,7 +15,7 @@ export function commitPerformance(state:SessionState,op:PerformanceOperation,win
   if(event.target.trackId!==window.target.trackId||event.target.lane!==window.target.lane)throw new Error('Performance target does not match recording');
   const end=event.kind==='note'?event.endFrame:event.captureFrame;
   if(event.kind==='note'&&end<=event.captureFrame)throw new Error('Note must end after onset');
-  if(event.captureFrame<window.startFrame || end>(window.endFrame??currentFrame) || end>currentFrame)throw new Error('Performance outside recording window');
+  if(event.captureFrame<(window.captureStartFrame??window.startFrame) || end>(window.endFrame??currentFrame) || end>currentFrame)throw new Error('Performance outside recording window');
   if(end>op.verifiedThroughFrame)throw new Error('Speech analysis has not verified these frames');
   if(op.excludedSpans.some(span=>event.captureFrame<=span.endFrame&&end>=span.startFrame))continue;
   if(event.confidence<0.6 || event.velocity===0)continue;

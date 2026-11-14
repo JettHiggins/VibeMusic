@@ -8,7 +8,7 @@ Coordination issue: **Team restart: recording usability and real-device fixes**.
 
 - Restart baseline: engine-integration at 0c1c996 or its reviewed successors. Main is the older documentation baseline. Preserve local work and create fresh capability branches from origin/engine-integration.
 - CI passed at 0c1c996, including software checks on Linux/macOS/Windows. This is not physical microphone or audible-glitch signoff.
-- WS1 / Jett / @JettHiggins: real pinned SLOOP WASM, four-bar clock, engine commands/recording windows, renderer, contracts, integration and CI delivered. A local five-millisecond patch-transition change and tests exist but are not published in that baseline.
+- WS1 / Jett / @JettHiggins: real pinned SLOOP WASM, four-bar clock, engine commands/recording windows, renderer, contracts, integration and CI delivered. Five-millisecond patch-transition smoothing is published in 735f122; physical listening remains open.
 - WS2 / Leo / @leoAndrade2332: UI, editing/persistence, calibration, drum onset capture, YIN melody capture/correction and buffering integrated. Synthetic browser input tests pass; real-device acceptance is open.
 - WS3 / Lenny / @lennyyanza: local transcript service, sound jobs/previews/acceptance and research framework integrated. Original CLAP music inference is working locally; 153 presets and 128 variations were exercised. Search quality and blind listening are open.
 - Candidate preview/acceptance UI already exists. Recording/count-in and the original music checkpoint are no longer blocked as described in old issue #3.
@@ -18,7 +18,7 @@ Coordination issue: **Team restart: recording usability and real-device fixes**.
 
 The user tested on Lenny's device. Microphone input worked for drums. Recorded hits were late with wired headphones. Calibration was abrupt, four-bar recording waits were frustrating, Clear was disabled during recording, and Undo felt unavailable because it waited for the loop. Melody produced no notes; the user recalls a TypeScript/failed-to-load/chord error, without exact wording. Do not assume missing samples or treat a synthetic test as resolution.
 
-Accepted changes, not yet implemented:
+Accepted changes (engine capability prepared on ws1/recording-usability; consumer/UI changes remain outstanding):
 
 1. Record on the next beat during playback; from stopped, one-bar count-in. Keep the four-bar composition and sixteenth grid.
 2. Immediate Clear/Undo while playback and recording continue. Discard conflicting pre-edit buffered input so delayed analysis cannot restore deleted music. Undo discards current provisional input first, otherwise restores the last applied musical edit.
@@ -58,3 +58,7 @@ Help capture/reproduce the synth error on Lenny's device. Keep work inside servi
 - Presets audition or report a specific loading failure. The main workflow requires no tabs.
 - Human results include commit, OS/browser, input/output devices, calibration values, observed failures and exact errors. Raw microphone recordings remain opt-in and uncommitted.
 - Ten-minute audible playback, speech acknowledgments, blind listening and full hands-free cross-platform acceptance remain separate outstanding gates.
+
+## Recording capability review
+
+WS1 has prepared ws1/recording-usability with next-beat record starts, one-bar stopped count-in, immediate Clear/Undo, exact cutoff/epoch transport feedback, optional epoch-tagged batches, schemas/examples and real-WASM tests. Read RECORDING-USABILITY.md and the linked capability PR in coordination issue #9. WS2/WS3 must integrate its reviewed merge commit before using the additions; UI controls and capture reset handling are not complete merely because the engine tests pass.
