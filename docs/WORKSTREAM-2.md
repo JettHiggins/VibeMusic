@@ -175,3 +175,17 @@ Verified:
 - The 1440 px layout shows transport / tracks / roll / inspector; at narrower widths the inspector moves below. The session menu opens and closes.
 
 Not yet wired: next-beat Record and immediate Clear/Undo. Those buttons still use next-loop until WS1's recording-usability contract is merged.
+
+## Near-grid timing diagnostic (branch `ws2-grid-timing-diagnostics`)
+
+This answers WS1's request in `docs/reviews/PITCH-BOUNDARY-DIAGNOSTIC.md` to capture raw note timing and the distance from the nearest rounding threshold, so a missed grid cell on a real device can be diagnosed. Placement is unchanged: no snapping, and no hidden compensation.
+
+- `input/grid-timing.ts`: for each accepted onset or note (latency-compensated, on the engine's `recordingLoopStartFrame` grid origin), it records the rounded step, the signed offset from that step (ms, negative = early) and the distance to the nearest rounding threshold (half a sixteenth). Boundaries within 10 ms are flagged; the start and, for notes, the end are both measured.
+- The recorder keeps the last 32 placements (`RecorderStatus.timing`). The mic check shows "Grid timing: last N events, mean start ±X ms from the grid · K within 10 ms of a rounding threshold". **Copy test report** adds `gridTiming` (summary plus the last 16 entries, numbers only).
+- Tests (`tests/input-grid-timing.test.ts`):
+  - the boundary math;
+  - WS1's exact synthetic fixture through the real YIN pitch tracker and note segmenter, where **every boundary that landed in a neighbouring cell is flagged** (margin under 10 ms);
+  - the recorder records timing on the engine grid origin without changing placement.
+- Browser, with the test signal through the real worklet → worker → recorder path: an E4 that started 61 ms after step 12 was detected at +56.2 ms (6.3 ms from the threshold) and flagged; on-grid notes (−0.3, −3.4 ms) were not.
+
+Next, on real devices: have performers run `docs/MIC-TESTING.md` and post the report. `gridTiming` together with `calibration.effectiveLatencyMs` separates late compensation (a consistent positive mean offset) from boundary rounding (individual events near a threshold).
