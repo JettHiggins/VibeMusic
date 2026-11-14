@@ -57,3 +57,7 @@ Examples are in fixtures/MusicalControls.json and validated in TypeScript and Py
 ### TypeScript integration seam
 
 WS2 exposes BrowserActionAdapter on VoiceInput (or a thin adapter): getBrowserStatus() returns a snapshot or null before an audio clock exists; handleBrowserAction(action) starts validated asynchronous work and emits acknowledgments through subscribeBrowserActions(listener). cancelBrowserActions(reason) cancels agent-owned work on disconnect, preserving unrelated manually started UI calibration. WS1 owns routing in coordinator/main: send the current status on connect, forward emitted status/acks, dispatch only browser-action to this executor, and cancel agent-owned work on disconnect. Existing EngineAdapter/SessionCommand dispatch is unchanged. Do not make backend availability imply executor completion.
+
+### Routing context clarification
+
+Browser-action IDs must be freshly generated across reconnects, not reset counters reused for new requests. The bridge retains a bounded per-page ID ledger to keep old results from binding new actions. A bridge guard rejection (for example, no executor attached) may echo the request's clock and input revision for correlation; it does not assert a measured/current input state. Backend configuration is updated only from browser-status, never inferred from an acknowledgment. Identical duplicates on the current connection still reach the executor's idempotency cache. VoiceInput.handleServerMessage must not dispatch browser actions a second time; coordinator routing owns that dispatch.
