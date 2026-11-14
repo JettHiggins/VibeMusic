@@ -94,10 +94,10 @@ def test_clear_mute_select_undo_play(session):
 
 
 def test_boundaries_match_contract_guide(session):
-    assert interpret("record kick", session, False).boundary == "next-loop"
+    assert interpret("record kick", session, False).boundary == "next-beat"  # RECORDING-USABILITY.md
     assert interpret("tempo 100", session, False).boundary == "next-loop"
-    assert interpret("clear", session, False).boundary == "next-loop"
-    assert interpret("undo", session, False).boundary == "next-loop"
+    assert interpret("clear", session, False).boundary == "immediate"
+    assert interpret("undo", session, False).boundary == "immediate"
     assert interpret("groove stop", session, True).boundary == "immediate"
     assert interpret("mute", session, False).boundary == "immediate"
     assert interpret("select snare", session, False).boundary == "immediate"
@@ -117,3 +117,10 @@ def test_semantic_validation_catches_what_the_schema_allows():
 ])
 def test_spoken_numbers(words, value):
     assert find_number(words.split()) == value
+
+
+def test_stop_recording_cancels_an_armed_take_only_when_one_is_armed():
+    session = load_fixture("SessionState")
+    assert isinstance(interpret("stop recording", session, False), NotUnderstood)
+    assert interpret("stop recording", session, False, take_armed=True).operation == {"type": "stop-recording"}
+    assert interpret("stop", session, False, take_armed=True).operation == {"type": "play", "playing": False}

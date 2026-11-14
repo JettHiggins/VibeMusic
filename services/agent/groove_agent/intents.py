@@ -21,16 +21,18 @@ WAKE_WORDS = frozenset({"groove", "grove"})  # "grove" is a common recognizer sp
 TEMPO_MIN, TEMPO_MAX, TEMPO_NUDGE = 40, 240, 10
 MELODIC_TRACKS = ("synth-1", "synth-2", "synth-3")
 
-# Boundaries are fixed by docs/CONTRACTS.md, "Command lifecycle".
+# Boundaries follow docs/CONTRACTS.md "Command lifecycle" as amended by RECORDING-USABILITY.md
+# (PR #12): Record arms at the next beat (one-bar count-in from stopped); Clear and Undo apply
+# immediately, also during playback/capture. Tempo and apply-patch stay next-loop.
 BOUNDARY = {
     "select": "immediate",
     "stop-recording": "immediate",
     "mute": "immediate",
     "play": "immediate",
-    "record": "next-loop",
+    "record": "next-beat",
     "tempo": "next-loop",
-    "clear": "next-loop",
-    "undo": "next-loop",
+    "clear": "immediate",
+    "undo": "immediate",
     "apply-patch": "next-loop",
 }
 
@@ -140,8 +142,12 @@ def _tempo(tokens: Sequence[str], session: Mapping[str, Any]) -> Interpretation:
     return _command({"type": "tempo", "bpm": int(bpm) if float(bpm).is_integer() else bpm})
 
 
-def interpret(text: str, session: Mapping[str, Any], during_recording: bool) -> Interpretation:
-    """Map one utterance transcript to a command, using the browser's latest session snapshot."""
+def interpret(text: str, session: Mapping[str, Any], during_recording: bool, take_armed: bool = False) -> Interpretation:
+    """Map one utterance transcript to a command, using the browser's latest session snapshot.
+
+    `take_armed`: a Record is counting in (not yet capturing). "Stop recording" then cancels
+    the armed take with stop-recording, which keeps playback (RECORDING-USABILITY.md, Issue #3 e).
+    """
     tokens = tokenize(text)
     while tokens and tokens[0] in _POLITE:
         tokens = tokens[1:]
@@ -165,7 +171,7 @@ def interpret(text: str, session: Mapping[str, Any], during_recording: bool) -> 
         if any(word in _STOP_PLAYBACK_WORDS for word in rest):
             return _command({"type": "play", "playing": False})
         if "recording" in rest or "record" in rest:
-            if not during_recording:
+            if not (during_recording or take_armed):
                 return NotUnderstood("not recording")
             return _command({"type": "stop-recording"})
         if rest:

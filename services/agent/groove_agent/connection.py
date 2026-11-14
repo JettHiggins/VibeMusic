@@ -19,7 +19,7 @@ from .intents import (MELODIC_TRACKS, AcceptCandidate, CancelSearch, Command, Ig
                       SoundSearch, interpret, validate_operation)
 from .speech import ChunkError, StreamTracker, decode_chunk
 
-Interpreter = Callable[[str, Mapping[str, Any], bool], Interpretation]
+Interpreter = Callable[..., Interpretation]  # (text, session, during_recording, take_armed=False)
 
 DEFAULT_ACK_TIMEOUT_S = 60.0  # longer than the slowest loop (4 bars at 40 BPM = 24 s) plus count-in
 MAX_BACKLOG = 8
@@ -213,7 +213,7 @@ class Connection:
             return [_error(utterance_id, "utterance clock does not match the current audio clock")]
 
         during_recording = bool(message["duringRecording"])
-        result = self._interpret(message["text"], self.session, during_recording)
+        result = self._interpret(message["text"], self.session, during_recording, take_armed=self._take_armed())
         if isinstance(result, Ignored):
             return []
         if isinstance(result, NotUnderstood):
@@ -240,7 +240,7 @@ class Connection:
                         "startFrame": message["startFrame"], "endFrame": message["endFrame"]})
         if proposal is None:
             return out
-        if proposal.boundary == "next-loop" and self._next_loop_in_flight():
+        if proposal.boundary == "next-loop" and self._queued_in_flight():
             if len(self._backlog) >= MAX_BACKLOG:
                 out.append(_error(utterance_id, "too many commands are waiting; try again after the next loop"))
             else:
@@ -251,8 +251,21 @@ class Connection:
 
     # -- commands ----------------------------------------------------------------
 
-    def _next_loop_in_flight(self) -> bool:
-        return any(flight.proposal.boundary == "next-loop" for flight in self._in_flight.values())
+    def _take_armed(self) -> bool:
+        """A Record is counting in: the transport says armed, or our Record is not yet resolved."""
+        if (self.transport or {}).get("recordingState") == "armed":
+            return True
+        return any(flight.proposal.operation["type"] == "record" for flight in self._in_flight.values())
+
+    def _queued_in_flight(self) -> bool:
+        """A boundary-scheduled command (next-loop, or a next-beat Record) is still unresolved.
+
+        A next-beat Record checks expectedRevision on receipt and stays pinned once armed
+        (RECORDING-USABILITY.md), so it is issued without waiting. Its application can still
+        change the revision, so a next-loop command waits behind it like behind another
+        next-loop command. Immediate commands are never held back.
+        """
+        return any(flight.proposal.boundary in ("next-loop", "next-beat") for flight in self._in_flight.values())
 
     def _issue(self, proposal: _Proposal, now: float) -> dict:
         # Derived from the utterance so a repeated delivery maps to the same command ID,
@@ -269,7 +282,7 @@ class Connection:
         `expectedRevision` when a queued command is applied, so two issued
         against the same revision would make the second one stale.
         """
-        if self._backlog and self.session is not None and not self._next_loop_in_flight():
+        if self._backlog and self.session is not None and not self._queued_in_flight():
             return [self._issue(self._backlog.popleft(), now)]
         return []
 

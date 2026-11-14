@@ -17,6 +17,7 @@ Use SLOOP's actual browser WASM DSP and sequencer. The browser groovebox, musica
 - Normal speech outside recording; during recording commands begin with “Groove.” “Groove, stop” stops recording; “Groove, stop playback” stops transport.
 - Agent inference never controls sample timing. Browser musical state is authoritative; validate agent actions before application.
 - Raw microphone recordings are not persisted by default. Diagnostic capture is opt-in. Playback remains usable without AI services.
+- Speech recognition: local faster-whisper (configurable small-model baseline), selected by Jett. Language-model provider remains deferred while existing access is researched; keep the command parser interim and preserve Deep Agents as a completion requirement.
 - Current UI direction: dark monochrome DAW workspace, persistent transport/track/editor/inspector controls, drum step sequencer, and an editable synth piano roll. Replace the tab-based layout. Timing calibration includes preparation, practice clicks, progress, cancellation, and a recording-offset adjustment.
 
 ## Current priority: real-device usability
