@@ -112,3 +112,35 @@ def test_conflicting_spoken_record_issues_no_command_through_the_connection():
                                  "endFrame": 9, "duringRecording": False}, 0.0)
         assert [m["type"] for m in out] == ["error"], phrase
     assert connection.pending_command_ids == []
+
+
+
+# -- WS1 re-review of #34/#37: mixed drum + synth requests refuse ---------------------------
+
+@pytest.mark.parametrize("phrase", [
+    "clear kick and synth two", "record kick and synth three", "mute snare and synth one",
+    "select hats and synth two", "clear synth two and the kick", "record the snare and synth to",
+    "clear kick and synth", "record snare and melody", "record kick and the synth",
+])
+def test_mixed_drum_and_synth_requests_refuse_for_every_selection(phrase):
+    for selected in SELECTIONS:
+        result = interpret(phrase, session(selected), False)
+        assert isinstance(result, NotUnderstood) and "one track" in result.reason, (phrase, selected, result)
+
+
+def test_redundant_drums_word_still_names_one_lane_and_bare_synth_alone_still_works():
+    for selected in SELECTIONS:
+        assert interpret("clear the snare on the drums", session(selected), False).operation["target"] == {
+            "trackId": "drums", "lane": "snare"}
+    assert interpret("record synth", session("synth-2"), False).operation["target"] == {"trackId": "synth-2"}
+
+
+def test_mixed_family_spoken_requests_issue_no_command_through_the_connection():
+    connection = Connection()
+    connection.handle({"type": "session", "session": session("synth-1")}, 0.0)
+    for uid, phrase in (("a", "clear kick and synth two"), ("b", "record kick and synth three"),
+                        ("c", "clear kick and synth")):
+        out = connection.handle({"type": "utterance", "id": uid, "text": phrase, "clockId": "c", "startFrame": 0,
+                                 "endFrame": 9, "duringRecording": False}, 0.0)
+        assert [m["type"] for m in out] == ["error"], phrase
+    assert connection.pending_command_ids == []
