@@ -1,5 +1,7 @@
 # Integration handoff
 
+This document is chronological history. Read STATUS.md for current assignments, approved product changes and verified completion; older sections below contain superseded blockers. In particular candidate UI, recording/input integration and original CLAP music inference are delivered, while the recording-usability redesign is approved but not yet implemented.
+
 ## Verified foundation
 
 Milestone 0 is available on `engine-integration` (foundation a19badd). Build instructions and exact subsystem seams are in SETUP.md and CONTRACTS.md. Main is still the documentation baseline; implementation is on feature branches.

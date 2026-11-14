@@ -9,11 +9,19 @@ export const COMMON_PARAMS = [1, 2, 4, 5];
 
 export interface PatchControl { id: number; name: string; min: number; max: number; value: number }
 
+/**
+ * FM6 factory voices live in packed patch data (metadata.fm6Factory), not in the generic parameter
+ * array, which is all zeros for them. Generic sliders would show 0 and overwrite the real voice.
+ */
+export function usesPackedVoice(patch: Patch, metadata: FirmwareMetadata): boolean {
+ return metadata.engines[patch.engine]?.name === 'FM6';
+}
+
 /** Controls for a melodic track: the common envelope/filter set plus the engine's eight macros. */
 export function patchControls(patch: Patch, metadata: FirmwareMetadata): PatchControl[] {
  const engine = metadata.engines[patch.engine];
  const preset = engine?.presets[patch.preset];
- if (!engine || !preset) return [];
+ if (!engine || !preset || usesPackedVoice(patch, metadata)) return [];
  const value = (id: number) => patch.parameters[String(id)] ?? preset.parameters[id];
  const common = COMMON_PARAMS.map(id => ({ id, ...metadata.parameters[id] }));
  const macros = engine.parameters.map((d, i) => ({ id: metadata.engineParamOffset + i, ...d })).filter(d => d.name !== '-' && d.max > d.min);

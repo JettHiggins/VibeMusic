@@ -13,6 +13,13 @@ export interface InputCalibration {
   */
  latencyFrames: number;
  latencySource: 'default' | 'tap-along';
+ /** Whether noiseFloorDb was measured on this device (absent in calibrations saved before this field). */
+ noiseSource?: 'default' | 'measured';
+ /**
+  * Manual recording-offset trim per device, in ms, added to the measured latency. Positive moves
+  * recorded events earlier. Absent means 0.
+  */
+ offsetAdjustMs?: number;
  /** Spread (median absolute deviation) of the tap measurement, frames. */
  latencySpreadFrames: number | null;
  sampleRate: number;
@@ -64,4 +71,68 @@ export function estimateLatency(clickFrames: number[], onsetFrames: number[], op
 export function defaultCalibration(context: { sampleRate: number; baseLatency?: number; outputLatency?: number }, inputLatencySeconds = 0, deviceId: string | null = null): InputCalibration {
  const seconds = deviceId==='test-signal'?0:(context.baseLatency ?? 0) + (context.outputLatency ?? 0) + inputLatencySeconds;
  return { version: 1, noiseFloorDb: -60, peakDb: null, latencyFrames: Math.round(seconds * context.sampleRate), latencySource: 'default', latencySpreadFrames: null, sampleRate: context.sampleRate, deviceId };
+}
+
+/**
+ * Guided calibration plan: a visible countdown, practice clicks that are never scored (performers
+ * need them to lock in, and real hardware attenuates the first sounds after silence: on a tested
+ * Windows laptop the first clicks reached the mic 15–20 dB quieter), then the measured clicks.
+ */
+export interface ClickPlan { countdown: number; countdownEnd: number; practice: number[]; measured: number[]; all: number[]; end: number }
+export function clickPlan(startSeconds: number, options: { countdown?: number; practice?: number; measured?: number; interval?: number } = {}): ClickPlan {
+ const countdown = options.countdown ?? 3, practice = options.practice ?? 4, measured = options.measured ?? 8, interval = options.interval ?? 0.5;
+ const first = startSeconds + countdown;
+ const all = Array.from({ length: practice + measured }, (_, i) => first + i * interval);
+ return { countdown, countdownEnd: first, practice: all.slice(0, practice), measured: all.slice(practice), all, end: all[all.length - 1] + interval };
+}
+
+export type CalibrationPhase = 'countdown' | 'practice' | 'measuring' | 'analysing';
+export interface CalibrationProgress { phase: CalibrationPhase; countdownLeft: number; practiceDone: number; measuredDone: number; measuredTotal: number }
+/** Where a run is at time `now` (AudioContext seconds), for the progress display. */
+export function calibrationProgress(plan: ClickPlan, now: number): CalibrationProgress {
+ const done = (clicks: number[]) => clicks.filter(t => t <= now).length;
+ const measuredTotal = plan.measured.length;
+ if (now < plan.countdownEnd) return { phase: 'countdown', countdownLeft: Math.min(plan.countdown, Math.ceil(plan.countdownEnd - now)), practiceDone: 0, measuredDone: 0, measuredTotal };
+ const practiceDone = done(plan.practice), measuredDone = done(plan.measured);
+ const phase: CalibrationPhase = now >= plan.end ? 'analysing' : practiceDone < plan.practice.length ? 'practice' : 'measuring';
+ return { phase, countdownLeft: 0, practiceDone, measuredDone, measuredTotal };
+}
+
+/** Frames to subtract from capture frames: measured latency plus the manual per-device trim. */
+export function effectiveLatencyFrames(calibration: InputCalibration): number {
+ return Math.max(0, Math.round(calibration.latencyFrames + (calibration.offsetAdjustMs ?? 0) * calibration.sampleRate / 1000));
+}
+
+export type CalibrationStep = 'measure-silence' | 'calibrate-timing';
+export interface CalibrationStatus { ready: boolean; missing: CalibrationStep[]; advice: string }
+/**
+ * Whether a microphone is calibrated well enough for a take. The browser's latency estimate is a
+ * starting point only: on tested hardware it was 62 ms against a measured ~120 ms round trip,
+ * which places every hit about a 32nd note late at 120 BPM. Test signals bypass both issues.
+ */
+export function calibrationStatus(calibration: InputCalibration | null): CalibrationStatus {
+ if (!calibration) return { ready: false, missing: ['measure-silence', 'calibrate-timing'], advice: 'Enable the microphone first.' };
+ if (calibration.deviceId === 'test-signal') return { ready: true, missing: [], advice: 'Diagnostic test signal: no calibration needed.' };
+ const missing: CalibrationStep[] = [];
+ if (calibration.noiseSource !== 'measured') missing.push('measure-silence');
+ if (calibration.latencySource !== 'tap-along') missing.push('calibrate-timing');
+ const advice = !missing.length ? 'Calibrated.'
+  : missing.length === 2 ? 'Measure silence, then calibrate timing, before recording: uncalibrated takes land late.'
+  : missing[0] === 'measure-silence' ? 'Measure silence so quiet hits are not mistaken for background noise.'
+  : 'Calibrate timing before recording: the browser estimate is usually too short, so hits land late.';
+ return { ready: !missing.length, missing, advice };
+}
+
+/**
+ * Repeatable tap test against the *current* compensation: how far the performer's taps still land
+ * from the clicks after the effective latency is removed. Positive residual = recorded late.
+ */
+export interface TimingCheck { residualMs: number; suggestedTrimMs: number; verdict: 'on-time' | 'late' | 'early'; text: string }
+export function timingCheck(measuredLatencyFrames: number, calibration: InputCalibration, toleranceMs = 10): TimingCheck {
+ const residualMs = (measuredLatencyFrames - effectiveLatencyFrames(calibration)) / calibration.sampleRate * 1000;
+ const suggestedTrimMs = Math.max(-150, Math.min(150, Math.round((calibration.offsetAdjustMs ?? 0) + residualMs)));
+ const verdict = Math.abs(residualMs) <= toleranceMs ? 'on-time' : residualMs > 0 ? 'late' : 'early';
+ const text = verdict === 'on-time' ? `Taps land within ${Math.abs(residualMs).toFixed(0)} ms of the clicks: timing is good.`
+  : `Taps are recorded ${Math.abs(residualMs).toFixed(0)} ms ${verdict} with the current settings.`;
+ return { residualMs, suggestedTrimMs, verdict, text };
 }

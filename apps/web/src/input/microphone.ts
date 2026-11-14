@@ -1,9 +1,17 @@
 import captureUrl from './capture-worklet.ts?worker&url';
 import type { AnalysisRequest, AnalysisResult } from './analysis-worker.ts';
 import type { Onset } from './onset.ts';
-import type { SungNote } from './pitch.ts';
+import type { PitchReading, SungNote } from './pitch.ts';
+import type { CaptureSettings } from './diagnostics.ts';
 
-export interface AnalysisFrame { onsets: Onset[]; notes: SungNote[]; analysedThrough: number; levelDb: number; analysisMs: number }
+export interface AnalysisFrame {
+ onsets: Onset[]; notes: SungNote[];
+ /** Verification coverage: held at the start of a note still being sung. */
+ analysedThrough: number;
+ /** Raw capture frame actually processed (real elapsed time, for diagnostics). */
+ processedThrough?: number;
+ levelDb: number; analysisMs: number; pitch?: PitchReading | null;
+}
 
 /**
  * Connects an input (the microphone, or a diagnostic test signal) to the capture worklet on the
@@ -15,6 +23,8 @@ export class MicrophoneInput {
  /** Device-reported capture latency in seconds (Chrome exposes MediaTrackSettings.latency). */
  inputLatencySeconds = 0;
  deviceId: string | null = null;
+ /** What the browser actually granted for the capture track (it may ignore requested constraints). */
+ captureSettings: CaptureSettings | null = null;
  private node: AudioWorkletNode | null = null;
  private sink: GainNode | null = null;
  private worker: Worker | null = null;
@@ -39,7 +49,7 @@ export class MicrophoneInput {
    else if (data.type === 'noise-floor') { this.noiseWaiters.splice(0).forEach(resolve => resolve(data.db)); }
    else this.onError(new Error(data.message));
   };
-  worker.onerror = event => this.onError(new Error(event.message || 'Analysis worker failed'));
+  worker.onerror = event => this.onError(new Error(`Microphone analysis failed to load${event.message ? ` (${event.message})` : ''}. Restart npm run dev and reload the page; if it persists, run npm ci.`));
   const channel = new MessageChannel();
   node.port.postMessage({ type: 'connect', port: channel.port1 }, [channel.port1]);
   this.request({ type: 'connect', port: channel.port2, sampleRate: this.context.sampleRate }, [channel.port2]);
@@ -58,6 +68,8 @@ export class MicrophoneInput {
   const settings = track.getSettings() as MediaTrackSettings & { latency?: number };
   this.inputLatencySeconds = typeof settings.latency === 'number' ? settings.latency : 0;
   this.deviceId = settings.deviceId ?? null;
+  const { echoCancellation, noiseSuppression, autoGainControl, sampleRate, channelCount } = settings;
+  this.captureSettings = { echoCancellation, noiseSuppression, autoGainControl, sampleRate, channelCount, latency: settings.latency };
   track.onended = () => { this.onError(new Error('Microphone disconnected')); this.disconnectSource(); };
   this.source = this.context.createMediaStreamSource(stream);
   this.source.connect(this.node!);
@@ -72,7 +84,7 @@ export class MicrophoneInput {
   this.disconnectSource();
   const source = this.context.createBufferSource(); source.buffer = buffer;
   source.connect(this.node!); source.start(when);
-  this.source = source; this.inputLatencySeconds = 0; this.deviceId = 'test-signal';
+  this.source = source; this.inputLatencySeconds = 0; this.deviceId = 'test-signal'; this.captureSettings = null;
  }
 
  /** End any open sung note at a raw capture frame. */
