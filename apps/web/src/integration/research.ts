@@ -78,7 +78,7 @@ export class ResearchController {
   const candidate=this.state.candidates.find(c=>c.id===candidateId),trackId=this.state.trackId;
   if(!candidate||!trackId)throw new Error('Candidate is no longer available');
   if(this.pendingPatches.size)throw new Error('A sound change is already queued');
-  const command=this.prepareCommand({id:this.newId(),expectedRevision:this.engine.getSession().revision,boundary:'next-loop',operation:{type:'apply-patch',trackId,patch:structuredClone(candidate.patch)}});
+  const command=this.prepareCommand({id:this.newId(),expectedRevision:this.engine.getSession().revision,boundary:'immediate',operation:{type:'apply-patch',trackId,patch:structuredClone(candidate.patch)}});
   try{const receipt=this.engine.dispatch(command);if(receipt.type==='ack'&&receipt.status==='rejected')this.commandReceipt(receipt);}
   catch(error){this.commandReceipt({type:'ack',commandId:command.id,status:'rejected',revision:this.engine.getSession().revision,reason:String(error)});}
  }

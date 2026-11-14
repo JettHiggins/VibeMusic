@@ -1,0 +1,11 @@
+# WS1 browser action routing handoff
+
+Branch: `ws1/browser-action-routing`. Uses the published BrowserActionAdapter seam and musical-control messages; no new calibration or audio-processing implementation is supplied here.
+
+Coordinator routes browser-action to the real input adapter, never to EngineAdapter.dispatch. Main detects all four published adapter methods on VoiceInput, attaches only when implemented, and orders disposal so agent-owned work is cancelled before VoiceInput is disposed. Until WS2 implements the executor, there is no fake availability/status and incoming actions get an explicit rejected acknowledgment. The existing SessionCommand path and speech availability behavior remain.
+
+The router sends input snapshots after engine clock/context, validates schema, drops mismatched/regressing status, deduplicates repeated status snapshots and binds outcomes to pending IDs on the active connection. Disconnect/replacement/disposal unsubscribe old listeners, cancel agent-owned work and drop late replies without replay. Request IDs are retained across reconnects (4096 per page) so an old completion cannot bind a newly reused ID. Guard rejection echoes the request's clock/inputRevision; only browser-status is authoritative input configuration. It never turns a submission or thrown executor error into successful calibration.
+
+WS2 owns actual permission/state checks, idempotent execution, measured outcomes, cancellation and manual-calibration preservation inside the adapter. Backend IDs must be fresh across reconnects. Do not also dispatch browser actions in VoiceInput.handleServerMessage: the coordinator now dispatches them exactly once to handleBrowserAction.
+
+Validation: seven focused routing/lifecycle tests plus full Node 203 passed/one optional skip, shared checks/build and provider-disabled service/WebSocket/WASM regression passed. Tests exercise a scripted input adapter, not physical calibration or the unfinished WS2 executor/WS3 producer. Next: peer-create/review the focused PR; combine actual input executor and backend tools, then verify voice calibration/profile/offset requests, progress/cancel, reconnects and real measurements through the running browser/service.

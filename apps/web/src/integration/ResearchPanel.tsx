@@ -25,6 +25,6 @@ export function ResearchPanel({controller,session,connected,enabled}:{controller
    <button disabled={!enabled||state.acceptance?.status==='queued'} onClick={()=>attempt(()=>controller.accept(candidate.id))}>Use candidate {i+1}</button>
   </article>)}
   {state.preview&&<p role="status">Preview {state.preview.status}{state.preview.reason?`: ${state.preview.reason}`:''}. <button type="button" disabled={!['starting','playing'].includes(state.preview.status)} onClick={()=>controller.stopPreview()}>Stop preview</button></p>}
-  {state.acceptance&&<p role="status">Sound change {state.acceptance.status}{state.acceptance.status==='queued'?' for the next loop':''}{state.acceptance.reason?`: ${state.acceptance.reason}`:''}. Undo restores the previous patch.</p>}
+  {state.acceptance&&<p role="status">Sound change {state.acceptance.status==='queued'?'pending':state.acceptance.status}{state.acceptance.reason?`: ${state.acceptance.reason}`:''}. Undo restores the previous patch.</p>}
  </section>;
 }

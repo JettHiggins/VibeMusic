@@ -78,7 +78,7 @@ export class PatchEditQueue {
   if (this.inFlight || !this.session || this.session.revision < this.minRevision || !this.desired.size) { this.onChange(); return; }
   const [trackId, patch] = this.desired.entries().next().value!;
   this.desired.delete(trackId);
-  const command: SessionCommand = { id: this.deps.newId(), expectedRevision: this.session.revision, boundary: 'next-loop', operation: { type: 'apply-patch', trackId, patch } };
+  const command: SessionCommand = { id: this.deps.newId(), expectedRevision: this.session.revision, boundary: 'immediate', operation: { type: 'apply-patch', trackId, patch } };
   this.inFlight = { id: command.id, trackId, patch };
   this.onChange();
   let receipt: ClientMessage;

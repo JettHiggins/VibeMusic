@@ -19,7 +19,7 @@ test('research binds the exact displayed patch to its original track and waits f
  s.controller.accept('candidate-a');
  assert.equal(s.commands[0].operation.type,'apply-patch');
  if(s.commands[0].operation.type==='apply-patch')assert.equal(s.commands[0].operation.trackId,'synth-1');
- assert.equal(s.commands[0].expectedRevision,7);assert.equal(s.commands[0].boundary,'next-loop');
+ assert.equal(s.commands[0].expectedRevision,7);assert.equal(s.commands[0].boundary,'immediate');
  const commandId=s.commands[0].id;
  s.emit({type:'research',jobId,status:'complete',progress:1,candidates:[{...s.candidate,patch:{...s.candidate.patch,engine:2}}]});
  if(s.commands[0].operation.type==='apply-patch')assert.equal(s.commands[0].operation.patch.engine,1);

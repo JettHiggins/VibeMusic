@@ -40,6 +40,15 @@ test('rejected and unchanged patches leave the rendered waveform unchanged', {sk
  s.command({type:'select',target:{trackId:'synth-2'}});
  assert.ok(s.render(500).l.every(v=>v===.75));
 });
+test('immediate mid-loop patches use the same five-millisecond transition without waiting for a boundary', {skip:!existsSync(metadataPath)},()=>{
+ const s=setup();s.command({type:'play',playing:true});s.render(128);
+ const ack=s.command({type:'apply-patch',trackId:'synth-1',patch:{...s.core.getSession().tracks[0].patch,engine:1}},'immediate');
+ assert.ok(ack.type==='ack'&&ack.status==='applied');
+ const after=s.render(fade+1);assert.equal(s.core.transport().loopStartFrame,0);
+ assert.equal(after.l[0],.75);assert.equal(after.r[0],-.75);
+ assert.equal(after.l[fade-1],-.75);assert.equal(after.r[fade-1],.75);
+ assert.ok(after.l.every(Number.isFinite));
+});
 test('the transition is invariant to block sizes and a new patch starts from the current blended output',()=>{
  const run=(blocks:number[])=>{
   const output=new OutputTransition(rate),l=new Float32Array(800),r=new Float32Array(800);let offset=0;

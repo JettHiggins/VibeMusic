@@ -100,10 +100,13 @@ test('research candidates from real engine audio are accepted and undone by the 
     assert.equal(Buffer.from(await preview.arrayBuffer()).subarray(0, 4).toString(), 'RIFF');
     assert.ok(final.candidates.every(c => c.provenance.includes('SLOOP WASM offline')));
 
-    // Accept the second candidate by voice-level transcript; playback keeps running until the loop boundary.
+    // Accept immediately through the real service while the engine clock remains frozen mid-loop.
+    const acceptFrame=core.transport().currentFrame;
     bridge.submitTranscript('use number two');
-    await until('apply-patch to be queued', () => core.transport().pendingCommandIds.length === 1, 5000);
-    assert.deepEqual(core.getSession().tracks[0].patch, session.tracks[0].patch, 'patch must not change before the boundary');
+    await until('immediate apply-patch', () => core.getSession().revision === revision + 1, 5000);
+    assert.equal(commands.at(-1)!.command.boundary,'immediate');
+    assert.equal(core.transport().currentFrame,acceptFrame,'accept must not need a loop/audio-frame advance');
+    assert.equal(core.transport().pendingCommandIds.length,0);
     const during = render(LOOP);
     assert.ok(during > 0.001, 'playback continues while the patch is pending and after it lands');
     assert.deepEqual(core.getSession().tracks[0].patch, final.candidates[1].patch);
@@ -114,7 +117,7 @@ test('research candidates from real engine audio are accepted and undone by the 
 
     // The browser candidate controls also apply the exact chosen patch to the original search track.
     panel.accept(final.candidates[0].id);
-    assert.equal(panel.getSnapshot().acceptance?.status, 'queued');
+    assert.equal(panel.getSnapshot().acceptance?.status, 'applied');
     render(LOOP);
     assert.equal(panel.getSnapshot().acceptance?.status, 'applied');
     assert.deepEqual(core.getSession().tracks[0].patch, final.candidates[0].patch);
