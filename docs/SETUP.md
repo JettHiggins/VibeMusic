@@ -41,7 +41,7 @@ python3 scripts/build-engine.py --docker --test
 
 The image contains clang/lld, Python, and Node for upstream native/WASM parity tests. It stages WASM and the upstream worklet in ignored `apps/web/public/engine/`, together with metadata exported from actual C descriptors and factory patches. Generated metadata is not sourced from the upstream editor's mock implementation. For environments where Docker bridge networking cannot reach package mirrors, add `--docker-network host` to the build command. The native build path is `python3 scripts/build-engine.py --test`.
 
-After building the engine, run `npm run dev`, click Enable audio, then Play demo. The integration harness supports playback, track selection, boundary-scheduled tempo/clear/undo, with worklet acknowledgments. Recording, persistence, full editing UI, and speech remain pending workstream integration. `npm run dev` and `npm run build` compile the worklet automatically. Do not serve a stale generated worklet after changing engine source.
+After building the engine, run `npm run dev`, click Enable audio, then Play. The app includes pattern/sound editing, persistence and manual microphone drum/melody takes; speech recognition remains pending. See STATUS.md for capability availability and current assignments. In development Vite compiles the audio worklet from current dependencies, watches engine/contract changes and reloads after a successful rebuild. `/engine-runtime.js` is served without caching and does not use a stale generated public file. Build failures are shown in the Vite overlay and return HTTP 500. Production `npm run build` still generates the bundled worklet asset. See DEV-WORKLET.md for validation and limits.
 
 ### Local command-service integration
 
@@ -76,4 +76,4 @@ playwright-cli -s=voicesynth-input run-code --filename=tests/browser/input-pipel
 playwright-cli -s=voicesynth-input close
 ```
 
-It uses an isolated real engine/context and a synthetic buffer through the actual worklet/worker/recorder. It requires four correctly quantized hits by the following loop and analysis p95 below 50 ms. It does not request microphone permission, upload audio, or measure a real device. Current UI microphone takes are manual; speech and melody input remain pending.
+It uses an isolated real engine/context and a synthetic buffer through the actual worklet/worker/recorder. It requires four correctly quantized hits by the following loop and analysis p95 below 50 ms. It does not request microphone permission, upload audio, or measure a real device. Current UI microphone takes are manual. Melody capture/correction is integrated and has a separate synthetic diagnostic in tests/browser/melody-pipeline.js; speech recognition and physical-performer validation remain pending.
