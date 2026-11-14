@@ -11,6 +11,8 @@ import { PianoRoll } from './PianoRoll.tsx';
 import { DrumGrid } from './DrumGrid.tsx';
 import { SoundPanel } from './SoundPanel.tsx';
 import { InputInspector } from './InputInspector.tsx';
+import { PitchSnapControls } from './PitchSnapControls.tsx';
+import { snapMidiToScale } from '@voicesynth/contracts';
 import { C, workspaceCss } from './theme.ts';
 
 export interface GrooveboxProps {
@@ -98,13 +100,16 @@ export function Groovebox({ engine, voice, session, transport, enabled, busy, me
    </aside>
    <main className="vs-center" style={pane} aria-label="Editor">
     <h2>{TRACK_LABEL[trackId]}{trackId === 'drums' ? ' · step sequencer' : ' · piano roll'}{view.pending ? ' · edits apply at the next loop' : ''}</h2>
+    <PitchSnapControls settings={session.pitchSnap ?? null} trackId={trackId} noteCount={view.notes.length} enabled={enabled}
+     onChange={settings => send({ type: 'set-pitch-snap', settings }, 'immediate')}
+     onSnap={() => { if (trackId !== 'drums') send({ type: 'snap-notes', trackId }, 'next-loop'); }} />
     {trackId === 'drums'
      ? <DrumGrid hits={view.hits} playhead={playhead} lane={lane} disabled={!enabled} eraseEnabled={eraseEventAvailable}
        provisional={provisional.flatMap(p => p.event.target.lane ? [{ lane: p.event.target.lane as Lane, step: p.step }] : [])}
        onEdit={edit} onErase={(l, step) => erase({ trackId: 'drums', lane: l }, step)} onSelectLane={l => send({ type: 'select', target: { trackId: 'drums', lane: l } })}
        onAudition={engine.audition ? l => engine.audition!({ kind: 'drum', lane: l, velocity: 0.9 }) : undefined} />
      : <PianoRoll key={trackId} label={TRACK_LABEL[trackId]} notes={view.notes} playhead={playhead} disabled={!enabled} eraseEnabled={eraseEventAvailable} onEdit={edit} onErase={step => erase({ trackId }, step)}
-       provisional={provisional.flatMap(p => p.event.kind === 'note' ? [{ step: p.step, duration: p.duration, midi: p.event.midi }] : [])}
+       provisional={provisional.flatMap(p => p.event.kind === 'note' ? [{ step: p.step, duration: p.duration, midi: snapMidiToScale(p.event.midi, session.pitchSnap) }] : [])}
        onAudition={engine.audition ? (midi, on) => engine.audition!({ kind: 'note', trackId: trackId as Exclude<TrackId, 'drums'>, midi, velocity: on ? 0.8 : 0, on }) : undefined} />}
     {rec !== 'idle' && <p style={{ color: C.rec, marginTop: 8 }} role="status">{rec === 'armed' ? (transport?.countInBeatsRemaining === undefined ? 'Armed: starts on the next beat' : `Count-in: ${transport.countInBeatsRemaining} beat(s) until recording`) : `Recording ${TRACK_LABEL[trackId]}: ${trackId === 'drums' ? 'beatbox now' : 'sing now; sing over a phrase to replace it'}`}</p>}
    </main>

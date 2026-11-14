@@ -1,4 +1,5 @@
 import type { ClientMessage, SessionCommand, SessionState } from '@voicesynth/contracts';
+import { keyLabel } from './pitch-snap-ui.ts';
 
 type Operation = SessionCommand['operation'];
 type Boundary = SessionCommand['boundary'];
@@ -50,7 +51,7 @@ export class CommandClient {
   entry.answered = false;
   this.pending.set(id, entry);
   // A stale or crashed audio worklet rejects nothing and acknowledges nothing; say so instead of silence.
-  setTimeout(() => { const e = this.pending.get(id); if (e && !e.answered) { this.pending.delete(id); this.onResult({ id, status: 'rejected', error: true, text: `${describe(e.operation, 'queued').split(':')[0]} got no answer from the audio engine. If you pulled new code, restart npm run dev (the engine worklet is rebuilt at startup), then reload the page.` }); } }, this.noAnswerMs);
+  setTimeout(() => { const e = this.pending.get(id); if (e && !e.answered) { this.pending.delete(id); this.onResult({ id, status: 'rejected', error: true, text: `${describe(e.operation, 'queued', undefined, e.boundary).split(':')[0]} got no answer from the audio engine. If you pulled new code, restart npm run dev (the engine worklet is rebuilt at startup), then reload the page.` }); } }, this.noAnswerMs);
   let receipt: ClientMessage;
   try { receipt = this.engine.dispatch({ id, expectedRevision: entry.revision, boundary: entry.boundary, operation: entry.operation }); }
   catch (error) { receipt = { type: 'ack', commandId: id, status: 'rejected', revision: entry.revision, reason: String(error) }; }
@@ -90,7 +91,7 @@ export class CommandClient {
  }
 
  private report(id: string, entry: Pending, status: CommandResult['status'], reason?: string) {
-  this.onResult({ id, status, error: status === 'rejected', text: describe(entry.operation, status, reason) });
+  this.onResult({ id, status, error: status === 'rejected', text: describe(entry.operation, status, reason, entry.boundary) });
  }
 }
 
@@ -98,7 +99,7 @@ const TARGET: Record<string, string> = { 'synth-1': 'Synth 1', 'synth-2': 'Synth
 const nameOf = (t: { trackId: string; lane?: string }) => TARGET[t.lane ?? t.trackId] ?? t.trackId;
 
 /** Plain-language status for the display instead of raw ack strings. */
-export function describe(op: Operation, status: CommandResult['status'], reason?: string): string {
+export function describe(op: Operation, status: CommandResult['status'], reason?: string, boundary?: Boundary): string {
  const what = op.type === 'tempo' ? `Tempo ${op.bpm} BPM`
   : op.type === 'record' ? `Record ${nameOf(op.target)}`
   : op.type === 'clear' ? `Clear ${nameOf(op.target)}`
@@ -111,9 +112,11 @@ export function describe(op: Operation, status: CommandResult['status'], reason?
   : op.type === 'volume' ? `${nameOf({ trackId: op.trackId })} volume ${Math.round(op.volume * 100)}%`
   : op.type === 'erase-event' ? `Erase ${nameOf(op.target)} step ${op.step + 1}`
   : op.type === 'metronome' ? `Metronome ${op.enabled ? 'on' : 'off'}`
+  : op.type === 'set-pitch-snap' ? `Key snapping ${op.settings ? `on (${keyLabel(op.settings)})` : 'off'}`
+  : op.type === 'snap-notes' ? `Snap existing notes on ${nameOf({ trackId: op.trackId })}`
   : op.type;
- if (status === 'queued') return op.type === 'record' ? `${what}: armed (next beat, or four count-in beats from stopped)` : `${what}: applies at the next loop`;
- if (status === 'retrying') return `${what}: another change landed first; re-sent for the next loop`;
+ if (status === 'queued') return op.type === 'record' ? `${what}: armed (next beat, or four count-in beats from stopped)` : boundary === 'immediate' ? `${what}: applying in the audio engine` : `${what}: applies at the next loop`;
+ if (status === 'retrying') return `${what}: another change landed first; re-sent ${boundary === 'immediate' ? 'to the audio engine' : 'for the next loop'}`;
  if (status === 'applied') return `${what}: done`;
  const why = (reason ?? '').replace(/^Error:\s*/, '');
  const plain = /Stale revision/.test(why) ? 'the session changed before it could apply; press it again'
