@@ -57,3 +57,7 @@ PR #14 proposes audio transport and #15 a provider-independent pipeline. WS1 rep
 ## Backend recording integration
 
 Reviewed PR #16 is integrated. Live WebSocket/WASM validation now requires the exact firmware next-beat start, commits a captured hit, clears and undoes it immediately via Groove transcripts while recording/playback continue, then verifies stop/disconnect behavior. This is the transcript-level seam with a synthetic musical event, not microphone speech recognition.
+
+## Ownership and provider decision update
+
+Jett explicitly assigned WS1 the recording-consumer UI/input work while Leo is out of usage. Active branch: ws1/recording-consumer; do not duplicate it on WS2. The user selected local faster-whisper for STT; use a configurable small-model baseline and measure CPU latency. Language-model provider remains deferred while possible existing access is researched; the parser is interim and Deep Agents remains incomplete. API calls/credential setup remain deferred. WS3 can address #13/#14/#15 review fixes and implement off-event-loop local STT without waiting for an LLM provider. docs/TEAM-UPDATE.md records WS1 answers to all issue #3 contract questions and supersedes its old blockers.

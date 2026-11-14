@@ -1,23 +1,24 @@
-@leoAndrade2332 @lennyyanza — current steering from Jett/WS1. Read docs/STATUS.md and this issue at normal work checkpoints; independent laptop agents do not receive live conversation messages. Please acknowledge branch/base and next task. Do not repeatedly poll dependencies.
+@leoAndrade2332 @lennyyanza — updated ownership and decisions from Jett. Read docs/STATUS.md; this supersedes older blockers in issue #3.
 
-## Reviewed integrations now available
+## Decisions and immediate ownership
 
-- **PR #12 is merged** into engine-integration (2a0625a, source ece7d80; consumer review by Leo covered bd1428b). Next-beat Record, one-bar stopped count-in, immediate Clear/Undo, armed-record deadline pinning and reset-before-ack capture epoch/cutoff feedback are implemented in the engine. Exact consumer checklist: docs/RECORDING-USABILITY.md on engine-integration.
-- **PRs #7/#10/#11 are integrated together**: microphone diagnostics/device picker, guided calibration/lifecycle fixes and dark workspace/piano roll. Combined shared checks, full Node suite, live Python/WebSocket/WASM test and production build pass. Chromium displayed the roll/no tabs and timing/silence Cancel preserved calibration with synthetic input. No real-performer signoff is claimed.
-- PR #8 speech-capture requirements are reviewed/merged documentation, not an audio transport/provider decision.
+- Jett selected **local faster-whisper** for speech recognition. Start with the small model as a configurable baseline; measure CPU latency on development laptops. Model downloads stay outside Git. No cloud credentials/API calls are authorized.
+- The language-model provider remains deferred while Jett researches possible existing access. Keep the parser as the interim command path; Deep Agents is still a product requirement, not complete. Provider research must not block STT, speech-transport review fixes, or retrieval fixes.
+- Leo is out of usage. **WS1 now owns the recording-consumer UI/input wiring** on ws1/recording-consumer. Leo: do not independently implement that capability when resuming; review the landed handoff first. WS1 is implementing next-beat Record, immediate Clear/Undo, epoch/cutoff worker resets, provisional Undo and loop-origin placement, sticky transport and monochrome recording state.
+- Lenny: PR #16 is integrated. Next address the exact review comments on #14/#15 (stream-scoped coverage, duration/rate bounds, gap recovery, unavailable behavior, wake-span exclusion on failed interpretation), and #13 (answer keys must not be inside the blind kit). Then implement the local faster-whisper adapter off the event loop. Provider selection is no longer an STT blocker. Return precise runtime limitations, not the old issue #3 dependency table.
 
-## Leo / WS2 — immediate task
+## Issue #3 contract answers (WS1)
 
-Integrate the latest origin/engine-integration and wire PR #12 into the workspace and capture pipeline: next-beat Record; immediate Clear/Undo; no Record re-issue on revision changes; exact epoch/cutoff resets and worker reset; optional epoch-tagged batches; provisional Undo; composition-loop-origin placement. Existing UI still sends legacy next-loop actions, so the usability pass is not complete yet. Retain the reviewed calibration/diagnostic improvements.
+(a) Research trackId/description: current messages remain unchanged for now. ResearchController tracks browser-initiated requests; if voice-started concurrent jobs need explicit metadata, propose additive fields and fixtures in a focused contract PR. Do not invent an incompatible message shape or block the other work on this extension.
 
-Root's combined browser review found the transport leaves the viewport while scrolling to calibration: scrollY=297, header top=-297/bottom=-251. Anchor the top transport and test it while scrolling the inspector, including session-menu stacking. Keep recording state monochrome too (the current palette still reserves red for Rec). These are focused follow-ups; WS1 is not concurrently rewriting the UI. The old #7/#10 review items were verified in the updated stack and are resolved.
+(b) Audition is non-mutating previewUrl playback through the integrated candidate UI. Accept uses apply-patch; Undo restores accepted musical state. Do not use apply-patch+undo just to preview.
 
-Please also open/review the separate WS1 dev-server capability using your authenticated access: [ws1/dev-worklet-sync at 248585a](https://github.com/JettHiggins/VoiceSynthesizer/compare/engine-integration...ws1/dev-worklet-sync). It serves current-source worklets and prevents stale generated public artifacts from accepting different schemas than the UI. Regression and real Chromium enable/play checks pass; docs/DEV-WORKLET.md is the handoff. Actions PR creation remains prohibited, but normal issue/PR comments work.
+(c) Armed Record survives unrelated edits with its original target/deadline (merged #12). Other queued musical mutations retain strict revision checks; report rejection or deliberately re-propose a still-valid absolute intent. Never retry discarded performance/clear intentions after a live edit.
 
-## Lenny / WS3 — immediate task
+(d) Yes: recognized Groove wake speech during capture must emit its measured command-span even if interpretation fails, followed by error/no mutation and only then appropriate classified coverage. See #15 review.
 
-Adopt merged PR #12 in backend proposals/tests: Record next-beat, Clear/Undo immediate; accept the new optional transport fields without deriving speech verification from connectivity. PR #13 retrieval/parity/listening-kit changes are received and under WS1 review. Keep speech transport as a separate proposal with WS2. API access remains deferred; no speech/LLM provider is selected, and Deep Agents remains required.
+(e) Yes: stop-recording cancels count-in/armed Record, keeps playback running and does not consume a musical revision. Implemented/tested, including backend #16.
 
-## Acceptance and evidence
+## Evidence and remaining gates
 
-User-device facts: drums received mic audio; recorded hits were late on wired headphones; Leo measured ~120 ms round trip versus ~62 ms browser estimate on a Windows device. Melody/chord/loading error on Lenny's device is still unconfirmed. Preserve diagnostics and collect exact error/commit/device data. Ranking scores, family-name benchmarks and synthetic audio do not establish quality. Three-person listening on one shared kit, real calibrated performers, ten-minute audible playback and the full hands-free scenario remain open. Main is still the documentation baseline; use reviewed origin/engine-integration capability commits.
+Engine and backend timing support, guided calibration, dark workspace/piano roll and candidate UI are integrated. UI recording adoption is underway, not done. Real local recognition, human calibrated takes (especially Lenny's late drums and melody-loading failure), blind listening and full hands-free acceptance remain open. Synthetic tests are not real-device signoff. Main remains the documentation baseline; start capabilities from reviewed origin/engine-integration.
