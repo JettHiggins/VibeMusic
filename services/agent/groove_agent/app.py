@@ -22,17 +22,20 @@ from .contracts import ContractError, contracts_dir, validate
 from .research.service import ResearchService, backend_from_env
 from .speech_pipeline import ThreadedSpeechWorker
 from .stt import transcriber_from_env
+from .language import LanguageWorker, language_from_env, load_backend_env
 
 log = logging.getLogger("groove_agent")
 TICK_SECONDS = 1.0
 LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 
 app = FastAPI(title="VoiceSynthesizer agent service", version=__version__)
+load_backend_env()
 # No research backend unless GROOVE_RESEARCH is set; a misconfigured one fails at startup, not mid-session.
 research_service = ResearchService(backend_from_env(contracts_dir().parents[1]),
                                      os.environ.get("GROOVE_PUBLIC_URL", "http://127.0.0.1:8000"))
 # No speech recognition unless GROOVE_STT is set (local faster-whisper); loaded once and shared.
 transcriber = transcriber_from_env()
+language = language_from_env()
 
 
 @app.get("/healthz")
@@ -40,7 +43,8 @@ def healthz() -> dict:
     backend = research_service.backend
     return {"status": "ok", "version": __version__, "contract": 1,
             "research": backend.label if backend else "not configured",
-            "speech": transcriber.name if transcriber else "not configured"}
+            "speech": transcriber.name if transcriber else "not configured",
+            "language": "openrouter/deepagents (free-only)" if language else "parser"}
 
 
 @app.get("/previews/{token}.wav")
@@ -124,7 +128,13 @@ async def session_socket(websocket: WebSocket) -> None:
 
     port = research_service.port(from_worker)
     speech = ThreadedSpeechWorker(transcriber, from_speech) if transcriber is not None else None
-    connection = Connection(research=port, speech=speech)
+
+    def from_language(job, result, error) -> None:
+        for reply in connection.language_result(job, result, error, time.monotonic()):
+            outbox.put_nowait(reply)
+
+    language_worker = LanguageWorker(language, from_language) if language is not None else None
+    connection = Connection(research=port, speech=speech, language=language_worker)
 
     async def tick() -> None:
         while True:
@@ -156,5 +166,7 @@ async def session_socket(websocket: WebSocket) -> None:
         port.close()
         if speech is not None:
             speech.close()
+        if language_worker is not None:
+            await language_worker.close()
         for task in tasks:
             task.cancel()
