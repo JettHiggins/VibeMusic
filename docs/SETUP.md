@@ -42,3 +42,17 @@ python3 scripts/build-engine.py --docker --test
 The image contains clang/lld, Python, and Node for upstream native/WASM parity tests. It stages WASM and the upstream worklet in ignored `apps/web/public/engine/`, together with metadata exported from actual C descriptors and factory patches. Generated metadata is not sourced from the upstream editor's mock implementation. For environments where Docker bridge networking cannot reach package mirrors, add `--docker-network host` to the build command. The native build path is `python3 scripts/build-engine.py --test`.
 
 After building the engine, run `npm run dev`, click Enable audio, then Play demo. The integration harness supports playback, track selection, boundary-scheduled tempo/clear/undo, with worklet acknowledgments. Recording, persistence, full editing UI, and speech remain pending workstream integration. `npm run dev` and `npm run build` compile the worklet automatically. Do not serve a stale generated worklet after changing engine source.
+
+### Local command-service integration
+
+With the virtualenv active, run the backend in a second terminal:
+
+```sh
+python -m pip install -r services/agent/requirements-dev.txt
+python -m pytest services/agent
+python -m uvicorn groove_agent.app:app --app-dir services/agent --host 127.0.0.1 --port 8000
+```
+
+In the browser enable audio, connect the agent, then submit a command transcript such as `select synth two`, `play`, `tempo one forty`, or `stop playback`. This is an integration harness, not speech recognition. No API credentials are read. Recording commands still reject until the input pipeline is connected; sound requests report unavailable rather than invented results.
+
+After building the WASM engine, `npm run test:integration` starts an isolated local service, connects via the production WebSocket adapter/coordinator, and verifies proposals, queueing, application, and revision feedback against real WASM. Activate the virtualenv first so `python3` resolves the backend dependencies; alternatively set `VOICESYNTH_PYTHON` to its Python executable. The integration command is POSIX shell syntax, supported on macOS and WSL2.

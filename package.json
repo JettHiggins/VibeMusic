@@ -17,7 +17,8 @@
     "contracts:export": "node --import tsx scripts/export-contracts.ts",
     "worklet:build": "node --import tsx scripts/build-worklet.ts",
     "predev": "npm run worklet:build",
-    "prebuild": "npm run worklet:build"
+    "prebuild": "npm run worklet:build",
+    "test:integration": "VOICESYNTH_INTEGRATION=1 node --import tsx --test tests/service-integration.test.ts"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
