@@ -36,7 +36,7 @@ export class MicrophoneInput {
  private speechWorker: Worker | null = null;
  private source: AudioNode | null = null;
  private stream: MediaStream | null = null;
- private noiseWaiters: ((db: number) => void)[] = [];
+ private noiseWaiters: { resolve: (db: number) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }[] = [];
  private static modules = new WeakSet<BaseAudioContext>();
 
  constructor(private context: AudioContext) {}
@@ -52,7 +52,8 @@ export class MicrophoneInput {
   const worker = this.worker = new Worker(new URL('./analysis-worker.ts', import.meta.url), { type: 'module' });
   worker.onmessage = ({ data }: MessageEvent<AnalysisResult>) => {
    if (data.type === 'onsets') this.onAnalysis(data);
-   else if (data.type === 'noise-floor') { this.noiseWaiters.splice(0).forEach(resolve => resolve(data.db)); }
+   else if (data.type === 'noise-floor') { this.noiseWaiters.splice(0).forEach(waiter => { clearTimeout(waiter.timer); waiter.resolve(data.db); }); }
+   else if (data.type === 'noise-floor-unavailable') { this.noiseWaiters.splice(0).forEach(waiter => { clearTimeout(waiter.timer); waiter.reject(new Error(data.message)); }); }
    else this.onError(new Error(data.message));
   };
   worker.onerror = event => this.onError(new Error(formatWorkerLoadError(event)));
@@ -121,8 +122,12 @@ export class MicrophoneInput {
  measureNoiseFloor(seconds = 1.5): Promise<number> {
   if (!this.source) return Promise.reject(new Error('Enable the microphone first'));
   return new Promise((resolve, reject) => {
-   const timer = setTimeout(() => reject(new Error('No microphone audio arrived; check the input device')), seconds * 1000 + 3000);
-   this.noiseWaiters.push(db => { clearTimeout(timer); resolve(db); });
+   const timer = setTimeout(() => {
+    const index = this.noiseWaiters.findIndex(waiter => waiter.timer === timer);
+    if (index >= 0) this.noiseWaiters.splice(index, 1);
+    reject(new Error('No microphone audio arrived; check the input device'));
+   }, seconds * 7 * 1000 + 3000);
+   this.noiseWaiters.push({ resolve, reject, timer });
    this.request({ type: 'measure-noise', frames: Math.round(seconds * this.context.sampleRate) });
   });
  }

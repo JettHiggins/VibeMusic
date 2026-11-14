@@ -327,6 +327,11 @@ export class PerformanceRecorder {
    this.pump(); return;
   }
   const reason = ack.reason ?? 'rejected';
+  if (!batch.length) {
+   // A targeted erase can remove every event from an already-submitted command.
+   // Its terminal rejection is expected and the fence already counted those events as dropped.
+   this.retries = 0; this.lastError = null; this.pump(); return;
+  }
   if (RETRYABLE.test(reason) && this.retries < MAX_RETRIES) {
    // Resubmit the same verified events under a new command ID against the current revision.
    // If the newer session snapshot has not arrived yet, its arrival triggers pump().

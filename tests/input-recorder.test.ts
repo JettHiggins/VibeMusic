@@ -112,6 +112,35 @@ test('targeted erase fences remove only matching old and delayed melody while re
  assert.equal(recorder.status().dropped, 2);
 });
 
+test('targeted erase keeps the same in-flight command and surviving event IDs', () => {
+ const { engine, recorder, advance, hit } = setup();
+ advance(20 * STEP);
+ recorder.addOnsets([hit(3), hit(12)], 0, CLOCK, engine.frame);
+ const command = engine.sent[0];
+ assert.ok(command.operation.type === 'commit-performance' && command.operation.events.length === 2);
+ const fence = { commandId: 'erase-queued', recordingEpoch: 1, throughFrame: hit(3).frame, target: { trackId: 'drums' as const, lane: 'kick' as const }, step: 3 };
+ recorder.handle(engine.transport({ captureErasure: fence }));
+ assert.equal(recorder.status().inFlight, command.id);
+ assert.deepEqual(recorder.status().provisional.map(p => [p.step, p.status]), [[12, 'submitted']]);
+ assert.equal(engine.sent.length, 1, 'erasure does not submit survivors as a new batch');
+ engine.ack(command, 'applied');
+ assert.equal(recorder.status().committed, 1);
+ assert.equal(recorder.status().lastError, null);
+});
+
+test('terminal rejection of an all-erased batch is quiet and does not count erased events twice', () => {
+ const { engine, recorder, advance, hit } = setup();
+ advance(20 * STEP);
+ recorder.addOnsets([hit(3)], 0, CLOCK, engine.frame);
+ const command = engine.sent[0];
+ recorder.handle(engine.transport({ captureErasure: { commandId: 'erase-all', recordingEpoch: 1, throughFrame: hit(3).frame, target: { trackId: 'drums', lane: 'kick' }, step: 3 } }));
+ assert.equal(recorder.status().dropped, 1);
+ engine.ack(command, 'rejected', 'All events erased');
+ assert.equal(recorder.status().dropped, 1);
+ assert.equal(recorder.status().lastError, null);
+ assert.equal(recorder.status().inFlight, null);
+});
+
 test('speech mode waits for verification, excludes command spans, and stops on disconnect', () => {
  const { engine, recorder, advance, hit } = setup('speech');
  recorder.setSpeechAvailable(true);

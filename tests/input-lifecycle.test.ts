@@ -20,12 +20,12 @@ function fakeContext() {
  };
  return { ctx, nodes };
 }
-function fakeMic(): MicLike & { stops: number; disposed: boolean; noise: { resolve?: (db: number) => void } } {
+function fakeMic(): MicLike & { stops: number; disposed: boolean; noise: { resolve?: (db: number) => void; reject?: (error: Error) => void } } {
  const mic = {
   onAnalysis: (_: AnalysisFrame) => {}, onError: (_: Error) => {}, inputLatencySeconds: 0.01, deviceId: 'mic-a', captureSettings: null,
-  stops: 0, disposed: false, noise: {} as { resolve?: (db: number) => void },
+  stops: 0, disposed: false, noise: {} as { resolve?: (db: number) => void; reject?: (error: Error) => void },
   async startMicrophone() {}, async startTestSignal() {}, configure() {}, flush() {}, reset() {},
-  measureNoiseFloor() { return new Promise<number>(resolve => { mic.noise.resolve = resolve; }); },
+  measureNoiseFloor() { return new Promise<number>((resolve, reject) => { mic.noise.resolve = resolve; mic.noise.reject = reject; }); },
   stop() { mic.stops++; }, dispose() { mic.disposed = true; },
  };
  return mic;
@@ -94,6 +94,18 @@ test('guided silence measurement: quiet countdown, then measurement; cancel keep
  assert.equal(s.voice.getState().calibration?.noiseFloorDb, -41.2);
  assert.match(s.voice.getState().calibrationResult!.text, /previous noise floor was kept/);
  assert.equal(s.voice.getState().silenceRun, null);
+});
+
+test('active capture with insufficient quiet room frames reports that cause and preserves calibration', async () => {
+ const s = await setup();
+ const before = s.voice.getState().calibration!.noiseFloorDb;
+ const run = s.voice.calibrateNoise(3);
+ await sleep(15); s.ctx.currentTime += 3.01; await sleep(20);
+ s.mic.noise.reject!(new Error('Not enough quiet audio to measure room noise. Wait for a quieter moment, then try again; the previous floor was kept.'));
+ await run;
+ assert.equal(s.voice.getState().calibration?.noiseFloorDb, before);
+ assert.match(s.voice.getState().calibrationResult?.text ?? '', /Not enough quiet audio/);
+ assert.doesNotMatch(s.voice.getState().calibrationResult?.text ?? '', /No microphone audio arrived/);
 });
 
 test('only one guided run at a time', async () => {

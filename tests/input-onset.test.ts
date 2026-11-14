@@ -125,6 +125,7 @@ test('noise floor uses a robust percentile of short windows', () => {
 test('noise calibration excludes voiced and still-open sung frames', () => {
  assert.equal(isQuietCalibrationFrame({ state: 'pitch', midi: 60, clarity: 0.9, levelDb: -25, gateDb: -45, holding: true }, true), false);
  assert.equal(isQuietCalibrationFrame({ state: 'pitch', midi: 60, clarity: 0.9, levelDb: -25, gateDb: -45, holding: false }, false), false);
+ assert.equal(isQuietCalibrationFrame({ state: 'quiet', midi: 60, clarity: 0.9, levelDb: -30, gateDb: -25, holding: false }, false), false);
  assert.equal(isQuietCalibrationFrame({ state: 'unclear', midi: null, clarity: 0.4, levelDb: -35, gateDb: -45, holding: false }, false), true);
  assert.equal(isQuietCalibrationFrame({ state: 'silent', midi: null, clarity: 0, levelDb: -60, gateDb: -45, holding: false }, false), true);
  assert.equal(isQuietCalibrationFrame(null, false), false);

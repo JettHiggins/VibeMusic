@@ -72,6 +72,9 @@ export function Groovebox({ engine, voice, session, transport, enabled, busy, me
  const view = patterns.view(trackId);
  const playhead = playheadStep(transport, session.tempo)?.step ?? null;
  const speechReady = !input.speech.enabled || input.speech.status==='ready';
+ // The shared contract is published, but this engine-integration baseline still rejects erasure.
+ // Enable only after WS1's reviewed engine capability is merged into the integration branch.
+ const eraseEventAvailable = false;
  const micReady = input.microphone === 'on' || input.microphone === 'test-signal';
  const uncalibrated = input.microphone === 'on' && !input.readiness.ready;
  const edit = (op: PatternOp) => patterns.edit(trackId, op);
@@ -93,14 +96,15 @@ export function Groovebox({ engine, voice, session, transport, enabled, busy, me
    <main className="vs-center" style={pane} aria-label="Editor">
     <h2>{TRACK_LABEL[trackId]}{trackId === 'drums' ? ' · step sequencer' : ' · piano roll'}{view.pending ? ' · edits apply at the next loop' : ''}</h2>
     {trackId === 'drums'
-     ? <DrumGrid hits={view.hits} playhead={playhead} lane={lane} disabled={!enabled}
+     ? <DrumGrid hits={view.hits} playhead={playhead} lane={lane} disabled={!enabled} eraseEnabled={eraseEventAvailable}
        provisional={provisional.flatMap(p => p.event.target.lane ? [{ lane: p.event.target.lane as Lane, step: p.step }] : [])}
        onEdit={edit} onErase={(l, step) => erase({ trackId: 'drums', lane: l }, step)} onSelectLane={l => send({ type: 'select', target: { trackId: 'drums', lane: l } })}
        onAudition={engine.audition ? l => engine.audition!({ kind: 'drum', lane: l, velocity: 0.9 }) : undefined} />
-     : <PianoRoll key={trackId} label={TRACK_LABEL[trackId]} notes={view.notes} playhead={playhead} disabled={!enabled} onEdit={edit} onErase={step => erase({ trackId }, step)}
+     : <PianoRoll key={trackId} label={TRACK_LABEL[trackId]} notes={view.notes} playhead={playhead} disabled={!enabled} eraseEnabled={eraseEventAvailable} onEdit={edit} onErase={step => erase({ trackId }, step)}
        provisional={provisional.flatMap(p => p.event.kind === 'note' ? [{ step: p.step, duration: p.duration, midi: p.event.midi }] : [])}
        onAudition={engine.audition ? (midi, on) => engine.audition!({ kind: 'note', trackId: trackId as Exclude<TrackId, 'drums'>, midi, velocity: on ? 0.8 : 0, on }) : undefined} />}
     {rec !== 'idle' && <p style={{ color: C.rec, marginTop: 8 }} role="status">{rec === 'armed' ? (transport?.countInBeatsRemaining === undefined ? 'Armed: starts on the next beat' : `Count-in: ${transport.countInBeatsRemaining} beat(s) until recording`) : `Recording ${TRACK_LABEL[trackId]}: ${trackId === 'drums' ? 'beatbox now' : 'sing now; sing over a phrase to replace it'}`}</p>}
+    {!eraseEventAvailable && <p style={{ color: C.muted, fontSize: 12 }} role="status">Individual event erasure is waiting for the engine update.</p>}
    </main>
    <aside className="vs-right" style={{ ...pane, display: 'grid', gap: 10, alignContent: 'start' }} aria-label="Inspector">
     <details open>

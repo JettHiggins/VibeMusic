@@ -1,5 +1,6 @@
 import type { AnalysisFrame } from './microphone.ts';
 import type { PitchReading } from './pitch.ts';
+import { PITCH_GATE_DB, MIN_PITCH_CLARITY } from './pitch.ts';
 
 const NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 const name = (midi: number) => `${NAMES[midi % 12]}${Math.floor(midi / 12) - 1}`;
@@ -26,6 +27,10 @@ export interface MicCheckState {
  pitch: PitchReading | null;
  /** Why sung input does or does not become notes right now. */
  pitchAdvice: string;
+ /** Recent confident sung level, compared with the measured room floor. */
+ foregroundDb: number | null;
+ foregroundMarginDb: number | null;
+ foregroundAdvice: string;
 }
 
 /** Engine minimum confidence (CONTRACTS.md); below it a detection is ignored. */
@@ -40,10 +45,11 @@ export class MicCheck {
  private lastOnset: MicCheckState['lastOnset'] = null;
  private lastNote: MicCheckState['lastNote'] = null;
  private pitch: { reading: PitchReading; frame: number } | null = null;
+ private foreground: { frame: number; db: number }[] = [];
 
  constructor(private sampleRate: number, private windowSeconds = 2) {}
 
- reset() { this.peaks = []; this.onsets = 0; this.notes = 0; this.lastOnset = null; this.lastNote = null; this.pitch = null; }
+ reset() { this.peaks = []; this.onsets = 0; this.notes = 0; this.lastOnset = null; this.lastNote = null; this.pitch = null; this.foreground = []; }
 
  add(frame: AnalysisFrame) {
   // Expire by real processed capture time. analysedThrough is held at the start of a sustained
@@ -52,12 +58,14 @@ export class MicCheck {
   this.peaks.push({ frame: now, db: frame.levelDb });
   const oldest = now - this.windowSeconds * this.sampleRate;
   while (this.peaks.length && this.peaks[0].frame < oldest) this.peaks.shift();
+  while (this.foreground.length && this.foreground[0].frame < oldest) this.foreground.shift();
   for (const o of frame.onsets) { this.onsets++; this.lastOnset = { levelDb: o.levelDb, confidence: o.confidence, accepted: o.confidence >= MIN_CONFIDENCE }; }
   // Keep the most informative recent reading: a usable pitch outranks a quieter or unclear one for ~0.3 s.
   if (frame.pitch) {
    const rank = { silent: 0, quiet: 1, unclear: 2, pitch: 3 } as const;
    const fresh = !this.pitch || now - this.pitch.frame > 0.3 * this.sampleRate || rank[frame.pitch.state] >= rank[this.pitch.reading.state];
    if (fresh) this.pitch = { reading: frame.pitch, frame: now };
+   if (frame.pitch.midi !== null && frame.pitch.clarity >= MIN_PITCH_CLARITY) this.foreground.push({ frame: now, db: frame.pitch.levelDb });
   }
   for (const n of frame.notes) { this.notes++; this.lastNote = { midi: n.midi, durationMs: (n.endFrame - n.startFrame) / this.sampleRate * 1000, confidence: n.confidence }; }
  }
@@ -77,10 +85,19 @@ export class MicCheck {
    : this.lastOnset && !this.lastOnset.accepted ? 'Hits are detected but weak; make them sharper and louder.'
    : 'Level is good.';
   const p = this.pitch?.reading ?? null;
+  const foregroundDb = this.foreground.length >= Math.ceil(this.sampleRate / 1024 * 0.5) ? this.percentile(this.foreground.map(x => x.db), 0.5) : null;
+  const foregroundMarginDb = foregroundDb === null ? null : foregroundDb - noiseFloorDb;
+  const foregroundAdvice = foregroundMarginDb === null
+   ? 'Sing a steady note at your usual volume for about 1 second to measure it against the room.'
+   : foregroundMarginDb < PITCH_GATE_DB
+    ? `Your normal-volume voice is ${foregroundMarginDb.toFixed(0)} dB above room noise; notes need about ${PITCH_GATE_DB} dB. Move closer to the mic or reduce room noise, then recheck.`
+    : `Your normal-volume voice is ${foregroundMarginDb.toFixed(0)} dB above room noise and clears the pitch level gate. If notes still do not appear, check pitch stability and speech verification.`;
   const pitchAdvice = !p || p.state === 'silent' ? 'Sing or hum a steady note to check pitch detection.'
    : p.state === 'quiet' ? `Voice heard at ${p.levelDb.toFixed(0)} dBFS but notes need ${p.gateDb.toFixed(0)} dBFS: sing louder or closer${noisyRoom ? ', or reduce room noise and Measure silence again' : ''}.`
    : p.state === 'unclear' ? `Pitch unclear (clarity ${p.clarity.toFixed(2)}, needs 0.80): sing a steady vowel like "ooh" instead of speaking or breathing.`
    : `Hearing ${name(p.midi!)} (clarity ${p.clarity.toFixed(2)})${p.holding ? ': note being held' : ''}. Notes need about 70 ms of steady pitch.`;
-  return { peakDb, verdict, noisyRoom, onsetsDetected: this.onsets, lastOnset: this.lastOnset, notesDetected: this.notes, lastNote: this.lastNote, advice, pitch: p, pitchAdvice };
+  return { peakDb, verdict, noisyRoom, onsetsDetected: this.onsets, lastOnset: this.lastOnset, notesDetected: this.notes, lastNote: this.lastNote, advice, pitch: p, pitchAdvice, foregroundDb, foregroundMarginDb, foregroundAdvice };
  }
+
+ private percentile(values: number[], p: number) { values.sort((a, b) => a - b); return values[Math.floor((values.length - 1) * p)]; }
 }

@@ -42,7 +42,7 @@ export function measureNoiseFloor(samples: Float32Array, windowFrames = 1024): n
 
 /** Keep recognized/open sung notes out of room-noise calibration. */
 export function isQuietCalibrationFrame(pitch: PitchReading | null, noteOpen: boolean): boolean {
- return !noteOpen && pitch !== null && pitch.state !== 'pitch';
+ return !noteOpen && pitch !== null && pitch.state !== 'pitch' && !(pitch.midi !== null && pitch.clarity >= 0.8);
 }
 
 export interface LatencyEstimate { latencyFrames: number; spreadFrames: number; matched: number }
