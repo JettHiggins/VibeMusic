@@ -32,6 +32,17 @@ SPEECH_UNAVAILABLE = {"type": "speech-status", "available": False, "provider": "
 
 
 @dataclass
+class _Window:
+    """A count-in ("armed") or take ("recording") on the capture clock, from transport snapshots."""
+    kind: str
+    start: int
+    end: Optional[int] = None  # first frame known to be outside it; None while still current
+
+
+MAX_WINDOWS = 32
+
+
+@dataclass
 class _SpeechStream:
     segmenter: EnergySegmenter
     pending: "Deque[SpeechJob]"
@@ -92,6 +103,7 @@ class Connection:
         self._backlog: Deque[_Proposal] = deque()
         self._utterances: "OrderedDict[str, None]" = OrderedDict()
         self._speech_streams = StreamTracker()
+        self._windows: list[_Window] = []
 
     # -- inbound -----------------------------------------------------------------
 
@@ -103,6 +115,7 @@ class Connection:
             self.revision = self.session["revision"]
             return self._drain(now)
         if kind == "transport":
+            self._observe_windows(message["transport"])
             self.transport = dict(message["transport"])
             return []
         if kind == "ack":
@@ -181,10 +194,12 @@ class Connection:
         out: list[dict] = []
         if text and text.strip():
             segment = job.segment
+            window = self._window_at(segment.start_frame)  # capture-time context, not delivery-time
             out.extend(self._on_utterance({
                 "type": "utterance", "id": job.job_id, "text": text.strip(), "clockId": job.clock_id,
                 "startFrame": segment.start_frame, "endFrame": segment.last_frame,
-                "duringRecording": self._recording_at(segment.start_frame)}, now))
+                "duringRecording": window is not None and window.kind == "recording"}, now,
+                take_armed=window is not None and window.kind == "armed", obsolete=self._obsolete(window)))
         out.extend(self._advance_speech(job.stream_id, job.clock_id))
         return out
 
@@ -203,13 +218,48 @@ class Connection:
         return [{"type": "speech-verified", "clockId": clock_id, "streamId": stream_id,
                  "fromFrame": first_frame, "throughFrame": bound}]
 
-    def _recording_at(self, frame: int) -> bool:
-        """Whether a take was capturing at `frame`, from the browser's latest transport snapshot."""
-        transport = self.transport or {}
-        state = transport.get("recordingState")
-        active = state == "recording" if state is not None else bool(transport.get("recording"))
-        start = transport.get("recordingStartFrame")
-        return active and (start is None or frame >= start)
+    # -- capture-time recording context ----------------------------------------------------
+
+    def _observe_windows(self, transport: Mapping[str, Any]) -> None:
+        """Track count-ins and takes in capture-clock frames, so a transcript that arrives late is
+        judged by what was happening when it was spoken, not when recognition finished."""
+        if self.transport is not None and self.transport["clockId"] != transport["clockId"]:
+            self._windows.clear()  # a new audio context: old frames mean nothing
+        state = transport.get("recordingState") or ("recording" if transport.get("recording") else "idle")
+        now_frame = transport["currentFrame"]
+        last = self._windows[-1] if self._windows else None
+        current = last if last is not None and last.end is None else None
+        if state == "recording":
+            start = transport.get("recordingStartFrame", now_frame)
+            if current is not None and current.kind == "recording" and current.start == start:
+                return  # the same take (Clear/Undo epochs do not start a new take)
+            if current is not None:
+                current.end = start if current.kind == "armed" else now_frame
+            self._windows.append(_Window("recording", start))
+        elif state == "armed":
+            if current is not None and current.kind == "armed":
+                return
+            if current is not None:
+                current.end = now_frame
+            self._windows.append(_Window("armed", now_frame))
+        elif current is not None:
+            current.end = now_frame
+        del self._windows[:-MAX_WINDOWS]
+
+    def _window_at(self, frame: int) -> Optional[_Window]:
+        for window in reversed(self._windows):
+            if window.start <= frame and (window.end is None or frame < window.end):
+                return window
+        return None
+
+    def _obsolete(self, window: Optional[_Window]) -> bool:
+        """Spoken in a take or count-in that is no longer current. A count-in that became its own
+        take is still current, so "stop recording" said during the count-in still stops it."""
+        if window is None or window.end is None:
+            return False
+        later = self._windows[self._windows.index(window) + 1:]
+        return not (window.kind == "armed" and len(later) == 1 and later[0].kind == "recording"
+                    and later[0].start == window.end and later[0].end is None)
 
     def tick(self, now: float) -> list[dict]:
         """Expire commands the browser never resolved, so later commands are not blocked forever."""
@@ -285,7 +335,8 @@ class Connection:
 
     # -- utterances --------------------------------------------------------------
 
-    def _on_utterance(self, message: Mapping[str, Any], now: float) -> list[dict]:
+    def _on_utterance(self, message: Mapping[str, Any], now: float, take_armed: Optional[bool] = None,
+                      obsolete: bool = False) -> list[dict]:
         utterance_id = message["id"]
         if utterance_id in self._utterances:
             return []  # already handled; never issue a second command for the same utterance
@@ -301,7 +352,8 @@ class Connection:
             return [_error(utterance_id, "utterance clock does not match the current audio clock")]
 
         during_recording = bool(message["duringRecording"])
-        result = self._interpret(message["text"], self.session, during_recording, take_armed=self._take_armed())
+        armed = self._take_armed() if take_armed is None else take_armed
+        result = self._interpret(message["text"], self.session, during_recording, take_armed=armed)
         if isinstance(result, Ignored):
             return []  # performance, not speech addressed to Groove
         # During recording, anything not Ignored began with the wake word. Its span is excluded
@@ -313,6 +365,10 @@ class Connection:
                         "startFrame": message["startFrame"], "endFrame": message["endFrame"]})
         if isinstance(result, NotUnderstood):
             return out + [_error(utterance_id, result.reason)]
+        if obsolete:
+            # Recognized after its take or count-in ended (or a newer one began): never act on the
+            # current transport or a newer take with it. Its span was still excluded above.
+            return out + [_error(utterance_id, "spoken during a take or count-in that has already ended; not applied")]
         if isinstance(result, Command):
             problem = validate_operation(result.operation)
             if problem is not None:
