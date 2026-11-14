@@ -64,3 +64,7 @@ The user got drum mic input on Lenny's device but hits landed late with wired he
 - One shared fingerprinted blind kit, three human listeners and comparison against preset-only retrieval. No listening results yet.
 - Real STT/classified coverage, then Deep Agents after the LLM decision, followed by the complete hands-free PLAN.md scenario.
 - Ten-minute audible playback and timing/command targets on real macOS/Windows/WSL2 setups. CI and offline renders support, not replace, physical acceptance.
+
+## WS4 — fourth teammate, independent evaluation work
+
+WS4 owns only evals/, tools/evaluation/ and docs/WS4-HANDOFF.md for the tickets in docs/WS4-TICKETS.json. Start with the hands-free command acceptance corpus, then the standalone blind-listening summarizer, then the held-out sound-description/refinement rubric. All are independent of API access, app runtime and model downloads, and must not modify WS1/WS2/WS3 implementations. Copyable startup instruction: docs/WS4-START.md. One focused PR per ticket against engine-integration; WS1 integrates.

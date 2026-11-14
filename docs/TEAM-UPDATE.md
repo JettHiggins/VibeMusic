@@ -45,3 +45,7 @@ Review ws1/recording-consumer at **4d6c90c** (browser regression/docs only since
 WS1 verified with git ancestry that #1 at 3a62724 and #2 at 8fae6aa are already included in engine-integration. Their original main/stack bases make them misleading. The coordination workflow will retarget/close them with exact integration evidence; this does not merge the product into main or close the still-unmerged #13/#14/#15 work. Review/open the ready WS1 consumer and dev-worklet PRs instead.
 
 Additional browser race coverage is committed as tests/browser/live-capture-edits.js on the consumer branch: continuous synthetic tones traverse the real worklet/worker; Undo discards an internally held note without consuming history, then Clear removes completed and held pre-edit input. Only fresh post-cutoff/new-epoch notes reach the engine, with capture/playback continuing and no input rejection error. This passed locally (~8.6 ms p95); no human timing/voice signoff is implied.
+
+## Fourth teammate: WS4 evaluation support
+
+Three concrete WS4 issues are published from docs/WS4-TICKETS.json, with priority, owned paths and acceptance criteria. Start with the command acceptance corpus. WS4 owns only evals/, tools/evaluation/ and docs/WS4-HANDOFF.md; no production UI/service/engine/contract edits and no provider access needed. Startup prompt: docs/WS4-START.md. WS3 should consume the resulting cases/summaries rather than duplicate them; core speech/Deep Agents ownership stays with WS3.
