@@ -4,7 +4,7 @@ Local FastAPI service that turns utterance transcripts into `SessionCommand` pro
 `ws://127.0.0.1:8000/ws`. The browser stays authoritative for musical state and timing; this service
 only reads snapshots and requests mutations. See `docs/CONTRACTS.md` for the protocol.
 
-No API calls are made and no credentials are read. Command interpretation is deterministic and local.
+By default command interpretation is deterministic and local. Optional OpenRouter Deep Agents loads backend-only credentials and makes bounded free-model requests when explicitly configured; see the setup section below.
 
 ## Commands
 
@@ -114,16 +114,12 @@ bounded patches for the real engine, but the audio comes from a toy synth and th
 embedder, so the scores and previews mean nothing musically. Every mock candidate says "MOCK" in `provenance`.
 Mock mode was exercised here only with synthetic metadata from the test fixtures, not the real export.
 
-## Not done yet
+## Remaining acceptance
 
-- Speech-to-text. The service consumes `utterance` transcripts; an audio/provider protocol needs a contract
-  proposal and a credential decision first.
-- Deep Agents orchestration. `intents.interpret` is the seam a model-backed interpreter replaces; it needs API access.
-- Listening-verified sound quality. The real SLOOP renderer and local LAION CLAP (native-parity checked) are
-  integrated, and the ranking passes the instrument-family benchmark; whether candidates sound right, and whether
-  search beats preset-only picking, still needs the three-person blind comparison.
-- Research evaluation against preset-only retrieval with blind listening.
-- Physical microphone and speech integration remain pending. The browser Agent workspace now includes candidate previews, provenance and exact-candidate acceptance; its controller and the real WASM core have live research integration tests. Actual speech recognition and semantic ranking/listening gates are still pending.
+- Local faster-whisper and optional OpenRouter Deep Agents are implemented. Human recognition/timing, a fixed command-corpus evaluation and full hands-free acceptance remain unfinished.
+- Voice-started research visibility and non-mutating voice audition still need the shared proposal in [the WS3 proposal](https://github.com/JettHiggins/VoiceSynthesizer/blob/ws3/voice-research-proposal/services/agent/VOICE-RESEARCH-PROPOSAL.md) approved/implemented. The existing UI preview is usable manually; applying a patch and Undo is not an audition substitute.
+- Listening-verified sound quality and comparison against preset-only retrieval need the shared blind kit and human listeners.
+- The original physical melody module/chord-loading failure, calibrated performance and ten-minute audible playback still require real-device evidence. Read docs/STATUS.md for current assignments and limitations.
 
 ## Layout
 

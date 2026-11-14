@@ -58,5 +58,25 @@
     "pullRequest": 23,
     "headSha": "d34f10ee28ce95a415bd823c2e6feae0a8bfae4c",
     "body": "Worker-load URL/line diagnostics and updated mic guide reviewed and integrated. Combined checks passed; original physical melody failure still needs reproduction."
+  },
+  {
+    "pullRequest": 24,
+    "headSha": "8c56f3db4353e3950ec5dd9452abb4aaac292f55",
+    "body": "WS1 reviewed and integrated this exact source with #24/#25/#26/#27. Resolved overlap preserves timed wake capture context, compound command ordering and asynchronous stale-language guards. Fresh declared dev+speech+LLM install: 234 backend passed/6 optional skips; Node 162 passed/1 skip; schema/live-service/WASM/build pass. Original eSpeak short-pause repeat, long-pause melody and drums pass; initial near-grid melody mismatch retained in STATUS.md as an open timing concern. One live OpenRouter smoke proposed tempo 110 correctly in 4547 ms, not model-corpus or human acceptance. See current STATUS.md for remaining voice research/audition contracts, physical mic/loading/timing and listening gates."
+  },
+  {
+    "pullRequest": 25,
+    "headSha": "90a8cb605dcd14a4f00fa55c464082b9b67fa508",
+    "body": "WS1 reviewed and integrated this exact source with #24/#25/#26/#27. Resolved overlap preserves timed wake capture context, compound command ordering and asynchronous stale-language guards. Fresh declared dev+speech+LLM install: 234 backend passed/6 optional skips; Node 162 passed/1 skip; schema/live-service/WASM/build pass. Original eSpeak short-pause repeat, long-pause melody and drums pass; initial near-grid melody mismatch retained in STATUS.md as an open timing concern. One live OpenRouter smoke proposed tempo 110 correctly in 4547 ms, not model-corpus or human acceptance. See current STATUS.md for remaining voice research/audition contracts, physical mic/loading/timing and listening gates."
+  },
+  {
+    "pullRequest": 26,
+    "headSha": "bc02a8e7c685cdec6343f94310e47730d1a2341f",
+    "body": "WS1 reviewed and integrated this exact source with #24/#25/#26/#27. Resolved overlap preserves timed wake capture context, compound command ordering and asynchronous stale-language guards. Fresh declared dev+speech+LLM install: 234 backend passed/6 optional skips; Node 162 passed/1 skip; schema/live-service/WASM/build pass. Original eSpeak short-pause repeat, long-pause melody and drums pass; initial near-grid melody mismatch retained in STATUS.md as an open timing concern. One live OpenRouter smoke proposed tempo 110 correctly in 4547 ms, not model-corpus or human acceptance. See current STATUS.md for remaining voice research/audition contracts, physical mic/loading/timing and listening gates."
+  },
+  {
+    "pullRequest": 27,
+    "headSha": "bdb4ffceb91c390908a92917751596ec2ee75d20",
+    "body": "WS1 reviewed and integrated this exact source with #24/#25/#26/#27. Resolved overlap preserves timed wake capture context, compound command ordering and asynchronous stale-language guards. Fresh declared dev+speech+LLM install: 234 backend passed/6 optional skips; Node 162 passed/1 skip; schema/live-service/WASM/build pass. Original eSpeak short-pause repeat, long-pause melody and drums pass; initial near-grid melody mismatch retained in STATUS.md as an open timing concern. One live OpenRouter smoke proposed tempo 110 correctly in 4547 ms, not model-corpus or human acceptance. See current STATUS.md for remaining voice research/audition contracts, physical mic/loading/timing and listening gates."
   }
 ]

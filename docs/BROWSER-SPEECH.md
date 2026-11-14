@@ -192,3 +192,24 @@ The short-pause failure reproduced a second time with no pipeline error: zero co
 phrase as well as Stop. This confirms overly broad exclusion, rather than absent YIN input
 or a stopped transport, in this synthetic scenario. Do not simply remove wake exclusion or
 shorten all segments: those changes can leak commands or break paused Groove commands.
+
+
+## WS1 reviewed integration — 2026-11-14
+
+WS1 independently merged/reviewed #24/#25/#26/#27 in an isolated checkout. Fresh declared
+dev+speech+LLM dependencies pass uv pip check; backend 234 passed / six optional skips,
+Node 162 passed / one optional skip, schema checks, live-service/WASM integration and build
+passed. Two combined regressions preserve aligned compound commands and stale model refusal.
+
+The original eSpeak short-pause case now preserves all three notes. First run committed
+three but strict timing failed: actual [[16,3,60],[19,4,64],[23,5,67]], expected
+[[16,3,60],[20,3,64],[24,4,67]]. A repeat passed exactly at [[28,3,60],[32,3,64],[36,4,67]],
+with exclusion -> stop -> coverage and playback continuing. The deterministic all-note
+exclusion defect is fixed in this scenario; intermittent near-grid note timing remains a
+WS2/device-analysis concern, not a claimed full timing pass. No assertion was weakened and
+both observations are retained. These are synthetic eSpeak/harmonic fixtures, not human audio.
+
+One explicitly authorized live OpenRouter Deep Agents smoke test using the machine's local
+key proposed tempo 110 at next-loop correctly in 4547 ms with inclusionai/ling-3.2-flash:free.
+The key file was not copied or printed. This is one provider/model path, not command-corpus
+accuracy or a p95 latency result. Familiar parser commands remain independent of LLM latency.

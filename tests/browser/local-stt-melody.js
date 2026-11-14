@@ -19,7 +19,7 @@ async page=>await page.evaluate(async()=>{
   await engine.initialize();await agent.connect();await until('clock',()=>transport!==null);
   const context=engine.getAudioContext(),rate=context.sampleRate;
   const buffer=context.createBuffer(1,14*rate,rate),samples=buffer.getChannelData(0);
-  // Use ?testStopAt=8 to reproduce the joined singing/command exclusion failure.
+  // Use ?testStopAt=8 to exercise the short-pause singing/command exclusion regression.
   const tones=[[6,.375,60],[6.5,.375,64],[7,.5,67]],word=Number(new URL(location.href).searchParams.get('testStopAt')??10);
   for(const [at,duration,midi] of tones){
    let phase=0;

@@ -1,80 +1,48 @@
 # Current team status
 
-WS1 maintains this ledger. Read PLAN.md, this file and [coordination issue #9](https://github.com/JettHiggins/VoiceSynthesizer/issues/9) at startup, before a capability and before a PR. Fetch at those checkpoints, preserve local work, start from reviewed origin/engine-integration and do not dependency-poll. Independent laptop agents must read GitHub updates themselves. Older HANDOFF.md and issue comments may be stale.
+WS1 owns this ledger. Read PLAN.md, this file and [coordination issue #9](https://github.com/JettHiggins/VoiceSynthesizer/issues/9) at startup/capability/PR checkpoints. Preserve local work and start from reviewed origin/engine-integration. Independent laptop sessions must read updates themselves; mentions do not update their conversations.
 
-## Decisions — 2026-11-14
+## Current decisions and delivery — 2026-11-14
 
-- STT: local faster-whisper, configurable model, off the event loop. Dependencies now include SciPy for actual 44.1 kHz browser resampling. No cloud speech provider is needed.
-- LLM: **Jett selected OpenRouter, free models only**, superseding the deferred provider decision. The key is available to Jett but has not been installed or tested here. Deep Agents remains unfinished; the existing parser is interim.
-- WS3 should implement configurable backend-only OpenRouter access and LangChain Deep Agents with typed, validated tools, bounded inference/tool steps and explicit timeout/quota errors. Preserve browser validation, capture-time wake semantics and sample-clock independence. No paid fallback. Do not place keys in browser/VITE variables, source, logs, GitHub or agent conversations.
-- Initial candidate to evaluate: inclusionai/ling-3.2-flash:free (current catalog supports tools and structured outputs). This is a candidate, not a measured winner. openrouter/free is a free-only experimental alternative, but random model choice makes regression comparison less reproducible. Compare command correctness and latency against the fixed WS4 corpus before picking a demo default.
-- Each teammate should receive a distinct revocable key through an encrypted secret-sharing channel. Store it only in a local ignored backend environment file or environment. The current service does not yet implement OpenRouter configuration or automatic .env loading; WS3 must deliver and document that setup. No live provider requests have been made by WS1.
+- Local faster-whisper stays selected for STT. OpenRouter, **free models only**, is selected for language inference. No paid fallback. Keys remain backend-local, never in Git, browser/VITE variables, logs or agent conversations.
+- WS1 reviewed/integrated #24 multi-command speech, #25 measured wake alignment, #26 actual LangChain Deep Agents and #27 browser PCM/coverage/recovery. Their previous implementation/review blockers are resolved. Main remains documentation-only at c198257; use engine-integration for the product.
+- One live OpenRouter smoke test with the user's locally configured key proposed tempo 110 correctly at next-loop, in 4547 ms using inclusionai/ling-3.2-flash:free. This verifies one provider/tool path, not model quality, p95 latency or a complete hands-free session. Familiar parser commands still bypass LLM latency. Candidate model is configurable and unranked.
+- Setup: services/agent/.env.example and docs/TEAM-API-SETUP.md. The backend now loads only its ignored services/agent/.env; process variables take precedence. Each teammate gets a distinct revocable key through encrypted secret sharing. Never paste keys into GitHub/chat.
 
-Official references checked today: [free catalog and quotas](https://openrouter.ai/collections/free-models), [Ling model](https://openrouter.ai/inclusionai/ling-3.2-flash:free), [free router](https://openrouter.ai/docs/guides/routing/routers/free-router). Free :free usage currently has 20 requests/minute and 50/day on an unfunded account; additional keys do not multiply account quota.
+## Owners and immediate work
 
-## Owners and next actions
-
-| Owner | Delivered / current state | Next action |
+| Owner | Delivered | Next action |
 | --- | --- | --- |
-| WS1 — Jett / @JettHiggins | Engine/contracts/build/integration; next-beat Record, stopped four-beat count-in, immediate Clear/Undo and epoch resets. Temporarily owns browser speech capture. | Publish reviewed integrations; obtain peer review of ws1/speech-capture at bdb4ffc, integrate it, then run combined hands-free/device acceptance. |
-| WS2 — Leo / @leoAndrade2332 | Dark persistent workspace, editable synth piano roll, calibration/device diagnostics; #20 recording consumer and #23 worker-load diagnostics integrated. Usage availability unconfirmed; recent PR delivery observed. | Review WS1 speech branch without duplicating it; reproduce Lenny's exact melody-loading error and tune real input from device evidence. |
-| WS3 — Lenny / @lennyyanza | #13 CLAP retrieval, #14 speech contract, #15 pipeline, #16 recording proposals, #21 local faster-whisper and #22 issue-3 tests integrated. | Fix joined singing/Stop exclusion described below in a focused PR; implement OpenRouter/Deep Agents in a separate capability with safe backend config, typed tools and evaluation. Provider choice and issue #3 are no longer blockers. |
-| WS4 — fourth teammate | Issues #17–#19 published; no delivered PR observed. Owns evals/, tools/evaluation/, docs/WS4-HANDOFF.md. | Start #17 command acceptance corpus, then #18 blind-listening summarizer, then #19 sound/refinement rubric. Read docs/WS4-START.md. |
+| WS1 — Jett / @JettHiggins | Engine/contracts/build/integration, recording usability, temporary browser speech wiring; #24–#27 reviewed and combined. | Review/publish voice research visibility and non-mutating audition contracts, coordinate consumers/producers, then full hands-free acceptance. Prune only old integrated branch tips; preserve current work. |
+| WS2 — Leo / @leoAndrade2332 | Dark workspace/piano roll, calibration/diagnostics, live recording consumer and worker-load diagnostics. | Physical late-hit/melody-loading reproduction and near-grid pitch timing. Do not duplicate integrated speech wiring. Availability is not assumed from prior usage limits. |
+| WS3 — Lenny / @lennyyanza | Local speech, alignment/compound commands, free-only Deep Agents, renderer/CLAP research. | Voice research proposal awaits WS1 contract work; then implement approved producers/tools. Continue live provider/corpus evaluation after WS4 corpus delivery. |
+| WS4 — fourth teammate | #17–#19 evaluation tickets published; no delivered PR observed at this checkpoint. | #17 frozen command corpus, then #18 listening summarizer, then #19 held-out sound/refinement rubric. Own evals/, tools/evaluation/, docs/WS4-HANDOFF.md. |
 
-## Branch / integration state
+## Reviewed integration and validation
 
-Main remains c198257, the documentation baseline, **not the product release**. Use engine-integration to run the reviewed product. Do not delete feature branches yet.
+Earlier foundations and deliveries #1/#2/#4–#8/#10–#16/#20–#23 remain integrated. Next-beat recording, stopped four-beat count-in, immediate Clear/Undo, pending/held-note discard and epoch/cutoff protection are shared. Old branches are history, not separate installations. Current #24–#27 source tips are 8c56f3d / 90a8cb6 / bc02a8e / bdb4ffc. WS1 resolved overlapping imports/tests and preserved aligned capture-time context plus ordered command splitting; two cross-capability regressions were adopted from WS3's combined validation.
 
-Reviewed and integrated: WS2 #4–#7/#10/#11/#20/#23; WS1 recording contract/engine #12; WS3 service/research #1/#2/#13/#14/#15/#16/#21/#22. Stacked PRs may be closed as already integrated when their former bases prevent GitHub displaying a normal merge. Source ancestry, not branch existence, establishes integration.
+Fresh declared dev+speech+LLM environment: uv pip check clean; backend **234 passed / six optional skips**; Node **162 passed / one optional skip**, schemas, explicit live-service/WebSocket/WASM integration and production build passed. Deep Agents graph and SDK tests use scripted/mock responses; the single live smoke test is separately identified above.
 
-The latest review includes #15 c62613d (capture-time context), #21 d637213 (real STT plus optional mic self-check), #22 75f4181 (issue-3 regressions), #23 d34f10e (worker URL/line diagnostics and current mic guide). The previous delayed-Groove-stop and missing-SciPy blockers are fixed. Remaining exact device melody failure is not presumed fixed by diagnostics.
+WS1 independently reran the original eSpeak/harmonic fixtures through actual Chromium capture/PCM/YIN/socket/WASM + real faster-whisper base.en CPU/int8:
 
-**Unmerged WS1 capability:** ws1/speech-capture at bdb4ffc. Contains independent browser speech tap/PCM worker, scoped coverage gates, explicit hands-free mode, bounded backlog, failed-connection isolation and explicit Retry, plus dev-worklet refresh. Request a peer-created/reviewed PR to engine-integration. Repository settings prohibit Actions PR creation; WS1 has SSH push but no separate PR-create authentication. ws1/integration-preview and ws1/dev-worklet-sync are parent review history; do not merge them separately after the speech branch. ws1/recording-consumer is integrated through #20. Other old workstream branches retain history; no new unreviewed work is implied by their existence.
+- Half-second melody/Stop pause: all three notes preserved; repeat exact notes [[28,3,60],[32,3,64],[36,4,67]]. Exclusion -> Stop -> coverage; playback continued. Original all-note deletion is resolved in this synthetic scenario.
+- First short-pause run preserved notes but failed strict grid timing: actual [[16,3,60],[19,4,64],[23,5,67]], expected [[16,3,60],[20,3,64],[24,4,67]]. Intermittent near-grid timing remains open; no assertion was weakened and this is not a full timing pass.
+- Long pause: exact [[27,3,60],[31,3,64],[35,4,67]]. Drums: exact steps [29,33,37]. Both stopped recording and kept playback. Positions vary with actual origin; scripts derive expected values.
 
-## Validation and limits
+WS3 independently reported the same old-backend failure/new-backend preservation with synthetic Microsoft Zira fixtures on ws3/combined-speech-check bbae132. Both sets are synthetic, not human recognition/audio-quality acceptance. CI on prior shared/browser delivery and individual #24–#26 was green; the newly merged head has local checks above and must receive its own CI result. Do not claim pending remote checks passed.
 
-Combined reviewed #15/#21/#22/#23 baseline: shared schemas/checks, full Node suite, live service/WebSocket/WASM integration and production build passed. Fresh declared dev+speech installation passed pip check and backend suite: **167 passed, 5 skipped**. An opt-in real faster-whisper test passed using synthetic espeak; no live API or human recording. The last two head updates add the optional microphone self-check and documentation only; script syntax checked. They do not establish actual microphone recognition.
+## Remaining product gaps / completion gates
 
-The delayed-result reproduction now emits exclusion span, error/no mutation, then verification when an old take ends; it cannot turn Groove stop into playback stop or affect a newer take. Tests cover stop/new-take/count-in/late segment closure and held wake joining.
+1. **Voice research visibility and audition:** WS3's ws3/voice-research-proposal identifies that voice-started jobs do not populate the current browser panel and voice audition has no non-mutating operation. WS1 must approve/publish shared schemas, then browser adoption/preview and backend producers/tools must land together. Model/provider availability alone does not close milestone 4. Manual candidate preview remains available.
+2. **Human performance:** calibrated kick/snare/hats, sung melody and phrase correction. User's drum mic worked on Lenny's device but hits were late. Leo measured ~120 ms round trip versus ~62 ms browser estimate on his setup; not a performer pass on Lenny's device.
+3. **Original loading failure:** exact TypeScript/chord/module error remains unconfirmed; diagnostics now preserve worker URL/line. Reproduce with OS/browser/device/commit, audition/pitch status and exact error. See docs/MIC-TESTING.md.
+4. **Model evaluation:** frozen WS4 corpus, actual free-provider correctness/refusal/latency comparison. One correct 4.55 s smoke test does not establish the two-second ordinary-command target; parser path is independent.
+5. **Human sound evaluation:** one fingerprinted blind kit, three listeners, comparison against preset-only picking. Rank/score improvements are not listening evidence.
+6. **Full acceptance:** hands-free drums/melody/correction/sound description/refinement/audition/accept/Clear/Undo/Stop; ten-minute audible playback and timing targets on actual target devices. CI supports, not replaces, human acceptance.
 
-Browser speech branch evidence: real Chromium capture/worklet/worker/socket/WASM integration with scripted coverage passed, including command-span exclusion, continuing playback, unavailable and stalled-service failure/retry. Browser head bdb4ffc adopts reviewed integration 6377130. Actual faster-whisper recognized synthetic Record kick / Groove stop and committed three generated hits at expected steps [21,25,29], with exclusion -> stop-recording -> verification, playback continuing and no pipeline error. This rerun used the fresh declared speech environment, including SciPy, and the current bounded-backlog/recovery client. Combined schema checks, Node suite (162 passed/one optional skip), explicit live-service/WASM integration and production build passed. The isolated test service/browser were stopped. Peer review and shared browser merge remain open. These are synthetic checks, not physical voice/device acceptance.
+## Issue #3 answers remain in force
 
-Recording consumer: actual browser/YIN synthetic C4/E4/G4 extraction, phrase correction, live held-note Undo/Clear and fresh epoch capture passed. CI at edd6044 passed contracts/web, firmware/research and macOS/Windows software integration. Synthetic p95 analysis was ~7–9 ms on WS1's machine; this does not establish real-device latency.
+(a) Existing research wire shape stays until the focused voice research proposal is approved. (b) Audition is non-mutating; accept changes the patch, Undo restores it. (c) Armed Record keeps its deadline through unrelated edits; no replay of discarded capture/Clear. (d) Recognized Groove speech is excluded even on interpretation failure, before coverage. (e) Stop-recording cancels armed/count-in Record and keeps playback without consuming a musical revision.
 
-## Issue #3 answers — remain in force
-
-(a) Keep existing research wire shape; propose additive track/description metadata separately if needed for concurrent voice jobs.
-(b) Audition uses non-mutating previewUrl; accept applies a patch and Undo restores it.
-(c) Armed Record keeps its original deadline through unrelated edits. Other queued musical edits retain revision checks; never replay discarded capture/Clear intentions.
-(d) Recognized Groove wake speech is excluded even when interpretation fails; error with no mutation precedes classified coverage.
-(e) Stop-recording cancels armed/count-in Record, keeps playback and does not consume a musical revision.
-
-## Remaining completion gates
-
-- Merge peer-reviewed browser speech capability; complete OpenRouter-backed **Deep Agents**, not only the interim parser.
-- Physical calibrated drums, sung melody and phrase correction. User's drum mic worked on Lenny's device but hits were late with wired headphones. Leo measured ~120 ms round trip versus ~62 ms browser estimate on his setup; this is not a calibrated performer pass on Lenny's device.
-- Reproduce exact TypeScript/chord/module-loading melody error with URL/console/device/commit; test preset audition as well as pitch capture. See docs/MIC-TESTING.md.
-- One fingerprinted blind kit, three human listeners, comparison against preset-only retrieval. CLAP rank/score improvements do not establish listening quality.
-- Full hands-free PLAN.md scenario, real command latency targets and ten-minute audible playback on target devices. Software CI is supporting evidence, not physical signoff.
-
-Handoffs must include PR/commit, behavior, validation, limitations and next integration step. No secrets, raw microphone recordings, downloaded models or large generated corpora in Git.
-
-## New integrated-path blocker — joined singing and Stop exclusion
-
-WS1 browser diagnostic tests/browser/local-stt-melody.js at bdb4ffc uses actual local
-faster-whisper, capture/PCM/YIN workers, WebSocket and WASM with synthetic speech/tones.
-Record melody -> C4/E4/G4 -> Groove stop passed with a 2.5 s pause before Stop: all three
-notes committed at expected starts/durations/pitches, recording stopped, playback continued.
-At /?testStopAt=8 the pause is 0.5 s. This failed twice: Record/Stop recognized, zero notes
-committed, no pipeline error, playback continuing. Latest run's command-span [286932,428933]
-at 44.1 kHz lasts 3.22 s and excludes singing plus the command. The browser correctly follows
-the supplied span; backend energy hangover/whole-segment exclusion needs refinement.
-
-WS3 owns a focused fix: exclude measured wake/command speech while preserving preceding
-musical input, without leaking command audio, breaking paused wake phrases or advancing
-coverage before classification. No schema change is implied; propose any needed change
-before use. Do not treat the long-pause pass as completion. Keep the failing short-pause
-reproduction and add backend regression evidence. Exact commands/evidence are in
-[the speech handoff](https://github.com/JettHiggins/VoiceSynthesizer/blob/ws1/speech-capture/docs/BROWSER-SPEECH.md).
-This synthetic failure is distinct from the unresolved physical TypeScript/chord-loader
-report. The isolated test service/browser were stopped. No live API calls or human audio.
+Handoffs include commit/PR, behavior, validation, limitations and next step. Never commit secrets, raw microphone recordings, model downloads or generated corpora.
