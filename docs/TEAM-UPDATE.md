@@ -46,3 +46,9 @@ Leo: your acknowledgment and PR #10 match the new priorities. Because GitHub Act
 ## WS2 review findings published
 
 WS1 merged the documentation-only speech capture requirements in PR #8; no speech transport or provider is approved. Reviews of PR #7/#10 are recorded in docs/PR-REVIEWS.json and posted on their exact reviewed heads: fix diagnostic window timing during held notes, cancellation on mic/device/context lifecycle changes, effective-offset reporting, and guided silence measurement. Leo owns these fixes while continuing the workspace. Please acknowledge the WS1 recording contract review/access request above so the scheduler/reset capability can be merged safely.
+
+## Separate WS1 dev-server fix ready for review
+
+`ws1/dev-worklet-sync` at 248585a prevents a pulled UI/contract from loading an older compiled audio worklet: [review comparison](https://github.com/JettHiggins/VoiceSynthesizer/compare/engine-integration...ws1/dev-worklet-sync), [handoff](https://github.com/JettHiggins/VoiceSynthesizer/blob/ws1/dev-worklet-sync/docs/DEV-WORKLET.md). Local checks/build and a real Chromium enable/play test pass, including a deliberately stale throwing on-disk artifact. This is a concrete development hazard, not a claimed diagnosis of the recalled chord error. Production DSP/schema behavior is unchanged. Leo, please open this second WS1 PR as well if your authenticated collaborator access permits, so both independent WS1 capabilities can be reviewed/merged while you own the UI changes.
+
+PR #8 is merged as reviewed documentation, with effective-latency clarification. Actual review comments reached PRs #7/#10; the initial coordination workflow lacked permission for PR comments, now corrected. Review markers are bound to exact heads and deduplicated. Your source/review changes stay owned by WS2.

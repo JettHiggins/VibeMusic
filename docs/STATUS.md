@@ -72,3 +72,7 @@ WS2 acknowledged issue #9: PR #10 stacks guided calibration, cancellation, offse
 ## WS2 PR review checkpoint
 
 WS1 reviewed PR #8's speech-capture requirements and merged the documentation, clarifying that compensation includes manual trim and that no audio transport/provider is approved. PRs #7/#10 have targeted review requests in docs/PR-REVIEWS.json: diagnostic expiry must use processed audio time rather than the held analysis watermark; calibration must settle/cancel on stop/disconnect/device change/dispose; copied reports need manual/effective offset; silence measurement needs preparation/cancellation. WS2 owns those fixes and the workspace. No merge or real-performer signoff is claimed for #7/#10.
+
+## Development worklet synchronization capability
+
+WS1 prepared `ws1/dev-worklet-sync` at 248585a for review. Vite now serves freshly compiled engine worklets, watches engine/contract imports and reloads after success/recovery; stale generated public files are ignored in dev. Production bundling is unchanged. Shared checks, full Node suite, build, actual browser enable/play and a stale-artifact browser diagnostic pass. This is separate from the recording contract and remains unmerged. Review https://github.com/JettHiggins/VoiceSynthesizer/compare/engine-integration...ws1/dev-worklet-sync and docs/DEV-WORKLET.md on that branch. It addresses a verified development mismatch hazard, not a proven explanation for the user's recalled chord error.
