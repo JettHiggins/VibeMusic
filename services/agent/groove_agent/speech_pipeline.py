@@ -24,6 +24,7 @@ timing and ordering only, never recognition.
 from __future__ import annotations
 
 import queue
+from collections import deque
 import threading
 from dataclasses import dataclass, field
 from typing import Callable, Optional, Protocol
@@ -57,15 +58,41 @@ class Transcript:
 class Segment:
     start_frame: int
     last_frame: int  # inclusive, like speech-verified throughFrame
-    samples: np.ndarray
+    samples: np.ndarray  # exactly [start_frame, last_frame]: spans and alignment use this
     sample_rate: int
+    # Quiet audio just outside the measured segment. Only the recognizer hears it: in noise the
+    # raised threshold clips weak onsets/endings ("Play" was heard as "Light"/"Clear" without it).
+    pre: np.ndarray = field(default_factory=lambda: np.zeros(0, np.float32))
+    post: np.ndarray = field(default_factory=lambda: np.zeros(0, np.float32))
+
+    @property
+    def recognition_samples(self) -> np.ndarray:
+        if not len(self.pre) and not len(self.post):
+            return self.samples
+        return np.concatenate([self.pre, self.samples, self.post]).astype(np.float32)
+
+    @property
+    def lead_seconds(self) -> float:
+        """Recognizer word times include this lead; subtract it to get times within `samples`."""
+        return len(self.pre) / self.sample_rate
 
 
 @dataclass
 class EnergySegmenter:
     sample_rate: int  # payload rate
     window_s: float = 0.02
-    threshold_dbfs: float = -40.0
+    threshold_dbfs: float = -40.0  # never call anything quieter than this loud
+    # Noisy rooms: the noise floor is the quietest 20 ms window of the last `floor_s`; a window is
+    # loud only `margin_db` above it. Speech has pauses, so it does not raise the floor; steady room
+    # noise sets it at once (start) or within `floor_s` (noise that begins mid-take).
+    floor_s: float = 1.5
+    margin_db: float = 6.0
+    # Steady noise that starts mid-take is loud until the floor catches up. Speech dips between
+    # syllables and words; a loud run this long that stays within `stationary_db` is noise (or a
+    # long held sung note) and is dropped without transcription.
+    stationary_s: float = 1.0
+    stationary_db: float = 6.0
+    pad_s: float = 0.2  # recognition-only context before/after each segment
     min_speech_s: float = 0.15  # one continuous loud run this long makes a segment speech
     burst_gap_s: float = 0.10  # quiet that ends a candidate with only short bursts (beatboxed hits)
     hangover_s: float = 0.60  # keeps "Groove, <pause> stop" in one segment (measured pause ~0.5 s)
@@ -77,6 +104,18 @@ class EnergySegmenter:
     _open: Optional[list] = None  # [current loud run, longest loud run, quiet windows since last loud]
     _history_s: list = field(default_factory=list)
     _history_f: list = field(default_factory=list)
+    _levels: deque = field(default_factory=deque)
+    _quiet: deque = field(default_factory=deque)  # recent windows before a segment opens
+    _pre: list = field(default_factory=list)
+
+    @property
+    def noise_floor_dbfs(self) -> float:
+        return min(self._levels) if self._levels else -120.0
+
+    @property
+    def threshold(self) -> float:
+        """Current loudness threshold in dBFS (fixed minimum, raised by the measured noise floor)."""
+        return max(self.threshold_dbfs, self.noise_floor_dbfs + self.margin_db)
 
     @property
     def window(self) -> int:
@@ -99,20 +138,28 @@ class EnergySegmenter:
             win, win_frames = self._samples[:w], self._frames[:w]
             self._samples, self._frames = self._samples[w:], self._frames[w:]
             rms = float(np.sqrt(np.mean(win.astype(np.float64) ** 2)))
-            loud = 20 * np.log10(max(rms, 1e-10)) > self.threshold_dbfs
-            segment = self._step(win, win_frames, loud)
+            level = 20 * np.log10(max(rms, 1e-10))
+            self._levels.append(level)
+            while len(self._levels) > max(1, round(self.floor_s / self.window_s)):
+                self._levels.popleft()
+            loud = level > self.threshold
+            segment = self._step(win, win_frames, loud, level)
             if segment is not None:
                 closed.append(segment)
         return closed
 
-    def _step(self, win: np.ndarray, win_frames: np.ndarray, loud: bool) -> Optional[Segment]:
+    def _step(self, win: np.ndarray, win_frames: np.ndarray, loud: bool, level: float = 0.0) -> Optional[Segment]:
         windows = lambda seconds: max(1, round(seconds / self.window_s))
         if self._open is None:
             if not loud:
                 self._decided_through = int(win_frames[-1])
+                self._quiet.append(win)
+                while len(self._quiet) > windows(self.pad_s):
+                    self._quiet.popleft()
                 return None
-            self._open = [0, 0, 0]
+            self._open = [0, 0, 0, [], -120.0]  # + levels of the current loud run, loudest window
             self._history_s, self._history_f = [], []
+            self._pre, self._quiet = list(self._quiet), deque()
         self._history_s.append(win)
         self._history_f.append(win_frames)
         state = self._open
@@ -120,9 +167,23 @@ class EnergySegmenter:
             state[0] += 1
             state[1] = max(state[1], state[0])
             state[2] = 0
+            state[3].append(level)
+            state[4] = max(state[4], level)
         else:
             state[0] = 0
             state[2] += 1
+            state[3] = []
+        recent = state[3][-windows(self.stationary_s):]
+        if state[0] >= windows(self.stationary_s) and max(recent) - min(recent) < self.stationary_db:
+            self._open, self._history_s, self._history_f = None, [], []
+            self._decided_through = int(win_frames[-1])
+            return None  # steady noise (or a long held note): never transcribed
+        if state[2] and state[4] <= self.threshold:
+            # The floor has risen since this candidate opened: nothing in it is loud any more,
+            # so it was noise from before the floor adapted. Drop it now, not after the hangover.
+            self._open, self._history_s, self._history_f = None, [], []
+            self._decided_through = int(win_frames[-1])
+            return None
         speech = state[1] >= windows(self.min_speech_s)
         # Short bursts close after a brief gap, so beatboxing never holds the watermark for the
         # speech hangover; speech keeps the longer hangover that spans "Groove, <pause> stop".
@@ -133,11 +194,15 @@ class EnergySegmenter:
         keep = len(self._history_s) - state[2]
         samples = np.concatenate(self._history_s[:keep]) if keep else np.zeros(0, np.float32)
         frames = np.concatenate(self._history_f[:keep]) if keep else np.zeros(0, np.int64)
-        self._open, self._history_s, self._history_f = None, [], []
+        trailing = self._history_s[keep:keep + windows(self.pad_s)]
+        pre = np.concatenate(self._pre) if self._pre else np.zeros(0, np.float32)
+        post = np.concatenate(trailing) if trailing else np.zeros(0, np.float32)
+        self._quiet = deque(self._history_s[keep:][-windows(self.pad_s):])
+        self._open, self._history_s, self._history_f, self._pre = None, [], [], []
         self._decided_through = int(win_frames[-1])
         if not speech or not len(frames):
             return None  # only short bursts such as beatboxed hits: not speech
-        return Segment(int(frames[0]), int(frames[-1]), samples, self.sample_rate)
+        return Segment(int(frames[0]), int(frames[-1]), samples, self.sample_rate, pre, post)
 
     @property
     def decided_through(self) -> int:
@@ -194,7 +259,10 @@ class ThreadedSpeechWorker:
                 return
             try:
                 transcribe = getattr(self._transcriber, "transcribe_timed", self._transcriber.transcribe)
-                text = transcribe(job.segment.samples, job.segment.sample_rate)
+                text = transcribe(job.segment.recognition_samples, job.segment.sample_rate)
+                lead = job.segment.lead_seconds
+                if lead and isinstance(text, Transcript):  # word times back onto the measured samples
+                    text = Transcript(text.text, tuple(Word(w.text, w.start - lead, w.end - lead) for w in text.words))
             except Exception as error:  # a provider failure must hold coverage, never fake it
                 self._deliver(job, None, f"{type(error).__name__}: {error}"[:300])
             else:
