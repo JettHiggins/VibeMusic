@@ -153,6 +153,13 @@ export class PerformanceRecorder {
  }
 
  /** Includes submitted input: Undo must discard capture before consuming musical history. */
+ resetPendingCapture() {
+  this.events=[];this.inFlight=null;this.replaced.clear();this.retries=0;
+  this.analysedThrough=-1;this.speechVerifiedThrough=-1;this.lastError=null;this.changed();
+ }
+ beginSpeechCoverage(clockId:string,firstFrame:number) {
+  if(this.window?.clockId===clockId)this.window.captureStart=Math.max(this.window.captureStart,firstFrame);
+ }
  get hasPendingCapture() { return this.events.length > 0; }
 
  get capturing() {

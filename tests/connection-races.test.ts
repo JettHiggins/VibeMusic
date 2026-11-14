@@ -32,11 +32,11 @@ test('late callbacks from a replaced socket cannot disconnect or send commands i
  try{
   const agent=new WebSocketAgent();const statuses:boolean[]=[];const messages:ServerMessage[]=[];const errors:Error[]=[];
   agent.onStatus=status=>statuses.push(status);agent.onError=error=>errors.push(error);
-  const firstConnection=agent.connect();const first=FakeSocket.instances[0];first.open();await firstConnection;
-  agent.dispose();
   agent.subscribe(message=>messages.push(message));
+  const firstConnection=agent.connect();const first=FakeSocket.instances[0];first.open();await firstConnection;
+  agent.disconnect();
   const secondConnection=agent.connect();const second=FakeSocket.instances[1];second.open();await secondConnection;
-  first.onclose?.();first.onerror?.();first.onmessage?.({data:JSON.stringify({type:'error',requestId:'old',message:'old connection'})});
+  first.onclose?.();first.onerror?.();first.onmessage?.({data:JSON.stringify({type:'command',command:{id:'late-old-clear',expectedRevision:0,boundary:'immediate',operation:{type:'clear',target:{trackId:'drums',lane:'kick'}}}})});
   assert.deepEqual(statuses,[true,false,true]);assert.equal(agent.connected,true);assert.deepEqual(messages,[]);assert.deepEqual(errors,[]);
   second.onmessage?.({data:JSON.stringify({type:'error',requestId:'new',message:'new connection'})});
   assert.equal(messages.length,1);agent.dispose();

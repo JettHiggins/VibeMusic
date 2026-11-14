@@ -7,6 +7,8 @@ declare function registerProcessor(name: string, processor: typeof AudioWorkletP
 const BLOCK = 1024;
 class CaptureProcessor extends AudioWorkletProcessor {
  private out: MessagePort | null = null;
+ private speech: MessagePort | null = null;
+ private speechAfterFrame = 0;
  private buffer = new Float32Array(BLOCK);
  private filled = 0;
  private startFrame = 0;
@@ -15,12 +17,14 @@ class CaptureProcessor extends AudioWorkletProcessor {
   super();
   this.port.onmessage = ({ data }) => {
    if (data?.type === 'connect') { this.out = data.port as MessagePort; this.filled = 0; this.nextFrame = -1; }
-   if (data?.type === 'disconnect') { this.out?.close(); this.out = null; }
+   if (data?.type === 'connect-speech') { this.speech?.close(); this.speech = data.port as MessagePort; this.speechAfterFrame = currentFrame; }
+   if (data?.type === 'disconnect-speech') { this.speech?.close(); this.speech = null; }
+   if (data?.type === 'disconnect') { this.out?.close(); this.out = null; this.speech?.close(); this.speech = null; }
   };
  }
  process(inputs: Float32Array[][]) {
   const channels = inputs[0];
-  if (!this.out) return true;
+  if (!this.out && !this.speech) return true;
   const length = channels?.[0]?.length ?? 128;
   // A gap (e.g. the input was briefly disconnected) flushes and restarts with a fresh start frame.
   if (this.nextFrame !== -1 && currentFrame !== this.nextFrame) this.flush(true);
@@ -35,12 +39,14 @@ class CaptureProcessor extends AudioWorkletProcessor {
   return true;
  }
  private flush(discontinuity: boolean) {
-  if (this.filled && this.out) {
-   const samples = this.buffer.slice(0, this.filled);
-   this.out.postMessage({ type: 'audio', startFrame: this.startFrame, samples, discontinuity: false }, [samples.buffer]);
+  for (const output of [this.out, this.speech]) if (this.filled && output) {
+   const offset = output === this.speech ? Math.max(0, this.speechAfterFrame - this.startFrame) : 0;
+   if (offset >= this.filled) continue;
+   const samples = this.buffer.slice(offset, this.filled);
+   output.postMessage({ type: 'audio', startFrame: this.startFrame + offset, samples, discontinuity: false }, [samples.buffer]);
   }
   this.filled = 0;
-  if (discontinuity) this.out?.postMessage({ type: 'gap' });
+  if (discontinuity) { this.out?.postMessage({ type: 'gap' }); this.speech?.postMessage({ type: 'gap' }); }
  }
 }
 registerProcessor('voicesynth-capture', CaptureProcessor);
