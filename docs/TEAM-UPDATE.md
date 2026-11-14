@@ -1,5 +1,8 @@
 @leoAndrade2332 @lennyyanza — updated ownership and decisions from Jett. Read docs/STATUS.md; this supersedes older blockers in issue #3.
 
+**Current WS1 review target: [ws1/integration-preview at 0b95ca1](https://github.com/JettHiggins/VoiceSynthesizer/compare/engine-integration...ws1/integration-preview?expand=1).** Jett resumed WS1 and combined both ready WS1 branches with current integration in an isolated preview. @lennyyanza: open/review this single PR to engine-integration; retain recording-consumer/dev-worklet-sync as parent history. Shared checks, full Node suite, service/WASM integration/build and actual browser next-beat/live-edit/held-note reset checks pass locally with the current-source dev worklet active. Shared engine-integration is unchanged by this preview; real voice/device and full hands-free acceptance remain open. WS3 can continue transport/retrieval fixes and local faster-whisper without waiting for an LLM decision or this PR; Leo's last known usage limit has no reported resolution.
+
+
 ## Decisions and immediate ownership
 
 - Jett selected **local faster-whisper** for speech recognition. Start with the small model as a configurable baseline; measure CPU latency on development laptops. Model downloads stay outside Git. No cloud credentials/API calls are authorized.
@@ -25,11 +28,11 @@ Engine and backend timing support, guided calibration, dark workspace/piano roll
 
 ## Recording consumer ready for review
 
-WS1 pushed [ws1/recording-consumer at f3987e3](https://github.com/JettHiggins/VoiceSynthesizer/compare/engine-integration...ws1/recording-consumer). The full consumer wiring is implemented and software/browser checks pass; docs/RECORDING-USABILITY.md on that branch gives behavior and evidence. Leo must not duplicate it. @lennyyanza: since Leo is out of usage, please open a PR from that branch to engine-integration with your authenticated account and review the backend-proposal seam/ID preservation. Repository settings prohibit Actions PR creation; WS1 cannot create it with the available authentication. This review dependency does not block your local STT or #13/#14/#15 fixes. The demo on Jett's laptop runs the capability branch, but it is not yet part of shared engine-integration. Human timing/voice acceptance remains open.
+WS1 pushed [ws1/recording-consumer at f3987e3](https://github.com/JettHiggins/VoiceSynthesizer/compare/engine-integration...ws1/recording-consumer). The full consumer wiring is implemented and software/browser checks pass; docs/RECORDING-USABILITY.md on that branch gives behavior and evidence. Leo must not duplicate it. @lennyyanza: since Leo is out of usage, please use the combined integration-preview review target above with your authenticated account and review the backend-proposal seam/ID preservation. Repository settings prohibit Actions PR creation; WS1 cannot create it with the available authentication. This review dependency does not block your local STT or #13/#14/#15 fixes. The demo on Jett's laptop runs the capability branch, but it is not yet part of shared engine-integration. Human timing/voice acceptance remains open.
 
 ## Setup/status clarification
 
-WS1 consolidated docs/STATUS.md so current decisions/owners come first and corrected stale docs/SETUP.md instructions that pointed teammates at the foundation/main. Start capabilities from reviewed engine-integration and open PRs to engine-integration. @lennyyanza: please also open/review ws1/dev-worklet-sync at 248585a while Leo is unavailable; its existing tests/handoff are ready. It fixes stale dev worklets, not missing WASM assets.
+WS1 consolidated docs/STATUS.md so current decisions/owners come first and corrected stale docs/SETUP.md instructions that pointed teammates at the foundation/main. Start capabilities from reviewed engine-integration and open PRs to engine-integration. @lennyyanza: the combined integration-preview target above includes ws1/dev-worklet-sync at 248585a; its existing tests/handoff are ready. It fixes stale dev worklets, not missing WASM assets.
 
 Additional consumer-branch evidence: synthetic C4/E4/G4 passed through the actual browser capture/YIN worker/recorder/WASM into steps 20/24/28, durations 3/3/4, with playback continuing (~8.1 ms p95 analysis here). This does not close Lenny's physical-device loading error or real-performer gates.
 
