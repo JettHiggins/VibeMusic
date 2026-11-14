@@ -45,10 +45,11 @@ class FakeEngine {
   return { type: 'transport', transport: { clockId: CLOCK, sampleRate: 44100, currentFrame: this.frame, loopStartFrame: START, playing: true, recording: this.window.endFrame === null, recordingState: this.window.endFrame === null ? 'recording' : 'idle', recordingStartFrame: START, recordingTarget: this.window.target, pendingCommandIds: this.queued.map(c => c.id), ...overrides } };
  }
 }
-function setup(mode: 'manual' | 'speech' = 'manual') {
+function setup(mode: 'manual' | 'speech' = 'manual', batchLeadSeconds = Infinity) {
  const engine = new FakeEngine();
  let n = 0;
- const recorder = new PerformanceRecorder({ dispatch: engine.dispatch, newId: () => `id-${++n}` }, mode);
+ // Most tests submit immediately; boundary-timed batching has its own test.
+ const recorder = new PerformanceRecorder({ dispatch: engine.dispatch, newId: () => `id-${++n}` }, mode, { batchLeadSeconds });
  engine.listeners.push(m => recorder.handle(m));
  recorder.handle({ type: 'session', session: engine.session });
  const advance = (frames: number) => { engine.frame += frames; recorder.handle(engine.transport()); };
@@ -178,7 +179,10 @@ test('hits outside the take, from another clock, or after stop are dropped local
  engine.frame = cutoff + 2048;
  recorder.addOnsets([{ ...hit(0), frame: cutoff + 1500 }, { ...hit(0), frame: cutoff - 100 }], 0, CLOCK, cutoff + 2048);
  assert.equal(recorder.capturing, false);
- assert.equal(engine.sent.length, 0, 'onsets arriving after the take closed are not accepted');
+ assert.equal(engine.sent.length, 1, 'late analysis of audio before the cut-off still counts');
+ const op = engine.sent[0].operation;
+ assert.ok(op.type === 'commit-performance');
+ if (op.type === 'commit-performance') assert.deepEqual(op.events.map(e => e.captureFrame), [cutoff - 100], 'audio after the cut-off is dropped');
 });
 
 test('a final verified batch still commits after stop-recording', () => {
@@ -192,4 +196,78 @@ test('a final verified batch still commits after stop-recording', () => {
  assert.equal(engine.sent.length, 1);
  engine.boundary();
  assert.deepEqual(kicks(engine.session), [2]);
+});
+
+function melodic() {
+ const s = setup();
+ s.engine.window = { ...s.engine.window, target: { trackId: 'synth-1' } };
+ return s;
+}
+const note = (start: number, end: number, midi = 64, confidence = 0.9) => ({ startFrame: Math.round(START + start * STEP), endFrame: Math.round(START + end * STEP), midi, velocity: 0.7, confidence });
+
+test('sung notes commit to melodic takes with quantized starts and durations', () => {
+ const { engine, recorder, advance } = melodic();
+ advance(30 * STEP);
+ recorder.addNotes([note(0.2, 3.9, 60), note(4.1, 6.2, 62)], 0, CLOCK, engine.frame);
+ assert.deepEqual(recorder.status().provisional.map(p => [p.step, p.duration]), [[0, 4], [4, 2]]);
+ engine.boundary();
+ assert.deepEqual(engine.session.tracks[0].notes.map(n => [n.step, n.duration, n.midi]), [[0, 4, 60], [4, 2, 62]]);
+});
+
+test('notes wait until their end is analysed, onsets are ignored on melodic takes and vice versa', () => {
+ const { engine, recorder, advance, hit } = melodic();
+ advance(30 * STEP);
+ recorder.addOnsets([hit(1)], 0, CLOCK, START + 5 * STEP);
+ recorder.addNotes([note(2, 20)], 0, CLOCK, START + 10 * STEP);
+ assert.equal(engine.sent.length, 0, 'note end not yet analysed');
+ assert.equal(recorder.status().dropped, 0, 'drum onsets during a sung take are irrelevant, not ignored');
+ recorder.addNotes([], 0, CLOCK, START + 21 * STEP);
+ assert.equal(engine.sent.length, 1);
+ const drums = setup(); drums.advance(10 * STEP);
+ drums.recorder.addNotes([note(1, 3)], 0, CLOCK, drums.engine.frame);
+ assert.equal(drums.engine.sent.length, 0);
+});
+
+test('a note still sounding at stop is clamped to the cut-off; notes overlapping speech are excluded', () => {
+ const { engine, recorder, advance } = melodic();
+ recorder.setMode('speech'); recorder.setSpeechAvailable(true);
+ advance(20 * STEP);
+ const cutoff = engine.frame;
+ engine.window.endFrame = cutoff + 500;
+ recorder.handle(engine.transport({ recording: false, recordingState: 'idle' }));
+ recorder.addCommandSpan({ clockId: CLOCK, startFrame: Math.round(START + 10 * STEP), endFrame: Math.round(START + 12 * STEP) });
+ recorder.addNotes([note(2, 6, 60), note(9, 11, 67), note(16, 30, 64)], 0, CLOCK, START + 31 * STEP);
+ recorder.verifyThrough(CLOCK, cutoff);
+ const op = engine.sent[0].operation;
+ assert.ok(op.type === 'commit-performance');
+ if (op.type === 'commit-performance') {
+  assert.deepEqual(op.events.map(e => e.kind === 'note' ? [e.midi, e.endFrame <= cutoff] : null), [[60, true], [64, true]]);
+ }
+ engine.frame = cutoff + 1000;
+ engine.boundary();
+ assert.deepEqual(engine.session.tracks[0].notes.map(n => n.midi), [60, 64]);
+});
+
+test('during a take, verified events are batched just before the loop boundary', () => {
+ const { engine, recorder, advance, hit } = setup('manual', 0.4);
+ const loop = 64 * STEP, lead = 0.4 * 44100;
+ advance(10 * STEP);
+ recorder.addOnsets([hit(2)], 0, CLOCK, engine.frame);
+ advance(20 * STEP);
+ recorder.addOnsets([hit(25)], 0, CLOCK, engine.frame);
+ assert.equal(engine.sent.length, 0, 'held while the loop has time left');
+ advance(loop - 30 * STEP - lead + 100);
+ recorder.addOnsets([], 0, CLOCK, engine.frame);
+ assert.equal(engine.sent.length, 1, 'one batch inside the lead window');
+ const op = engine.sent[0].operation;
+ assert.ok(op.type === 'commit-performance' && op.events.length === 2);
+ engine.boundary();
+ assert.deepEqual(kicks(engine.session), [2, 25]);
+ // Once the take closes, remaining events are sent without waiting.
+ advance(5 * STEP);
+ recorder.addOnsets([hit(65)], 0, CLOCK, engine.frame);
+ assert.equal(engine.sent.length, 1);
+ engine.window.endFrame = engine.frame;
+ recorder.handle(engine.transport({ recording: false, recordingState: 'idle' }));
+ assert.equal(engine.sent.length, 2);
 });

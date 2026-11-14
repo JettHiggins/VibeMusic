@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
+import { resolve } from 'node:path';
 import { createSession } from '../packages/contracts/src/index.ts';
 import { exportSession, importSession, listSaved, loadLocal, saveLocal } from '../apps/web/src/persistence/session-file.ts';
 import { loadCalibration, saveCalibration } from '../apps/web/src/persistence/calibration-store.ts';
@@ -58,4 +60,24 @@ test('calibration is stored per device and ignores malformed entries', () => {
  assert.equal(loadCalibration('mic-2', store), null);
  store.setItem('voicesynth.input-calibration.v1', '{"mic-1":{"version":1,"noiseFloorDb":"loud"}}');
  assert.equal(loadCalibration('mic-1', store), null);
+});
+
+test('an exported session reloads identically into a fresh real engine via load-session', { skip: !existsSync('apps/web/public/engine/voicesynth.wasm') }, async () => {
+ const { EngineCore } = await import('../apps/web/src/engine/core.ts');
+ const dir = 'apps/web/public/engine';
+ const module = await WebAssembly.compile(readFileSync(`${dir}/voicesynth.wasm`));
+ const { FirmwareAudio } = await import(pathToFileURL(resolve(`${dir}/preview-worklet.js`)).href);
+ const metadata = JSON.parse(readFileSync(`${dir}/metadata.json`, 'utf8'));
+ const original = demo(); original.revision = 0; original.tracks[2].muted = true; original.tracks[1].volume = 0.4;
+ const a = new EngineCore(new FirmwareAudio(module), metadata, original, 'a', () => {});
+ const text = exportSession(a.getSession(), 'Round trip');
+ const b = new EngineCore(new FirmwareAudio(module), metadata, createSession(), 'b', () => {});
+ const imported = importSession(text);
+ const ack = b.dispatch({ id: 'load', expectedRevision: 0, boundary: 'next-loop', operation: { type: 'load-session', session: imported.session } });
+ assert.equal(ack.type === 'ack' && ack.status, 'applied');
+ const strip = (s: ReturnType<typeof createSession>) => ({ ...s, revision: 0 });
+ assert.deepEqual(strip(b.getSession()), strip(a.getSession()));
+ assert.equal(b.getSession().revision, 1, 'a load advances the current revision rather than adopting the saved one');
+ b.dispatch({ id: 'undo', expectedRevision: 1, boundary: 'next-loop', operation: { type: 'undo' } });
+ assert.deepEqual(b.getSession().tracks, createSession().tracks, 'undo restores the previous session');
 });
