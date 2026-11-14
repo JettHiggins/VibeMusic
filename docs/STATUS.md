@@ -72,3 +72,7 @@ The user got drum mic input on Lenny's device but hits landed late with wired he
 ## WS4 — fourth teammate, independent evaluation work
 
 WS4 owns only evals/, tools/evaluation/ and docs/WS4-HANDOFF.md for the tickets in docs/WS4-TICKETS.json. Start with the hands-free command acceptance corpus, then the standalone blind-listening summarizer, then the held-out sound-description/refinement rubric. All are independent of API access, app runtime and model downloads, and must not modify WS1/WS2/WS3 implementations. Copyable startup instruction: docs/WS4-START.md. One focused PR per ticket against engine-integration; WS1 integrates.
+
+## Browser speech consumer in progress
+
+WS1 is implementing ws1/speech-capture (8659c98), based on approved integration plus the prepared recording/worklet preview. Independent worklet speech tap and frame-aligned 100 ms PCM worker are implemented/tested, with continuous silence, pre-enable sample exclusion, matching startup PCM trim and terminal gap handling. Payload uses the approved context rate (44.1 kHz); local recognizer adaptation owns model-rate conversion. The worker is not yet connected to the app/socket; mode/availability/coverage gates, backpressure and recovery are next. See docs/BROWSER-SPEECH.md on that branch. Do not claim actual streaming or hands-free recognition from these component tests, and do not duplicate this browser implementation on WS2.
