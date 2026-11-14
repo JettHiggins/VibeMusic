@@ -18,6 +18,7 @@ from typing import Any, Callable, Deque, Mapping, Optional, Protocol, Sequence, 
 from .intents import (MELODIC_TRACKS, AcceptCandidate, CancelSearch, Command, Ignored, Interpretation, NotUnderstood,
                       SoundSearch, interpret, validate_operation)
 from .speech import ChunkError, StreamTracker, decode_chunk
+from .speech_pipeline import EnergySegmenter, Transcriber
 
 Interpreter = Callable[[str, Mapping[str, Any], bool], Interpretation]
 
@@ -68,7 +69,11 @@ def _error(request_id: str, message: str) -> dict:
 
 class Connection:
     def __init__(self, interpreter: Interpreter = interpret, ack_timeout_s: float = DEFAULT_ACK_TIMEOUT_S,
-                 research: Optional[ResearchPort] = None) -> None:
+                 research: Optional[ResearchPort] = None, transcriber: Optional[Transcriber] = None) -> None:
+        self._transcriber = transcriber
+        self._segmenters: dict[str, EnergySegmenter] = {}
+        self._verified: dict[str, int] = {}
+        self._segment_count = 0
         self._interpret = interpreter
         self._research = research
         self._searches: "OrderedDict[str, _Search]" = OrderedDict()
@@ -100,15 +105,19 @@ class Connection:
         if kind == "sound-request":
             return self._start_search(message["id"], message["trackId"], message["description"], None)
         if kind == "speech-audio":
-            return self._on_speech_audio(message)
+            return self._on_speech_audio(message, now)
         if kind == "cancel-job":
             if self._research is not None and self._research.cancel(message["jobId"]):
                 return []  # the job answers with status "cancelled"
             return [_error(message["jobId"], "no such running research job")]
         return [_error("unknown", f"unsupported message type {kind!r}")]
 
-    def _on_speech_audio(self, message: Mapping[str, Any]) -> list[dict]:
-        """Validate and drop audio (no recognizer yet). One status per stream; one error per broken stream."""
+    def _on_speech_audio(self, message: Mapping[str, Any], now: float) -> list[dict]:
+        """Check one chunk; without a transcriber drop it, otherwise segment, transcribe and verify.
+
+        Ordering per closed segment: its command-span/command (if any) first, then
+        speech-verified. The watermark never passes an open segment or unreceived audio.
+        """
         stream_id = message["streamId"]
         if self._speech_streams.is_broken(stream_id):
             return []
@@ -120,8 +129,41 @@ class Connection:
             first = self._speech_streams.accept(chunk)
         except ChunkError as error:
             self._speech_streams.mark_broken(stream_id)
+            self._segmenters.pop(stream_id, None)
             return [_error(stream_id, f"speech-audio rejected: {error}; send a new streamId")]
-        return [dict(SPEECH_UNAVAILABLE)] if first else []
+        out: list[dict] = []
+        if first:
+            out.append(dict(SPEECH_UNAVAILABLE) if self._transcriber is None else
+                       {"type": "speech-status", "available": True, "provider": self._transcriber.name})
+        if self._transcriber is None:
+            return out
+        segmenter = self._segmenters.get(stream_id)
+        if segmenter is None:
+            segmenter = self._segmenters[stream_id] = EnergySegmenter(chunk.sample_rate)
+            while len(self._segmenters) > 16:
+                self._segmenters.pop(next(iter(self._segmenters)))
+        for segment in segmenter.feed(chunk):
+            text = self._transcriber.transcribe(segment.samples, segment.sample_rate).strip()
+            if not text:
+                continue
+            self._segment_count += 1
+            out.extend(self._on_utterance({
+                "type": "utterance", "id": f"{stream_id}:speech-{self._segment_count}", "text": text,
+                "clockId": chunk.clock_id, "startFrame": segment.start_frame, "endFrame": segment.last_frame,
+                "duringRecording": self._recording_at(segment.start_frame)}, now))
+        watermark = segmenter.decided_through
+        if watermark > self._verified.get(stream_id, -1):
+            self._verified[stream_id] = watermark
+            out.append({"type": "speech-verified", "clockId": chunk.clock_id, "throughFrame": watermark})
+        return out
+
+    def _recording_at(self, frame: int) -> bool:
+        """Whether a take was capturing at `frame`, from the browser's latest transport snapshot."""
+        transport = self.transport or {}
+        state = transport.get("recordingState")
+        active = state == "recording" if state is not None else bool(transport.get("recording"))
+        start = transport.get("recordingStartFrame")
+        return active and (start is None or frame >= start)
 
     def tick(self, now: float) -> list[dict]:
         """Expire commands the browser never resolved, so later commands are not blocked forever."""

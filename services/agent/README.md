@@ -38,6 +38,17 @@ Python 3.11; the code avoids syntax newer than 3.10. `GET /healthz` reports serv
 - Each connection starts clean. Nothing issued before a disconnect is replayed after a reconnect.
 - Only pages served from localhost may open the socket.
 
+## Speech audio (provider pending)
+
+`speech-audio` chunks (docs/CONTRACTS.md) are checked by `speech.py`. `speech_pipeline.py` segments them in
+20 ms energy windows on the capture clock and bounds the `speech-verified` watermark; a `Transcriber` (the STT
+provider seam) turns a closed segment into text, which then follows the normal utterance path (`command-span`
+before `command`, then the watermark). The service does not configure a transcriber yet, so it answers
+`speech-status available:false` and never sends `speech-verified`. `tests/test_speech_harness.py` streams a
+synthetic WAV through the real `Connection` with a SCRIPTED transcriber to test frame math and ordering only.
+Limits: energy segmentation treats sustained singing as a candidate segment (held up to 4 s, then transcribed and
+ignored unless it starts with "Groove"); transcription is synchronous, so a real provider must run in a worker.
+
 ## Sound research
 
 `sound-request`, or a spoken description on a synth track ("make it sound like an 80s electric piano"), starts
