@@ -25,8 +25,10 @@ export class WebSocketAgent implements AgentAdapter {
  send(input:ClientMessage){
   const message=ClientMessage.parse(input);
   if(!this.connected)throw new Error('Agent is disconnected; command was not sent');
+  if(message.type==='speech-audio'&&this.socket!.bufferedAmount>256*1024)throw new Error('Speech connection is behind; restart hands-free capture');
   this.socket!.send(JSON.stringify(message));
  }
  subscribe(listener:(message:ServerMessage)=>void){this.listeners.add(listener);return ()=>{this.listeners.delete(listener);};}
- dispose(){const socket=this.socket;this.socket=null;socket?.close();this.onStatus(false);this.listeners.clear();}
+ disconnect(){const socket=this.socket;this.socket=null;socket?.close();if(socket)this.onStatus(false);}
+ dispose(){this.disconnect();this.listeners.clear();}
 }

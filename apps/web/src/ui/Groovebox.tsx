@@ -64,6 +64,7 @@ export function Groovebox({ engine, voice, session, transport, enabled, busy, me
  const lane = (target.lane ?? session.selected.lane ?? 'kick') as Lane;
  const view = patterns.view(trackId);
  const playhead = playheadStep(transport, session.tempo)?.step ?? null;
+ const speechReady = !input.speech.enabled || input.speech.status==='ready';
  const micReady = input.microphone === 'on' || input.microphone === 'test-signal';
  const uncalibrated = input.microphone === 'on' && !input.readiness.ready;
  const edit = (op: PatternOp) => patterns.edit(trackId, op);
@@ -74,7 +75,7 @@ export function Groovebox({ engine, voice, session, transport, enabled, busy, me
  return <div className="vs" style={{ minHeight: '100vh', background: C.bg }}>
   <style>{workspaceCss + layoutCss}</style>
   <TransportBar session={session} transport={transport} enabled={enabled} busy={busy} onEnable={onEnable} send={send} target={target}
-   canRecord={micReady} recordHint={!micReady ? 'Enable the microphone in the Input inspector first' : uncalibrated ? input.readiness.advice : null}
+   canRecord={micReady&&speechReady} recordHint={!speechReady ? 'Speech recognition unavailable; retry or explicitly select manual mode' : !micReady ? 'Enable the microphone in the Input inspector first' : uncalibrated ? input.readiness.advice : null}
    status={status} statusError={!!patterns.lastError || !!result?.error} />
   <div className="vs-body">
    <aside className="vs-left" style={pane}>

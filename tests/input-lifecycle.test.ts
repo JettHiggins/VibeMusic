@@ -174,3 +174,42 @@ test('Undo discards an open sung note before it has produced any completed note 
  assert.deepEqual(s.voice.prepareCommand({id:'undo-held',expectedRevision:0,boundary:'immediate',operation:{type:'undo'}}).operation,{type:'undo',discardCaptureOnly:true});
  s.voice.dispose();
 });
+
+test('hands-free opt-in requires recognizer status, rejects stale streams and holds on unavailable without manual fallback',async()=>{
+ const {SpeechPcmEncoder}=await import('../apps/web/src/input/speech-pcm.ts');
+ const s=await setup(),sent:ClientMessage[]=[];
+ let result:((m:import('../apps/web/src/input/speech-worker.ts').SpeechResult)=>void)|undefined;
+ let config:{streamId:string;clockId:string;latencyFrames:number}|undefined;
+ s.mic.startSpeech=(c,fn)=>{config=c;result=fn;};s.mic.stopSpeech=()=>{};
+ const emit=(m:ClientMessage)=>s.listeners.forEach(l=>l(m));
+ emit({type:'session',session:(await import('../packages/contracts/src/index.ts')).createSession()});
+ const transport={clockId:'clock',sampleRate:SR,currentFrame:100000,loopStartFrame:0,playing:true,recording:true,recordingState:'recording' as const,recordingStartFrame:88200,recordingTarget:{trackId:'drums' as const,lane:'kick' as const},recordingEpoch:1,captureStartFrame:88200,pendingCommandIds:[]};
+ emit({type:'transport',transport});
+ s.voice.recorder.addOnsets([{frame:90000+5292,confidence:1,velocity:1,levelDb:-12}],5292,'clock',100000+5292);
+ assert.equal(s.voice.recorder.hasPendingCapture,true);
+ s.voice.configureSpeechSender(m=>sent.push(m),()=>{},async()=>{});s.voice.setSpeechAvailable(true);s.voice.setHandsFree(true);
+ assert.equal(s.voice.getState().speech.status,'waiting');assert.equal(s.voice.recorder.hasPendingCapture,false,'manual pre-stream input discarded');
+ const pcm=new SpeechPcmEncoder({...config!,sampleRate:SR},message=>result!({type:'chunk',message}));pcm.push(100000,new Float32Array(SR));
+ assert.ok(sent.length>0,'real worker PCM reaches configured transport seam');
+ assert.equal(s.voice.getState().speech.status,'waiting','socket/audio alone is insufficient');
+ s.voice.handleServerMessage({type:'speech-status',streamId:'obsolete',available:true,provider:'SCRIPTED'});
+ assert.equal(s.voice.getState().speech.status,'waiting');
+ s.voice.handleServerMessage({type:'speech-status',streamId:config!.streamId,available:true,provider:'SCRIPTED'});
+ assert.equal(s.voice.getState().speech.status,'ready');
+ s.voice.handleServerMessage({type:'speech-status',streamId:config!.streamId,available:false,provider:'none'});
+ assert.equal(s.voice.getState().speech.status,'unavailable');assert.equal(s.voice.getState().recorder.mode,'speech');
+ const count=sent.length;pcm.push(100000+SR,new Float32Array(SR));assert.equal(sent.length,count,'failed stream cannot send/replay');
+ s.voice.setSpeechAvailable(true);assert.equal(s.voice.getState().speech.status,'unavailable','socket reconnect cannot silently resume');
+ s.voice.setHandsFree(false);assert.equal(s.voice.getState().recorder.mode,'manual','only explicit opt-out selects manual mode');s.voice.dispose();
+});
+
+
+test('explicit hands-free enable connects locally but never overrides a manual opt-out during connection',async()=>{
+ const s=await setup();let resolve:()=>void=()=>{},starts=0;
+ s.mic.startSpeech=()=>{starts++;};s.mic.stopSpeech=()=>{};
+ s.voice.configureSpeechSender(()=>{},()=>{},()=>new Promise<void>(r=>{resolve=r;}));
+ const pending=s.voice.enableHandsFree();
+ assert.equal(s.voice.getState().recorder.mode,'speech');assert.equal(s.voice.getState().speech.status,'waiting');
+ s.voice.setHandsFree(false);s.voice.setSpeechAvailable(true);resolve();await pending;
+ assert.equal(starts,0);assert.equal(s.voice.getState().recorder.mode,'manual');assert.equal(s.voice.getState().speech.enabled,false);s.voice.dispose();
+});
