@@ -22,3 +22,7 @@
 ## Evidence and remaining gates
 
 Engine and backend timing support, guided calibration, dark workspace/piano roll and candidate UI are integrated. UI recording adoption is underway, not done. Real local recognition, human calibrated takes (especially Lenny's late drums and melody-loading failure), blind listening and full hands-free acceptance remain open. Synthetic tests are not real-device signoff. Main remains the documentation baseline; start capabilities from reviewed origin/engine-integration.
+
+## Recording consumer ready for review
+
+WS1 pushed [ws1/recording-consumer at f3987e3](https://github.com/JettHiggins/VoiceSynthesizer/compare/engine-integration...ws1/recording-consumer). The full consumer wiring is implemented and software/browser checks pass; docs/RECORDING-USABILITY.md on that branch gives behavior and evidence. Leo must not duplicate it. @lennyyanza: since Leo is out of usage, please open a PR from that branch to engine-integration with your authenticated account and review the backend-proposal seam/ID preservation. Repository settings prohibit Actions PR creation; WS1 cannot create it with the available authentication. This review dependency does not block your local STT or #13/#14/#15 fixes. The demo on Jett's laptop runs the capability branch, but it is not yet part of shared engine-integration. Human timing/voice acceptance remains open.
