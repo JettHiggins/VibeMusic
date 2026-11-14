@@ -27,7 +27,7 @@ test('research candidates from real engine audio are accepted and undone by the 
   const corpus = mkdtempSync(join(tmpdir(), 'groove-corpus-'));
   const child = spawn(process.env.VOICESYNTH_PYTHON ?? 'python3',
     ['-m', 'uvicorn', 'groove_agent.app:app', '--app-dir', 'services/agent', '--host', '127.0.0.1', '--port', String(port)],
-    {stdio: ['ignore', 'ignore', 'pipe'], env: {...process.env, GROOVE_RESEARCH: 'sloop', GROOVE_EMBEDDER: 'mock',
+    {stdio: ['ignore', 'ignore', 'pipe'], env: {...process.env, GROOVE_LLM: '', OPENROUTER_API_KEY: '', GROOVE_STT: '', GROOVE_RESEARCH: 'sloop', GROOVE_EMBEDDER: 'mock',
       GROOVE_CORPUS_DIR: corpus, GROOVE_PUBLIC_URL: `http://127.0.0.1:${port}`}});
   let logs = '';
   let coordinator: SessionCoordinator | undefined;
@@ -40,6 +40,8 @@ test('research candidates from real engine audio are accepted and undone by the 
       child.once('exit', code => { clearTimeout(timeout); fail(new Error(`Service exited ${code}: ${logs}`)); });
       child.stderr.on('data', data => { logs = (logs + data.toString()).slice(-4000); if (logs.includes('Uvicorn running')) { clearTimeout(timeout); done(); } });
     });
+    const health = await (await fetch(`http://127.0.0.1:${port}/healthz`)).json() as {language: string; speech: string};
+    assert.equal(health.language, 'parser');assert.equal(health.speech, 'not configured');
     const dir = 'apps/web/public/engine';
     const module = await WebAssembly.compile(readFileSync(`${dir}/voicesynth.wasm`));
     const {FirmwareAudio} = await import(pathToFileURL(resolve(`${dir}/preview-worklet.js`)).href);
