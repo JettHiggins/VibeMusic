@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useReducer, useState, type ReactNode } from 'react';
-import type { SessionCommand, SessionState, Target, Transport } from '@voicesynth/contracts';
+import type { SessionCommand, SessionState, Transport } from '@voicesynth/contracts';
 import type { FirmwareMetadata } from '../engine/metadata.ts';
 import type { VoiceInput, VoiceInputState } from '../input/voice-input.ts';
 import { CommandClient, type CommandResult } from './command-client.ts';
@@ -75,7 +75,8 @@ export function Groovebox({ engine, voice, session, transport, enabled, busy, me
  const micReady = input.microphone === 'on' || input.microphone === 'test-signal';
  const uncalibrated = input.microphone === 'on' && !input.readiness.ready;
  const edit = (op: PatternOp) => patterns.edit(trackId, op);
- const erase = (target: Target, step: number) => client.send({ type: 'erase-event', target, step }, 'immediate');
+ type EraseTarget = Extract<SessionCommand['operation'], { type: 'erase-event' }>['target'];
+ const erase = (target: EraseTarget, step: number) => client.send({ type: 'erase-event', target, step }, 'immediate');
  const selectTrack = (id: TrackId) => send({ type: 'select', target: id === 'drums' ? { trackId: 'drums', lane } : { trackId: id } });
  const provisional = input.recorder.provisional.filter(p => p.event.target.trackId === trackId);
  const status = patterns.lastError ?? result?.text ?? engineMessage ?? '';

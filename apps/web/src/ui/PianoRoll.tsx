@@ -52,7 +52,7 @@ export function PianoRoll({ notes, provisional, playhead, disabled, onEdit, onEr
   return () => window.removeEventListener('keydown', key);
  }, [selected, disabled, onErase, notes]);
 
- const local = (e: React.PointerEvent) => { const r = grid.current!.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top, w: r.width }; };
+ const local = (e: { clientX: number; clientY: number }) => { const r = grid.current!.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top, w: r.width }; };
 
  const onGridDown = (e: React.PointerEvent) => {
   if (disabled || e.button !== 0) return;
