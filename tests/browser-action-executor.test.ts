@@ -9,9 +9,11 @@ const SR = 44100;
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
 function fakeContext() {
+ const nodes: { stopped: number; disconnected: boolean }[] = [];
  return {
+  nodes,
   sampleRate: SR, currentTime: 10, state: 'running' as AudioContextState, baseLatency: 0.01, outputLatency: 0.04, destination: {},
-  createOscillator() { return { frequency: { value: 0 }, connect: (g: unknown) => g, start() {}, stop() {}, disconnect() {} }; },
+  createOscillator() { const n = { frequency: { value: 0 }, stopped: 0, disconnected: false, connect: (g: unknown) => g, start() {}, stop() { n.stopped++; }, disconnect() { n.disconnected = true; } }; nodes.push(n); return n; },
   createGain() { return { gain: { setValueAtTime() {}, exponentialRampToValueAtTime() {} }, connect: (d: unknown) => d, disconnect() {} }; },
  };
 }
@@ -213,4 +215,117 @@ test('the real WS1 router forwards executor status and outcomes for the current 
  assert.deepEqual(sent.filter(m => m.type === 'browser-action-ack').map(m => (m as BrowserActionAck).status), ['running', 'complete']);
  assert.equal((sent.filter(m => m.type === 'browser-status').at(-1) as BrowserStatus).calibration?.offsetAdjustMs, 12);
  router.dispose();
+});
+
+test('review: disconnect cannot cancel a screen calibration started during speech reconnect', async () => {
+ const s = await setup();
+ s.voice.configureSpeechSender(() => {}, () => {}, async () => {});
+ s.voice.setSpeechAvailable(true); s.voice.setHandsFree(true);
+ s.voice.handleServerMessage({ type: 'speech-status', streamId: s.mic.speechStreams.at(-1)!, available: true, provider: 'SCRIPTED' });
+ const action = s.act({ type: 'set-input-offset', milliseconds: 20 });
+ await s.until(() => s.voice.getBrowserStatus()!.activeAction?.phase === 'reconnecting');
+ const manual = s.voice.calibrateNoise();
+ await sleep(15);
+ const started = s.voice.getState().calibrating === 'noise';
+ s.voice.cancelBrowserActions('Agent disconnected');
+ await sleep(15);
+ const survived = s.voice.getState().calibrating === 'noise';
+ s.voice.cancelCalibration(); await manual;
+ await s.until(() => s.acks(action.id).length === 2);
+ assert.ok(!started || survived, 'either refuse a manual start during agent work, or preserve its ownership on disconnect');
+});
+
+test('review: starting a take cancels pending calibration before its result can alter input settings', async () => {
+ const s = await setup();
+ const prior = s.voice.getState().calibration!;
+ const action = s.act({ type: 'calibrate-input', mode: 'noise' });
+ await sleep(15); s.ctx.currentTime += 3.01; await sleep(20);
+ assert.equal(s.voice.getState().silenceRun?.phase, 'measuring');
+ s.emit({ type: 'transport', transport: idle({ playing: true, recordingState: 'armed', recordingEpoch: 1 }) });
+ s.mic.noise.resolve!(-43);
+ await s.until(() => s.acks(action.id).length === 2);
+ assert.equal(s.voice.getState().calibration, prior, 'a late calibration result must not change the settings of an armed take');
+ assert.ok(['cancelled','rejected'].includes(s.acks(action.id).at(-1)!));
+});
+
+for (const [mode, change] of [
+ ['timing', { playing: true }],
+ ['timing', { recordingState: 'armed', recordingEpoch: 1 }],
+ ['check-timing', { recording: true, recordingState: 'recording', playing: true, recordingEpoch: 1 }],
+] as const) {
+ test(`agent ${mode} calibration is cancelled when ${Object.keys(change).join('/')} changes, stopping its clicks and keeping timing`, async () => {
+  const s = await setup();
+  const prior = s.voice.getState().calibration!;
+  const action = s.act({ type: 'calibrate-input', mode });
+  await sleep(15);
+  assert.equal(s.ctx.nodes.length, 12, 'clicks scheduled');
+  s.emit({ type: 'transport', transport: idle(change) });
+  await s.until(() => s.acks(action.id).length === 2);
+  assert.equal(s.acks(action.id)[1], 'cancelled');
+  assert.match((s.out.at(-1) as BrowserActionAck).reason!, /(Playback started|Recording was armed or started), so the measurement was cancelled; the previous timing was kept/);
+  assert.ok(s.ctx.nodes.every(n => n.disconnected && n.stopped >= 1), 'future clicks stopped and disconnected');
+  assert.equal(s.voice.getState().calibration, prior);
+  assert.equal(s.voice.getState().calibrating, null);
+ });
+}
+
+test('full calibration: Record armed after the noise step keeps the measured floor and cancels the timing step and its clicks', async () => {
+ const s = await setup();
+ const action = s.act({ type: 'calibrate-input', mode: 'full' });
+ await sleep(15); s.ctx.currentTime += 3.01; await sleep(20);
+ // Arming exactly as the floor arrives: the measurement completes first, then the take blocks timing.
+ s.mic.noise.resolve!(-50);
+ await s.until(() => s.voice.getState().calibration!.noiseSource === 'measured');
+ s.emit({ type: 'transport', transport: idle({ recordingState: 'armed', recordingEpoch: 1 }) });
+ await s.until(() => s.acks(action.id).length === 2);
+ assert.equal(s.acks(action.id)[1], 'cancelled');
+ assert.equal(s.voice.getState().calibration!.noiseFloorDb, -50, 'the completed noise step stays applied');
+ assert.equal(s.voice.getState().calibration!.latencySource, 'default', 'timing untouched');
+ assert.ok(s.ctx.nodes.every(n => n.disconnected), 'timing clicks stopped and disconnected');
+});
+
+test('full calibration: a late noise result after Play is discarded and the timing step is never reached', async () => {
+ const s = await setup();
+ const prior = s.voice.getState().calibration!;
+ const action = s.act({ type: 'calibrate-input', mode: 'full' });
+ await sleep(15); s.ctx.currentTime += 3.01; await sleep(20);
+ s.emit({ type: 'transport', transport: idle({ playing: true }) });
+ s.mic.noise.resolve!(-43); // late callback after cancellation
+ await s.until(() => s.acks(action.id).length === 2);
+ assert.equal(s.acks(action.id)[1], 'cancelled');
+ assert.equal(s.voice.getState().calibration, prior);
+ assert.equal(s.ctx.nodes.length, 0, 'timing clicks were never scheduled');
+});
+
+test('screen controls are locked while an agent action runs and a screen start is refused without touching it', async () => {
+ const s = await setup();
+ const action = s.act({ type: 'calibrate-input', mode: 'noise' });
+ await sleep(15);
+ assert.equal(s.voice.getState().inputActionRunning, true, 'the Input inspector disables Measure silence and calibration');
+ const manual = await s.voice.calibrateLatency();
+ assert.equal(manual.status, 'rejected');
+ assert.match(manual.text, /agent is changing input settings/);
+ assert.equal(s.voice.getBrowserStatus()!.activeAction?.phase, 'countdown', 'agent run continues');
+ s.voice.cancelBrowserActions('Agent disconnected');
+ await s.until(() => s.acks(action.id).length === 2);
+ assert.equal(s.voice.getState().inputActionRunning, false);
+ // With the agent gone the screen path works again and the agent flag did not leak into it.
+ const again = s.voice.calibrateNoise(3);
+ await sleep(15);
+ s.voice.cancelBrowserActions('Agent disconnected');
+ await sleep(10);
+ assert.equal(s.voice.getState().silenceRun?.phase, 'countdown', 'screen run is not agent-owned');
+ s.voice.cancelCalibration(); await again;
+});
+
+test('a screen timing calibration is also cancelled when a take is armed', async () => {
+ const s = await setup();
+ const prior = s.voice.getState().calibration!;
+ const run = s.voice.calibrateLatency();
+ await sleep(15);
+ s.emit({ type: 'transport', transport: idle({ recordingState: 'armed', recordingEpoch: 1 }) });
+ const outcome = await run;
+ assert.equal(outcome.status, 'cancelled');
+ assert.equal(s.voice.getState().calibration, prior);
+ assert.ok(s.ctx.nodes.every(n => n.disconnected));
 });

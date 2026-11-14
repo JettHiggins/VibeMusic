@@ -23,13 +23,13 @@ export function InputInspector({ voice, state, transport, enabled, melodic }: { 
  return <div aria-label="Input" style={{ display: 'grid', gap: 6 }}>
   <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
    <button disabled={!enabled || busy || state.microphone === 'starting'} onClick={() => run(() => voice.enableMicrophone(deviceId || undefined))}>{micReady ? 'Restart mic' : 'Enable microphone'}</button>
-   <button disabled={!micReady || busy || !!state.calibrating} onClick={() => run(() => voice.calibrateNoise())}>Measure silence</button>
+   <button disabled={!micReady || busy || !!state.calibrating || state.inputActionRunning} title={state.inputActionRunning ? 'The agent is changing input settings' : undefined} onClick={() => run(() => voice.calibrateNoise())}>Measure silence</button>
   </div>
   {devices.length > 1 && <label>Input <select value={deviceId} disabled={busy || recording} onChange={e => { setDeviceId(e.target.value); run(() => voice.enableMicrophone(e.target.value || undefined)); }}>
    <option value="">System default</option>
    {devices.map(d => <option key={d.deviceId} value={d.deviceId}>{d.label}</option>)}
   </select></label>}
-  <label>Capture profile <select aria-label="Capture profile" value={state.processingProfile} disabled={busy || recording} onChange={e => run(() => voice.setProcessingProfile(e.target.value as 'noisy-room' | 'music'))}>
+  <label>Capture profile <select aria-label="Capture profile" value={state.processingProfile} disabled={busy || recording || state.inputActionRunning} onChange={e => run(() => voice.setProcessingProfile(e.target.value as 'noisy-room' | 'music'))}>
    <option value="noisy-room">Noisy room · cleanup on</option>
    <option value="music">Music · less processing</option>
   </select></label>
@@ -44,7 +44,7 @@ export function InputInspector({ voice, state, transport, enabled, melodic }: { 
   </div>
   {state.microphone === 'on' && !state.readiness.ready && <div role="note" style={{ color: C.warn }}>⚠ {state.readiness.advice}</div>}
   {micReady && <MicCheckPanel state={state} onReport={() => voice.testReport()} />}
-  {micReady && <CalibrationPanel voice={voice} state={state} disabled={busy || state.calibrating === 'noise'} playing={!!transport?.playing} />}
+  {micReady && <CalibrationPanel voice={voice} state={state} disabled={busy || state.calibrating === 'noise' || state.inputActionRunning} playing={!!transport?.playing} />}
   {state.message && <div role="status" style={{ color: C.warn }}>{state.message}</div>}
   <div aria-label="Take status" style={{ color: C.muted }}>
    {heard} {unit}(s) heard · {queued} queued for next loop · {state.recorder.committed} committed · {state.recorder.dropped} ignored
