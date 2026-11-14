@@ -156,3 +156,39 @@ explicit live-service/WebSocket/WASM integration (one passed) and production bui
 The first check invocation used system Python without jsonschema; rerunning with the
 installed speech environment on PATH passed. The isolated test service and browser were
 stopped afterward. Peer review/merge and human acceptance remain required.
+
+## Real-model synthetic melody / joined Stop diagnostic
+
+Generate an additional ignored fixture:
+
+```sh
+espeak-ng -v en-us -s 140 -w apps/web/public/engine/synthetic-record-melody.wav 'Record melody.'
+```
+
+With the same local faster-whisper service on 8767, run
+`tests/browser/local-stt-melody.js` after browser audio activation. It recognizes Record
+melody, captures synthetic C4/E4/G4 through the real YIN worker plus speech gate, recognizes
+Groove stop, checks exact note starts/durations/pitches and continuing playback. No commands,
+transcripts, spans or coverage are scripted. The default stop phrase begins at 10 s, 2.5 s
+after the last note ends. This passed with notes [28,3,60], [32,3,64], [36,4,67] matching
+expected positions (positions vary with clock origin), three committed notes and no errors.
+
+**Known failing transition, not accepted:** run from `/?testStopAt=8` instead. The identical
+phrase ends at 7.5 s, leaving 0.5 s before Groove stop. In the first run Record/Stop were
+recognized and playback continued, but zero notes committed (14 dropped). A longer-pause
+pass does not close this failure. The 0.6 s energy-segment hangover can join singing to the
+command; the service then excludes the whole candidate segment. WS3 must refine measured
+wake/command exclusion so preceding musical input survives, while never verifying actual
+command speech as music. Preserve capture-time context and watermark ordering. This is
+synthetic integration evidence, separate from the user's unresolved physical melody error.
+
+The synthetic phrase 'Record synth one' also failed recognition on this base.en fixture;
+'Record melody' was recognized. Do not equate either synthetic result with human word error
+rate, and do not weaken the parser to accept hallucinations. The model/segmentation decision
+needs the fixed command corpus and real voice measurements.
+
+The short-pause failure reproduced a second time with no pipeline error: zero committed,
+16 dropped, and command-span [286932,428933] at 44.1 kHz (3.22 seconds), spanning the pitched
+phrase as well as Stop. This confirms overly broad exclusion, rather than absent YIN input
+or a stopped transport, in this synthetic scenario. Do not simply remove wake exclusion or
+shorten all segments: those changes can leak commands or break paused Groove commands.
