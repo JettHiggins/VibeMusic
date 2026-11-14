@@ -3,12 +3,12 @@ name: Publish team coordination update
 on:
   push:
     branches: [engine-integration]
-    paths: [docs/TEAM-UPDATE.md, docs/PR-REVIEWS.json]
+    paths: [docs/TEAM-UPDATE.md, docs/PR-REVIEWS.json, .github/workflows/team-update.yml]
 
 permissions:
   contents: read
   issues: write
-  pull-requests: read
+  pull-requests: write
 
 concurrency:
   group: team-coordination-update
@@ -29,9 +29,10 @@ jobs:
             const fs = require('node:fs');
             const {owner, repo} = context.repo;
             const title = 'Team restart: recording usability and real-device fixes';
-            const marker = `<!-- team-update:${context.sha} -->`;
             const base = `https://github.com/${owner}/${repo}`;
             const content = fs.readFileSync('docs/TEAM-UPDATE.md', 'utf8');
+            const digest = require('node:crypto').createHash('sha256').update(content).digest('hex');
+            const marker = `<!-- team-update-content:${digest} -->`;
             const body = `${marker}\n${content}\n\nPublished from [${context.sha.slice(0, 7)}](${base}/commit/${context.sha}). Current assignments: [docs/STATUS.md](${base}/blob/engine-integration/docs/STATUS.md).`;
             const issues = await github.paginate(github.rest.issues.listForRepo, {owner, repo, state: 'open', per_page: 100});
             let issue = issues.find(item => !item.pull_request && item.title === title && item.user.login === 'github-actions[bot]');
@@ -50,6 +51,7 @@ jobs:
             if (fs.existsSync('docs/PR-REVIEWS.json')) {
               const reviews = JSON.parse(fs.readFileSync('docs/PR-REVIEWS.json', 'utf8'));
               for (const review of reviews) {
+                core.info(`Inspecting reviewed PR ${review.pullRequest}`);
                 const pull = (await github.rest.pulls.get({owner, repo, pull_number: review.pullRequest})).data;
                 if (pull.state !== 'open' || pull.head.sha !== review.headSha) {
                   core.notice(`Review ${review.pullRequest} skipped: head changed or PR closed`);
@@ -58,6 +60,7 @@ jobs:
                 const reviewMarker = `<!-- ws1-review:${review.pullRequest}:${review.headSha} -->`;
                 const existing = await github.paginate(github.rest.issues.listComments, {owner, repo, issue_number: review.pullRequest, per_page: 100});
                 if (!existing.some(c => c.user.login === 'github-actions[bot]' && c.body.includes(reviewMarker))) {
+                  core.info(`Posting review comment on PR ${review.pullRequest}`);
                   await github.rest.issues.createComment({owner, repo, issue_number: review.pullRequest,
                     body: `${reviewMarker}\n${review.body}\n\nPosted from the WS1-reviewed coordination commit ${context.sha}.`});
                 }
