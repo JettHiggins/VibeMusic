@@ -3,6 +3,7 @@ import type { AnalysisRequest, AnalysisResult } from './analysis-worker.ts';
 import type { Onset } from './onset.ts';
 import type { PitchReading, SungNote } from './pitch.ts';
 import type { CaptureSettings } from './diagnostics.ts';
+import { formatWorkerLoadError } from './worker-load-error.ts';
 
 export interface AnalysisFrame {
  onsets: Onset[]; notes: SungNote[];
@@ -49,7 +50,7 @@ export class MicrophoneInput {
    else if (data.type === 'noise-floor') { this.noiseWaiters.splice(0).forEach(resolve => resolve(data.db)); }
    else this.onError(new Error(data.message));
   };
-  worker.onerror = event => this.onError(new Error(`Microphone analysis failed to load${event.message ? ` (${event.message})` : ''}. Restart npm run dev and reload the page; if it persists, run npm ci.`));
+  worker.onerror = event => this.onError(new Error(formatWorkerLoadError(event)));
   const channel = new MessageChannel();
   node.port.postMessage({ type: 'connect', port: channel.port1 }, [channel.port1]);
   this.request({ type: 'connect', port: channel.port2, sampleRate: this.context.sampleRate }, [channel.port2]);
