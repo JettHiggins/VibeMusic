@@ -17,10 +17,14 @@ Use BrowserEngine via EngineAdapter and the existing coordinator. Own UI/input/p
 
 ## Workstream 3 next integration
 
-Rebase/merge the updated engine-integration contracts before further backend changes. Keep implementing in services/agent. Continue research renderer integration and provider-independent work while API access is deferred. Deep Agents and speech-provider work still require a credential decision. Engine recording windows now work, but microphone input is not attached and sound research is unavailable; do not mark these user flows complete.
+Rebase/merge the updated engine-integration contracts before further backend changes. Keep implementing in services/agent. Continue research renderer integration and provider-independent work while API access is deferred. Deep Agents and speech-provider work still require a credential decision. Engine recording windows now work, but microphone input is not attached and research orchestration is merged, with a real engine renderer available but CLAP not yet configured; do not mark these user flows complete.
 
 ## Remaining product gates
 
 Full editable/persistent groovebox UI, microphone timing/calibration and recognition, actual microphone-to-engine recording, speech-span buffering and verification, Deep Agents, patch retrieval/optimization/audition, cross-platform validation, and the complete hands-free acceptance session. The active goal remains the full product integration, not just the pieces verified above.
 
 Recording engine validation now includes WASM count-in/downbeat activation, canceling armed takes, quantized selected-lane commits, stop-recording preserving playback, and pure timing/phrase-replacement tests. Actual microphone latency, recognition, and count-in audibility on each teammate laptop still need verification.
+
+## Offline renderer for Workstream 3
+
+The research framework from agent-sound-research (c319487) is merged. Use `tools.sloop_renderer.SloopRenderer` as the implementation of research.audio.Renderer; see RENDERER.md. It accepts the existing RenderRecipe and complete Patch, returns mono float32 at 44100 Hz, and launches the actual pinned WASM in a separate Node process. The renderer name includes a SHA256 of WASM plus metadata for reproducibility. Browser snapshot validation now accepts complete patch arrays while preserving session-controlled timing and mix. No CLAP embedder is configured and mock ranking is not enabled automatically. Workstream 3 can now wire its real embedder into ResearchBackend without building another synth.

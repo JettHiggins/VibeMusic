@@ -38,6 +38,7 @@ jobs:
       - run: python3 scripts/build-engine.py --test
       - run: npm ci
       - run: npm test
+      - run: PYTHONPATH=services/agent python -m pytest tests/test_sloop_renderer.py
       - run: npm run test:integration
       - uses: actions/upload-artifact@v4
         with:

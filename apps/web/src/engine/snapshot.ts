@@ -20,7 +20,8 @@ export function firmwareSnapshot(input: SessionState, metadata: FirmwareMetadata
    const id=Number(key);
    const descriptor=id<metadata.engineParamOffset?metadata.parameters[id]:engine.parameters[id-metadata.engineParamOffset];
    if(!/^\d+$/.test(key)||!descriptor||!Number.isInteger(value)||value<descriptor.min||value>descriptor.max)throw new Error(`Invalid patch parameter ${key}`);
-   if([0,17,29,30,31,32,40].includes(id))throw new Error(`Parameter ${key} is controlled by session timing/mixer`);
+   // Complete research patches may include these fields; session values override them.
+   if([0,17,29,30,31,32,40].includes(id))continue;
    if(k===3)throw new Error('Custom drum patches require a drum-kit contract');
    p[id]=value;
   }

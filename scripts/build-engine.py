@@ -30,7 +30,7 @@ else:
     subprocess.run([compiler,'-O2','-fwrapv','-fno-strict-aliasing','-w','-I'+str(root/'vendor/sloop/build/gen'),'-I'+str(root/'vendor/sloop/firmware/src'),str(root/'tools/engine-metadata.c'),'-o',str(binary)],check=True)
     metadata = subprocess.check_output([str(binary)])
     (dest/'metadata.json').write_bytes(metadata)
-    exports = ['preview_'+name for name in ('init','buffer','frames','rate','track','param','global','select','step','locks','fm6','sample','kit','hit','note','play','position','panic','render')]+['vs_beat','vs_phase','vs_playing','vs_render']
+    exports = ['preview_'+name for name in ('init','buffer','frames','rate','track','param','global','select','step','locks','fm6','sample','kit','hit','note','play','position','panic','render')]+['vs_beat','vs_phase','vs_playing','vs_render','vs_note']
     source = root/'tools/engine-browser.c'
     target = dest/'voicesynth.wasm'
     include = ['-I'+str(root/'vendor/sloop/build/gen'),'-I'+str(root/'vendor/sloop/firmware/src')]
