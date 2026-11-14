@@ -110,5 +110,11 @@
     "pullRequest": 37,
     "headSha": "fcfcbb39c82499d07e17d631e08a69e3e539148c",
     "body": "WS1 reviewed and reproduced remaining ambiguous erase mutations at fcfcbb39: with synth-1 selected, \"erase synth four bar one beat two\" erases synth-1 step 4; \"erase kick and snare bar one beat two\" picks kick; \"erase kick bar one beat two and three\" picks beat two; \"erase synth two and synth three bar one beat two\" picks synth-2. Please reject conflicting/invalid targets and leftover ambiguous positional numbers before any mutation or LLM fallback. Share target resolution with the requested #34 fix and add parser + Connection no-command regressions. The published contract requires ambiguous requests to have no mutation. Positive operation shape/boundaries, captured target context and captureErasure.commandId invalidation are aligned; root is testing compatibility in an isolated integration branch. Keep the PR focused on repair."
+  },
+  {
+    "pullRequest": 32,
+    "headSha": "c4d11c532407c5d4100ec88af17fbfb0dfa208c1",
+    "retargetBase": "engine-integration",
+    "body": "WS1 reviewed the grid-origin/latency-compensated boundary math, bounded 32-event diagnostics and numbers-only export, then integrated #32. Three focused tests passed with real YIN/segmenter boundary fixtures and shared checks passed. In isolated combined repair integration, Node 190 passed / one optional skip and shared checks passed; the merge preserves erase-fence rejection before recording timing entries and retains both processing-profile and grid diagnostics. This provides diagnostic evidence only, without changing quantization, latency compensation or physical timing acceptance."
   }
 ]
