@@ -35,5 +35,7 @@ int main(void) {
             if(k)putchar(',');printf("{\"name\":");text(pr->name);printf(",\"parameters\":[");
             for(unsigned i=0;i<P_COUNT;i++){if(i)putchar(',');printf("%d",p[i]);}printf("]}");
         }printf("]}");
-    }printf("]}\n");return 0;
+    }printf("],\"fm6Factory\":[");
+    for(unsigned k=0;k<FM6_NFACTORY;k++){if(k)putchar(',');putchar('[');for(unsigned i=0;i<FM6_PACKED;i++){if(i)putchar(',');printf("%u",FM6_FACTORY[k][i]);}putchar(']');}
+    printf("]}\n");return 0;
 }
