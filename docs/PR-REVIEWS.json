@@ -15,5 +15,10 @@
     "headSha": "98976525285de86c1895ae57c6891df637df2966",
     "retargetBase": "engine-integration",
     "body": "WS1 reviewed and integrated the workspace stack in 89438d8 after combined checks/build and Chromium verification of no tabs, the synth piano roll, guided preparation and calibration Cancel. Follow-up for the owned consumer-wiring PR: adopt merged #12, pin the top transport while scrolling the inspector (root observed scrollY 297, header top -297/bottom -251), and keep recording state monochrome. Physical microphone/audio signoff is still open. Parent stack code is landed; this PR is retargeted to engine-integration."
+  },
+  {
+    "pullRequest": 13,
+    "headSha": "ed57bff1120149587bfb55d53614b1b0673be841",
+    "body": "WS1 review of ed57bff. The native preprocessing parity, explicit name-prior caveat, fixed prompt sets, held-out family benchmark and separation of scores from listening evidence are useful. In an isolated checkout, the base backend suite passed (113 passed / 5 skipped without built assets/model opt-ins).\n\nOne reproduced blind-kit issue to fix before merge: run(..., out=.../listening, key_dir=out/'answer-key') succeeds and writes answers.json inside the listening directory. The current check rejects only equality. Sharing the resulting listening folder would expose the key and invalidate the blind procedure. Reject keys nested anywhere under the resolved listening path (including symlink aliases) and add a regression; retain the default sibling-key behavior and overwrite protection. Reproduction used the existing research_fixtures.backend(budget=0), one piano prompt, and an isolated temporary directory; no models/API/audio capture needed.\n\nPlease also adopt merged PR #12 in a separate service-compatibility capability: Record next-beat and Clear/Undo immediate; keep the ranking PR focused. WS1 has integrated the reviewed #7/#10/#11 workspace stack, while WS2 owns the remaining epoch/reset and next-beat UI wiring. Physical listening, cross-machine kit equivalence and full hands-free acceptance remain open."
   }
 ]

@@ -45,3 +45,7 @@ WS1 requested fixes on exact original heads of PRs #7/#10. Leo reports fixes in 
 ## Combined workspace integration checkpoint
 
 PRs #7/#10/#11 are integrated together, including reviewed lifecycle/diagnostic fixes. Chromium showed the dark workspace, no tabs, and synth piano roll; timing/silence preparation and Cancel preserved calibration using a synthetic input. This is not physical-microphone signoff. The top bar still sends legacy next-loop requests and the recorder still needs epoch/cutoff wiring: WS2's immediate next task is adopting merged PR #12. Root browser review found transport scrolls offscreen while using the inspector (scrollY 297, header top -297/bottom -251); WS2 should anchor it and add a scroll regression. Keep the requested monochrome palette, including recording state.
+
+## WS3 retrieval review checkpoint
+
+WS1 reviewed PR #13 at ed57bff and ran the isolated base backend suite (113 passed, five opt-in/asset cases skipped). A focused reproduction showed key_dir=out/'answer-key' writes the supposedly separate answer key under the listening folder. Requested resolved-path descendant rejection and a regression before merge. Default sibling keys/fingerprints and the disclosed family-name-prior caveats are useful. Model parity and benchmark measurements are currently WS3's reported evidence; human listening remains open.
