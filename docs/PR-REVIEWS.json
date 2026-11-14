@@ -110,13 +110,13 @@
   },
   {
     "pullRequest": 37,
-    "headSha": "3b8e262e5edf57d15442613c65d17b0eb2926aa6",
+    "headSha": "a550bdb7f5b48e23168831ff0534a0556928daed",
     "retargetBase": "engine-integration",
-    "body": "WS1 reviewed #37 together with the corrected shared resolver from #34 at 8c46ebb. Original invalid/conflicting/leftover-position reproductions and mixed-family follow-ups now refuse. Positive actual Python-WebSocket-coordinator-WASM test confirms immediate click mute without musical revision change and erase defaulting to the active take after selection changes. Combined backend 350 passed/six optional skips. Integrated after #34, preserving its resolver correction. This tests typed transcripts, not acoustic STT or human acceptance."
+    "body": "WS1 reviewed #37 together with the corrected shared resolver from #34 at 8c46ebb. Original invalid/conflicting/leftover-position reproductions and mixed-family follow-ups now refuse. Positive actual Python-WebSocket-coordinator-WASM test confirms immediate click mute without musical revision change and erase defaulting to the active take after selection changes. Combined backend 350 passed/six optional skips. Integrated after #34, preserving its resolver correction. This tests typed transcripts, not acoustic STT or human acceptance. Latest head also carries six mixed-family erase regressions; 111 focused target/erase tests pass. Reviewed/integrated the updated heads; no further source-fix wait."
   },
   {
     "pullRequest": 36,
-    "headSha": "cc2300ea95a5f51710b5616d5b68578d1ce61cd6",
+    "headSha": "941b293b2e4f0d24ffb5b15bfd9026ffe81aadaa",
     "retargetBase": "engine-integration",
     "body": "WS1 reviewed the actual-worker insufficient-quiet result, timeout cleanup, quiet-but-pitched foreground exclusion and rolling normal-volume margin/advice. Combined Node 193 passed/one optional skip and shared checks pass; real service/WASM integration passes. Integrated #36 as the reviewed UI/input foundation. Its engine-dependent controls remain gated until WS1 engine integration; WS1 will enable the erasure seam and re-run the actual UI checks with matching rebuilt assets. Conversation suppression, every-synth real voice and usability/fun remain human gates, not established by requested browser noise suppression or these synthetic regressions."
   }
