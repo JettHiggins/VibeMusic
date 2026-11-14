@@ -9,3 +9,5 @@ __pycache__/
 .pytest_cache/
 artifacts/
 apps/web/public/engine/
+apps/web/public/engine-runtime.js
+.playwright-cli/

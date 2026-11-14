@@ -30,4 +30,17 @@ else:
     subprocess.run([compiler,'-O2','-fwrapv','-fno-strict-aliasing','-w','-I'+str(root/'vendor/sloop/build/gen'),'-I'+str(root/'vendor/sloop/firmware/src'),str(root/'tools/engine-metadata.c'),'-o',str(binary)],check=True)
     metadata = subprocess.check_output([str(binary)])
     (dest/'metadata.json').write_bytes(metadata)
-    print('Engine assets and firmware metadata staged in apps/web/public/engine')
+    exports = ['preview_'+name for name in ('init','buffer','frames','rate','track','param','global','select','step','locks','fm6','sample','kit','hit','note','play','position','panic','render')]+['vs_beat','vs_phase','vs_playing','vs_render']
+    source = root/'tools/engine-browser.c'
+    target = dest/'voicesynth.wasm'
+    include = ['-I'+str(root/'vendor/sloop/build/gen'),'-I'+str(root/'vendor/sloop/firmware/src')]
+    emcc = shutil.which('emcc')
+    if emcc:
+        subprocess.run([emcc,str(source),'-O2','-fwrapv','-fno-strict-aliasing','-w',*include,'--no-entry','-sSTANDALONE_WASM=1','-sFILESYSTEM=0','-sINITIAL_MEMORY=16777216','-sSTACK_SIZE=131072','-sEXPORTED_FUNCTIONS='+str(['_'+n for n in exports]),'-o',str(target)],check=True)
+    else:
+        shim=root/'vendor/sloop/tools/wasm_shim'
+        mem=root/'vendor/sloop/build/preview/mem.o'
+        subprocess.run(['clang','--target=wasm32','-O2','-fno-builtin','-ffreestanding','-c',str(shim/'mem.c'),'-o',str(mem)],check=True)
+        subprocess.run(['clang','--target=wasm32','-O2','-fwrapv','-fno-strict-aliasing','-ffreestanding','-nostdlib','-w','-I'+str(shim),*include,str(source),str(mem),'-Wl,--no-entry','-Wl,--export-memory','-Wl,--initial-memory=16777216','-Wl,-z,stack-size=131072',*['-Wl,--export='+n for n in exports],'-o',str(target)],check=True)
+        mem.unlink()
+    print('Engine assets, clock extension, and firmware metadata staged in apps/web/public/engine')
