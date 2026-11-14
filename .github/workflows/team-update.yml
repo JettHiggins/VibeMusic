@@ -56,7 +56,18 @@ jobs:
                 if (pull.state === 'open' && pull.head.sha === review.headSha && review.retargetBase && pull.base.ref !== review.retargetBase) {
                   const comparison = (await github.rest.repos.compareCommitsWithBasehead({owner, repo, basehead: `${review.retargetBase}...${review.headSha}`})).data;
                   if (!['behind', 'identical'].includes(comparison.status)) throw new Error(`PR ${review.pullRequest} is not already integrated; refusing metadata retarget`);
-                  pull = (await github.rest.pulls.update({owner, repo, pull_number: review.pullRequest, base: review.retargetBase})).data;
+                  try {
+                    pull = (await github.rest.pulls.update({owner, repo, pull_number: review.pullRequest, base: review.retargetBase})).data;
+                  } catch (error) {
+                    if (error.status !== 422 || !JSON.stringify(error.response?.data ?? {}).includes('There are no new commits')) throw error;
+                    const integratedMarker = `<!-- ws1-integrated:${review.pullRequest}:${review.headSha} -->`;
+                    const oldComments = await github.paginate(github.rest.issues.listComments, {owner, repo, issue_number: review.pullRequest, per_page: 100});
+                    if (!oldComments.some(c => c.user.login === 'github-actions[bot]' && c.body.includes(integratedMarker))) {
+                      await github.rest.issues.createComment({owner, repo, issue_number: review.pullRequest,
+                        body: `${integratedMarker}\n${review.body}\n\nThe reviewed head is already an ancestor of ${review.retargetBase} (${comparison.base_commit.sha}). GitHub refuses to retarget this stacked PR because there are no new commits. Closing as already integrated; this does not claim a GitHub merge into its former stack base.`});
+                    }
+                    pull = (await github.rest.pulls.update({owner, repo, pull_number: review.pullRequest, state: 'closed'})).data;
+                  }
                 }
                 if (pull.state !== 'open' || pull.head.sha !== review.headSha) {
                   core.notice(`Review ${review.pullRequest} skipped: head changed or PR closed`);
