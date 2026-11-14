@@ -33,11 +33,12 @@ at 44.1 kHz, sequence zero. The real no-recognizer service returned stream-scope
 unavailable: recording stayed blocked in speech mode, playback continued, and only
 explicit checkbox opt-out restored manual mode. Script: tests/browser/speech-unavailable.js.
 
-Pending before hands-free completion: positive classified-flow browser integration with
-an explicitly SCRIPTED test producer, actual faster-whisper, delayed capture-context fixes
-in #15, measured recognition lag/backpressure behavior, physical microphone and human
-latency/recognition validation. No recognizer is installed/configured by this branch and
-Deep Agents/API access is still deferred. This is transport/mode wiring, not delivered STT.
+Pending before hands-free completion: peer review/merge of this browser branch, physical
+microphone and human latency/recognition validation, and actual Deep Agents integration.
+Positive SCRIPTED and real-model synthetic checks are detailed below. Reviewed #15/#21
+backend fixes are adopted from engine-integration, including declared SciPy and preserved
+capture-time context. OpenRouter free-model access is now selected; WS3 owns its unfinished
+backend adapter/Deep Agents work. No live provider request or key setup was performed here.
 
 Checks: PCM frame/sample counts, silence/uneven blocks, fractional latency/startup trim,
 gap discard and real capture-worklet transfer behavior pass deterministic tests. Shared
@@ -72,11 +73,20 @@ browser activation time. No physical or real-STT acceptance is implied.
 
 ## Real-model synthetic first drum slice
 
-`tests/browser/local-stt-loop.js` uses the real PR #21 FastAPI service on localhost:8767,
-with `GROOVE_STT=faster-whisper`, base.en CPU/int8 and four threads. Run it in an isolated
-checkout/environment of that provider PR; do not switch the normal service to unreviewed
-code. The reviewed head b6b2d09 needs an extra SciPy install because its requirements omit
-resampling support; that remains a merge blocker, not an accepted setup workaround.
+`tests/browser/local-stt-loop.js` uses the reviewed FastAPI service on localhost:8767,
+with `GROOVE_STT=faster-whisper`, base.en CPU/int8 and four threads. The branch now adopts
+engine-integration 6377130, including #15/#21 capture-context fixes and declared SciPy.
+Use a Python 3.13 environment with requirements-dev.txt and requirements-speech.txt,
+then run the service from this checkout (the model downloads into local cache, outside Git):
+
+```sh
+GROOVE_STT=faster-whisper GROOVE_STT_MODEL=base.en GROOVE_STT_THREADS=4 \
+  .venv-speech-check/bin/python -m uvicorn groove_agent.app:app \
+  --app-dir services/agent --host 127.0.0.1 --port 8767
+```
+
+The environment name above is local to WS1; substitute your installed speech environment.
+No manual dependency workaround is needed with the reviewed requirements.
 
 For a reproducible synthetic fixture, generate these ignored WAVs from the browser repo:
 
@@ -100,7 +110,8 @@ Observed pass: base.en recognized both commands, three hits at expected/actual s
 [30,34,38], recording stopped and playback continued. Positions depend on clock origin.
 This is real browser/model integration with synthetic speech and generated kicks, not a
 physical microphone, human voice, p95 command-latency measurement, or full hands-free
-acceptance. It does not resolve delayed-result/new-take semantics in #15. Stop the isolated
+acceptance. Delayed-result/new-take semantics are separately covered by the reviewed #15
+backend regressions; this browser scenario alone does not prove those transitions. Stop the isolated
 provider service and close the browser after running; do not commit generated audio/models.
 
 ## Verification backlog and stale-connection recovery
@@ -129,3 +140,19 @@ continuing, and reconnected on explicit Retry with a different stream and no old
 The real unavailable-service UI test also passes with auto-connection from the hands-free
 checkbox (no separate Agent-panel connect action). Positive scripted verification still
 passes. These are software/synthetic recovery checks, not real recognition/latency acceptance.
+
+## Combined reviewed backend revalidation — 2026-11-14
+
+The speech branch now adopts reviewed engine-integration 6377130. The actual browser/model
+scenario passed again using a fresh declared dev+speech environment, with no manual SciPy
+addition: actual and expected steps [21,25,29], three committed hits, recognized next-beat
+Record kick, exclusion -> stop-recording -> verification in that order, recording false,
+playback true and no pipeline error. This run includes the bounded-backlog/reconnect client
+code from 75ad0ba and the capture-time context fixes from #15/#21. Only synthetic espeak
+speech and generated kicks were used; no human microphone or live OpenRouter request.
+
+Combined shared/schema checks, Node suite (162 passed, one optional integration skip),
+explicit live-service/WebSocket/WASM integration (one passed) and production build passed.
+The first check invocation used system Python without jsonschema; rerunning with the
+installed speech environment on PATH passed. The isolated test service and browser were
+stopped afterward. Peer review/merge and human acceptance remain required.

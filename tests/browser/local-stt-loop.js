@@ -58,6 +58,6 @@ async page=>await page.evaluate(async()=>{
   const coverage=server.findIndex(m=>m.type==='speech-verified'&&m.throughFrame>=span?.endFrame);
   if(exclusion<0||!(exclusion<command&&command<coverage))throw new Error('Command exclusion/stop/coverage ordering failed');
   if(transport.recording||!transport.playing||voice.recorder.status().lastError||errors.length)throw new Error('Stop/recording failure '+JSON.stringify({transport,errors,recorder:voice.recorder.status()}));
-  return {steps,expected,committed:voice.recorder.status().committed,playing:transport.playing,recording:transport.recording,excludedWordHit:true,recordByRecognizedSpeech:true,order:[exclusion,command,coverage],provider,evidence:'actual browser capture/PCM/socket/gate/WASM and real faster-whisper with synthetic espeak speech/kicks; isolated unmerged PR #21 with manually added SciPy; NOT human microphone acceptance'};
+  return {steps,expected,committed:voice.recorder.status().committed,playing:transport.playing,recording:transport.recording,excludedWordHit:true,recordByRecognizedSpeech:true,order:[exclusion,command,coverage],provider,evidence:'actual browser capture/PCM/socket/gate/WASM and real faster-whisper with synthetic espeak speech/kicks; reviewed local faster-whisper with declared speech dependencies; NOT human microphone acceptance'};
  }finally{coordinator.dispose();agent.dispose();voice.dispose();engine.dispose();}
 })
