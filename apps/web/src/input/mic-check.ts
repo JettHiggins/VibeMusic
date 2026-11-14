@@ -1,4 +1,8 @@
 import type { AnalysisFrame } from './microphone.ts';
+import type { PitchReading } from './pitch.ts';
+
+const NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+const name = (midi: number) => `${NAMES[midi % 12]}${Math.floor(midi / 12) - 1}`;
 
 /**
  * Live input check for real-microphone testing, shown before and between takes. It answers the
@@ -18,6 +22,10 @@ export interface MicCheckState {
  notesDetected: number;
  lastNote: { midi: number; durationMs: number; confidence: number } | null;
  advice: string;
+ /** Latest live pitch reading (melody capture diagnosis). */
+ pitch: PitchReading | null;
+ /** Why sung input does or does not become notes right now. */
+ pitchAdvice: string;
 }
 
 /** Engine minimum confidence (CONTRACTS.md); below it a detection is ignored. */
@@ -31,16 +39,23 @@ export class MicCheck {
  private notes = 0;
  private lastOnset: MicCheckState['lastOnset'] = null;
  private lastNote: MicCheckState['lastNote'] = null;
+ private pitch: { reading: PitchReading; frame: number } | null = null;
 
  constructor(private sampleRate: number, private windowSeconds = 2) {}
 
- reset() { this.peaks = []; this.onsets = 0; this.notes = 0; this.lastOnset = null; this.lastNote = null; }
+ reset() { this.peaks = []; this.onsets = 0; this.notes = 0; this.lastOnset = null; this.lastNote = null; this.pitch = null; }
 
  add(frame: AnalysisFrame) {
   this.peaks.push({ frame: frame.analysedThrough, db: frame.levelDb });
   const oldest = frame.analysedThrough - this.windowSeconds * this.sampleRate;
   while (this.peaks.length && this.peaks[0].frame < oldest) this.peaks.shift();
   for (const o of frame.onsets) { this.onsets++; this.lastOnset = { levelDb: o.levelDb, confidence: o.confidence, accepted: o.confidence >= MIN_CONFIDENCE }; }
+  // Keep the most informative recent reading: a usable pitch outranks a quieter or unclear one for ~0.3 s.
+  if (frame.pitch) {
+   const rank = { silent: 0, quiet: 1, unclear: 2, pitch: 3 } as const;
+   const fresh = !this.pitch || frame.analysedThrough - this.pitch.frame > 0.3 * this.sampleRate || rank[frame.pitch.state] >= rank[this.pitch.reading.state];
+   if (fresh) this.pitch = { reading: frame.pitch, frame: frame.analysedThrough };
+  }
   for (const n of frame.notes) { this.notes++; this.lastNote = { midi: n.midi, durationMs: (n.endFrame - n.startFrame) / this.sampleRate * 1000, confidence: n.confidence }; }
  }
 
@@ -58,6 +73,11 @@ export class MicCheck {
    : noisyRoom ? 'Level is good, but the room is noisy: quiet hits and soft notes may be missed.'
    : this.lastOnset && !this.lastOnset.accepted ? 'Hits are detected but weak; make them sharper and louder.'
    : 'Level is good.';
-  return { peakDb, verdict, noisyRoom, onsetsDetected: this.onsets, lastOnset: this.lastOnset, notesDetected: this.notes, lastNote: this.lastNote, advice };
+  const p = this.pitch?.reading ?? null;
+  const pitchAdvice = !p || p.state === 'silent' ? 'Sing or hum a steady note to check pitch detection.'
+   : p.state === 'quiet' ? `Voice heard at ${p.levelDb.toFixed(0)} dBFS but notes need ${p.gateDb.toFixed(0)} dBFS: sing louder or closer${noisyRoom ? ', or reduce room noise and Measure silence again' : ''}.`
+   : p.state === 'unclear' ? `Pitch unclear (clarity ${p.clarity.toFixed(2)}, needs 0.80): sing a steady vowel like "ooh" instead of speaking or breathing.`
+   : `Hearing ${name(p.midi!)} (clarity ${p.clarity.toFixed(2)})${p.holding ? ': note being held' : ''}. Notes need about 70 ms of steady pitch.`;
+  return { peakDb, verdict, noisyRoom, onsetsDetected: this.onsets, lastOnset: this.lastOnset, notesDetected: this.notes, lastNote: this.lastNote, advice, pitch: p, pitchAdvice };
  }
 }

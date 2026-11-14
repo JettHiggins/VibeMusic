@@ -31,6 +31,7 @@ export function MicCheckPanel({ state, onReport }: { state: VoiceInputState; onR
    <button onClick={copy} title="Measurements only: no audio and no device names">Copy test report</button>
   </div>
   {check && <div role="status" style={{ marginTop: 4 }}>{check.advice}</div>}
+  {check && <div style={{ marginTop: 4 }} aria-label="Pitch check"><b style={{ color: check.pitch?.state === 'pitch' ? '#2a8' : check.pitch?.state === 'quiet' || check.pitch?.state === 'unclear' ? '#e0a030' : '#888' }}>Pitch:</b> {check.pitchAdvice}</div>}
   {capture && <div style={{ marginTop: 4, opacity: 0.8 }}>
    Browser granted: echo cancellation {capture.echoCancellation ? 'on' : 'off'}, noise suppression {capture.noiseSuppression ? 'on' : 'off'}, auto gain {capture.autoGainControl ? 'on' : 'off'}{capture.sampleRate ? `, ${capture.sampleRate} Hz` : ''}
    {processingOn && <span style={{ color: '#e0a030' }}> ⚠ processing is on despite the request; transients and levels may be distorted</span>}

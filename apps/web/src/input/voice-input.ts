@@ -1,5 +1,5 @@
 import type { ClientMessage, ServerMessage, SessionCommand, Transport } from '@voicesynth/contracts';
-import { calibrationStatus, clickPlan, defaultCalibration, estimateLatency, type CalibrationStatus, type InputCalibration } from './calibration.ts';
+import { calibrationProgress, calibrationStatus, clickPlan, defaultCalibration, effectiveLatencyFrames, estimateLatency, timingCheck, type CalibrationProgress, type CalibrationStatus, type ClickPlan, type InputCalibration } from './calibration.ts';
 import { MicCheck, type MicCheckState } from './mic-check.ts';
 import { buildMicTestReport, type CaptureSettings, type MicTestReport } from './diagnostics.ts';
 import { MicrophoneInput, type AnalysisFrame } from './microphone.ts';
@@ -25,6 +25,10 @@ export interface VoiceInputState {
  /** What the browser granted for the capture track; null for test signals. */
  capture: CaptureSettings | null;
  readiness: CalibrationStatus;
+ /** A guided timing calibration in progress, for the countdown/progress display. */
+ calibrationRun: CalibrationProgress | null;
+ /** Outcome of the last timing calibration (kept until the next run). */
+ calibrationResult: { ok: boolean; text: string; latencyMs?: number; spreadMs?: number; matched?: number; of?: number; suggestTrimMs?: number } | null;
 }
 
 /** Owns the microphone → onset → verified performance path for one engine AudioContext. */
@@ -38,18 +42,19 @@ export class VoiceInput {
  private collector: number[] | null = null;
  private check: MicCheck | null = null;
  private lastUiUpdate = 0;
+ private run: { plan: ClickPlan; nodes: OscillatorNode[]; timer: ReturnType<typeof setInterval>; finish: (cancelled: boolean) => void } | null = null;
  private unsubscribe: () => void;
 
  constructor(private engine: EngineLike, mode: VerificationMode = 'manual') {
   this.recorder = new PerformanceRecorder({ dispatch: c => engine.dispatch(c), newId: () => crypto.randomUUID() }, mode);
-  this.state = { microphone: 'off', levelDb: -120, calibration: null, calibrating: null, recorder: this.recorder.status(), analysisP95Ms: null, message: null, micCheck: null, capture: null, readiness: calibrationStatus(null) };
+  this.state = { microphone: 'off', levelDb: -120, calibration: null, calibrating: null, recorder: this.recorder.status(), analysisP95Ms: null, message: null, micCheck: null, capture: null, readiness: calibrationStatus(null), calibrationRun: null, calibrationResult: null };
   this.recorder.onChange = recorder => this.update({ recorder });
   this.unsubscribe = engine.subscribe(message => {
    if (message.type === 'transport') {
     const was = this.transport?.recordingState;
     this.transport = message.transport;
     // When a take closes, finish the note being sung so it is kept (clamped to the cut-off).
-    if (was === 'recording' && message.transport.recordingState !== 'recording') this.mic?.flush(message.transport.currentFrame + (this.state.calibration?.latencyFrames ?? 0));
+    if (was === 'recording' && message.transport.recordingState !== 'recording') this.mic?.flush(message.transport.currentFrame + (this.state.calibration ? effectiveLatencyFrames(this.state.calibration) : 0));
    }
    this.recorder.handle(message);
   });
@@ -100,7 +105,7 @@ export class VoiceInput {
   this.timings.push(frame.analysisMs); if (this.timings.length > 400) this.timings.shift();
   if (this.collector) { this.collector.push(...frame.onsets.map(o => o.frame)); }
   else if (this.transport && this.state.calibration) {
-   const { latencyFrames } = this.state.calibration, clock = this.transport.clockId;
+   const latencyFrames = effectiveLatencyFrames(this.state.calibration), clock = this.transport.clockId;
    if (frame.notes.length) this.recorder.addNotes(frame.notes, latencyFrames, clock, frame.analysedThrough);
    this.recorder.addOnsets(frame.onsets, latencyFrames, clock, frame.analysedThrough);
   }
@@ -127,35 +132,72 @@ export class VoiceInput {
  }
 
  /**
-  * Tap or say “t” along with the clicks; measures the full round trip the performer experiences.
-  * Two lead-in clicks are not scored: performers need them to lock in, and real hardware
-  * attenuates the first sounds after silence.
+  * Guided timing calibration: a visible 3-second countdown, 4 practice clicks (not scored), then 8
+  * measured clicks, with progress and Cancel. The performer taps or says "t" with each click; this
+  * measures the full round trip they experience. A failed or cancelled run keeps the previous
+  * valid calibration.
   */
- async calibrateLatency(measured = 10, interval = 0.5, leadIn = 2) {
+ async calibrateLatency(options: { countdown?: number; practice?: number; measured?: number; interval?: number; verify?: boolean } = {}) {
   const context = this.context();
-  if (!this.mic || !this.state.calibration) throw new Error('Enable the microphone first');
-  if (this.transport?.playing) throw new Error('Stop playback before calibrating latency');
-  this.update({ calibrating: 'latency', message: `Tap along: ${leadIn} lead-in clicks, then ${measured} counted clicks…` });
-  this.collector = [];
-  const plan = clickPlan(context.currentTime + 1, { leadIn, measured, interval });
-  const clickFrames = plan.measured.map(t => Math.round(t * context.sampleRate));
-  const clicks = plan.all.length;
-  for (let i = 0; i < clicks; i++) {
-   const when = plan.all[i];
+  const blocked = !this.mic || !this.state.calibration ? 'Enable the microphone first.' : this.transport?.playing ? 'Stop playback before calibrating timing.' : this.run ? 'Calibration is already running.' : null;
+  if (blocked) { this.update({ calibrationResult: { ok: false, text: blocked } }); return; }
+  if (!this.mic || !this.state.calibration) return;
+  const plan = clickPlan(context.currentTime + 0.05, options);
+  const nodes: OscillatorNode[] = [];
+  plan.all.forEach((when, i) => {
+   const practice = i < plan.practice.length;
    const osc = context.createOscillator(), gain = context.createGain();
-   osc.frequency.value = i < leadIn ? 800 : (i - leadIn) % 4 ? 1000 : 1500;
+   osc.frequency.value = practice ? 800 : (i - plan.practice.length) % 4 ? 1000 : 1500;
    gain.gain.setValueAtTime(0.0001, when); gain.gain.exponentialRampToValueAtTime(0.5, when + 0.002); gain.gain.exponentialRampToValueAtTime(0.0001, when + 0.05);
    osc.connect(gain).connect(context.destination); osc.start(when); osc.stop(when + 0.06);
+   nodes.push(osc);
+  });
+  this.collector = [];
+  const previous = this.state.calibration;
+  this.update({ calibrating: 'latency', calibrationRun: calibrationProgress(plan, context.currentTime), message: null });
+  const cancelled = await new Promise<boolean>(resolve => {
+   const timer = setInterval(() => {
+    const progress = calibrationProgress(plan, context.currentTime);
+    this.update({ calibrationRun: progress });
+    if (context.currentTime >= plan.end + 0.4) resolve(false);
+   }, 100);
+   this.run = { plan, nodes, timer, finish: resolve };
+  });
+  const run = this.run!; this.run = null; clearInterval(run.timer);
+  const onsets = this.collector ?? []; this.collector = null;
+  if (cancelled) {
+   for (const n of run.nodes) { try { n.stop(); } catch { /* already stopped */ } }
+   this.update({ calibrating: null, calibrationRun: null, calibration: previous, calibrationResult: { ok: false, text: 'Calibration cancelled; the previous timing was kept.' } });
+   return;
   }
-  await new Promise(resolve => setTimeout(resolve, (1 + clicks * interval + 0.6) * 1000));
-  const onsets = this.collector; this.collector = null;
+  const sr = context.sampleRate;
   try {
-   const estimate = estimateLatency(clickFrames, onsets, { sampleRate: context.sampleRate });
-   const calibration: InputCalibration = { ...this.state.calibration, latencyFrames: estimate.latencyFrames, latencySpreadFrames: estimate.spreadFrames, latencySource: 'tap-along' };
+   const estimate = estimateLatency(plan.measured.map(t => Math.round(t * sr)), onsets, { sampleRate: sr });
+   if (options.verify) {
+    // Tap test against the current settings: report the residual, keep the calibration.
+    const check = timingCheck(estimate.latencyFrames, previous);
+    this.update({ calibration: previous, calibrationResult: { ok: check.verdict === 'on-time', text: `${check.text} (${estimate.matched}/${plan.measured.length} taps matched)`, ...(check.verdict === 'on-time' ? {} : { suggestTrimMs: check.suggestedTrimMs }) } });
+    return;
+   }
+   const calibration: InputCalibration = { ...previous, latencyFrames: estimate.latencyFrames, latencySpreadFrames: estimate.spreadFrames, latencySource: 'tap-along' };
    saveCalibration(calibration);
-   this.update({ calibration, message: `Latency ${(estimate.latencyFrames / context.sampleRate * 1000).toFixed(0)} ms (±${(estimate.spreadFrames / context.sampleRate * 1000).toFixed(0)} ms, ${estimate.matched}/${measured} taps)` });
-  } catch (error) { this.update({ message: String(error instanceof Error ? error.message : error) }); }
-  finally { this.update({ calibrating: null }); }
+   const latencyMs = estimate.latencyFrames / sr * 1000, spreadMs = estimate.spreadFrames / sr * 1000;
+   this.update({ calibration, calibrationResult: { ok: true, latencyMs, spreadMs, matched: estimate.matched, of: plan.measured.length,
+    text: `Offset ${latencyMs.toFixed(0)} ms, consistency ±${spreadMs.toFixed(0)} ms, ${estimate.matched}/${plan.measured.length} taps matched` } });
+  } catch (error) {
+   this.update({ calibration: previous, calibrationResult: { ok: false, text: `${error instanceof Error ? error.message : String(error)}. The previous timing was kept.` } });
+  } finally { this.update({ calibrating: null, calibrationRun: null }); }
+ }
+
+ /** Stops a running timing calibration; the previous calibration stays in effect. */
+ cancelCalibration() { this.run?.finish(true); }
+
+ /** Per-device manual recording-offset trim (ms), persisted with the calibration. */
+ setOffsetAdjust(ms: number) {
+  if (!this.state.calibration) return;
+  const calibration: InputCalibration = { ...this.state.calibration, offsetAdjustMs: Math.max(-150, Math.min(150, Math.round(ms))) };
+  if (calibration.deviceId !== 'test-signal') saveCalibration(calibration);
+  this.update({ calibration });
  }
 
  /** Diagnostic override, e.g. when the test signal path has zero round-trip latency. */

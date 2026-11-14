@@ -1,6 +1,6 @@
 import { OnsetDetector, toDb, type Onset } from './onset.ts';
 import { measureNoiseFloor } from './calibration.ts';
-import { NoteSegmenter, YinTracker, type SungNote } from './pitch.ts';
+import { NoteSegmenter, YinTracker, readPitch, type PitchReading, type SungNote } from './pitch.ts';
 
 /** Messages from the main thread. Audio arrives on a separate port directly from the capture worklet. */
 export type AnalysisRequest =
@@ -10,7 +10,7 @@ export type AnalysisRequest =
  /** End any open sung note at this raw capture frame (the take closed). */
  | { type: 'flush'; frame: number };
 export type AnalysisResult =
- | { type: 'onsets'; onsets: Onset[]; notes: SungNote[]; analysedThrough: number; levelDb: number; analysisMs: number }
+ | { type: 'onsets'; onsets: Onset[]; notes: SungNote[]; analysedThrough: number; levelDb: number; analysisMs: number; pitch?: PitchReading | null }
  | { type: 'noise-floor'; db: number }
  | { type: 'error'; message: string };
 
@@ -53,7 +53,9 @@ function onAudio(startFrame: number, samples: Float32Array) {
  const notes: SungNote[] = [];
  if (lastFrame && startFrame !== lastFrame) notes.push(...gap());
  const onsets: Onset[] = detector.process(samples, startFrame);
- notes.push(...segmenter.push(yin.process(samples, startFrame)));
+ const pitchFrames = yin.process(samples, startFrame);
+ notes.push(...segmenter.push(pitchFrames));
+ const pitch = readPitch(pitchFrames, noiseFloorDb, segmenter.openStart !== null);
  lastFrame = startFrame + samples.length;
  let peak = 0;
  for (const s of samples) peak = Math.max(peak, Math.abs(s));
@@ -66,7 +68,7 @@ function onAudio(startFrame: number, samples: Float32Array) {
    try { post({ type: 'noise-floor', db: measureNoiseFloor(all) }); } catch (e) { post({ type: 'error', message: String(e) }); }
   }
  }
- post({ type: 'onsets', onsets, notes, analysedThrough: analysedThrough(), levelDb: toDb(peak), analysisMs: performance.now() - started });
+ post({ type: 'onsets', onsets, notes, analysedThrough: analysedThrough(), levelDb: toDb(peak), analysisMs: performance.now() - started, pitch });
 }
 
 scope.onmessage = ({ data }: MessageEvent<AnalysisRequest>) => {

@@ -15,7 +15,10 @@ export interface CommandResult { id: string; text: string; status: 'queued' | 'a
  */
 const REISSUABLE = new Set<Operation['type']>(['record', 'tempo', 'clear', 'load-session']);
 
-interface Pending { operation: Operation; boundary: Boundary; revision: number; reissues: number }
+/** No queued/applied/rejected answer in this time means the audio engine is not processing commands. */
+export const NO_ANSWER_MS = 3000;
+
+interface Pending { operation: Operation; boundary: Boundary; revision: number; reissues: number; answered?: boolean }
 
 /**
  * One path for UI-initiated session commands.
@@ -33,7 +36,7 @@ export class CommandClient {
  private superseded = new Set<string>();
  private revision: number;
 
- constructor(private engine: CommandEngine, private newId: () => string = () => crypto.randomUUID(), private maxReissues = 3) {
+ constructor(private engine: CommandEngine, private newId: () => string = () => crypto.randomUUID(), private maxReissues = 3, private noAnswerMs = NO_ANSWER_MS) {
   this.revision = engine.getSession().revision;
  }
 
@@ -45,7 +48,10 @@ export class CommandClient {
  private dispatch(entry: Pending): string {
   const id = this.newId();
   entry.revision = this.engine.getSession().revision;
+  entry.answered = false;
   this.pending.set(id, entry);
+  // A stale or crashed audio worklet rejects nothing and acknowledges nothing; say so instead of silence.
+  setTimeout(() => { const e = this.pending.get(id); if (e && !e.answered) { this.pending.delete(id); this.onResult({ id, status: 'rejected', error: true, text: `${describe(e.operation, 'queued').split(':')[0]} got no answer from the audio engine. If you pulled new code, restart npm run dev (the engine worklet is rebuilt at startup), then reload the page.` }); } }, this.noAnswerMs);
   let receipt: ClientMessage;
   try { receipt = this.engine.dispatch({ id, expectedRevision: entry.revision, boundary: entry.boundary, operation: entry.operation }); }
   catch (error) { receipt = { type: 'ack', commandId: id, status: 'rejected', revision: entry.revision, reason: String(error) }; }
@@ -59,6 +65,7 @@ export class CommandClient {
   if (this.superseded.has(message.commandId)) { if (message.status !== 'queued') this.superseded.delete(message.commandId); return; }
   const entry = this.pending.get(message.commandId);
   if (!entry) return;
+  entry.answered = true;
   if (message.status === 'queued') { this.report(message.commandId, entry, 'queued'); return; }
   this.pending.delete(message.commandId);
   if (message.status === 'applied') { this.report(message.commandId, entry, 'applied'); return; }
@@ -108,5 +115,10 @@ export function describe(op: Operation, status: CommandResult['status'], reason?
  if (status === 'retrying') return `${what}: another change landed first; re-sent for the next loop`;
  if (status === 'applied') return `${what}: done`;
  const why = (reason ?? '').replace(/^Error:\s*/, '');
- return `${what} not applied: ${/Stale revision/.test(why) ? 'the session changed before it could apply; press it again' : why || 'rejected'}`;
+ const plain = /Stale revision/.test(why) ? 'the session changed before it could apply; press it again'
+  : /Overlapping monophonic notes/.test(why) ? 'synth tracks play one note at a time, and this would overlap two notes (remove the overlap or use another synth track)'
+  : /Nothing to undo/.test(why) ? 'there is nothing to undo'
+  : /Stop recording before/.test(why) ? why.replace('Stop recording before', 'stop recording before')
+  : why || 'rejected';
+ return `${what} not applied: ${plain}`;
 }

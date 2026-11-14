@@ -119,3 +119,22 @@ Verified:
 - Chrome with the **real microphone** on Windows: mic check showed Level OK at −10 dBFS peak, plus the noisy-room warning. The browser granted processing off at 48 kHz with **2 channels** (1 requested; the capture worklet downmixes). Record showed "(uncalibrated)". The report copied, with no device fields.
 
 Not done: a full calibrated take by a real performer (see MIC-TESTING.md). Speech capture is documented in `docs/SPEECH-CAPTURE.md` only; no audio transport is implemented pending an approved contract.
+
+## Guided calibration, melody diagnostics and late-hit diagnosis (branch `ws2-calibration-ux`)
+
+These implement the WS2 items in `docs/STATUS.md` (recording-usability priorities after real-device testing) that don't depend on WS1's pending scheduling contract.
+
+- **Guided timing calibration** (`input/calibration.ts`, `ui/CalibrationPanel.tsx`): instructions, a visible 3-second countdown, 4 practice clicks (lower pitch, never scored) then 8 measured clicks, progress, and **Cancel**. A failed or cancelled run keeps the previous valid calibration. The result shows offset, consistency (±) and matched taps.
+- **Recording-offset trim**: a per-device manual adjustment (`offsetAdjustMs`, −150..+150 ms, persisted) added to the measured latency everywhere capture is compensated (`effectiveLatencyFrames`).
+- **Check timing**: a repeatable tap test against the *current* settings (`timingCheck`). It reports how many ms taps are still recorded late or early and offers "Apply trim"; it never overwrites the calibration.
+- **Late-hit cause, reproduced in a test** (`tests/input-latency-diagnosis.test.ts`): compensating a ~120 ms real round trip with the 62 ms browser estimate moves natural (±15 ms) hits a full step late. Calibration, or the trim suggested by Check timing, puts every hit back on its step.
+- **Melody diagnostics**: the worker now posts a live pitch reading per block (`readPitch`: silent / too quiet for the gate / unclear / a usable pitch with its note name, and whether a note is being held). The mic check explains why singing does or doesn't become notes, e.g. "Voice heard at −30 dBFS but notes need −24 dBFS" in a −39 dBFS room, or "Pitch unclear (clarity 0.60, needs 0.80): sing a steady vowel". Thresholds are unchanged pending real-device evidence.
+- **Take states**: heard (waiting for verification), queued for the next loop, committed, ignored.
+- **Actionable errors**: a command with no engine answer within 3 s reports a likely stale or crashed worklet and says to restart `npm run dev`; worker load failures say what to do; "Overlapping monophonic notes", "Nothing to undo" and stop-recording rejections read as sentences; engine/asset errors replace older command results in the display.
+
+Verified in the browser (diagnostic test signal through the real worklet → worker path):
+- Calibration showed countdown 3-2-1 → practice 1–4 → measured 1–8 → analysing, and measured exactly the injected 120 ms with 8/8 taps matched.
+- Check timing with taps 150 ms late reported "30 ms late"; Apply trim +30 then re-check gave "within 0 ms".
+- Cancel during practice kept 120 ms and +30.
+
+Not yet: reproduction on Lenny's device itself, and next-beat recording / immediate Clear and Undo, which wait for WS1's published contract.

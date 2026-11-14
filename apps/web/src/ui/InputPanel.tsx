@@ -2,7 +2,9 @@ import React, { useEffect, useState } from 'react';
 import type { SessionCommand, SessionState, Transport } from '@voicesynth/contracts';
 import type { VoiceInput, VoiceInputState } from '../input/voice-input.ts';
 import { listAudioInputs } from '../input/devices.ts';
+import { effectiveLatencyFrames } from '../input/calibration.ts';
 import { MicCheckPanel } from './MicCheckPanel.tsx';
+import { CalibrationPanel } from './CalibrationPanel.tsx';
 
 type Lane = 'kick' | 'snare' | 'closed-hat';
 type Target = SessionState['selected'];
@@ -64,13 +66,13 @@ export function InputPanel({ voice, session, transport, enabled, dispatch }: Pro
    </select></label>}
    <Meter db={state.levelDb} floor={state.calibration?.noiseFloorDb ?? -60} active={micReady} />
    <button disabled={!micReady || busy || !!state.calibrating} onClick={() => run(() => voice.calibrateNoise())}>Measure silence</button>
-   <button disabled={!micReady || busy || !!state.calibrating || !!transport?.playing} title={transport?.playing ? 'Stop playback first' : undefined} onClick={() => run(() => voice.calibrateLatency())}>Calibrate timing</button>
   </div>
   <p style={small}>
-   {state.calibration ? <>Noise floor {state.calibration.noiseFloorDb.toFixed(0)} dBFS · latency {Math.round(state.calibration.latencyFrames / state.calibration.sampleRate * 1000)} ms ({state.calibration.latencySource === 'tap-along' ? 'calibrated' : 'browser estimate — calibrate for tight timing'})</> : 'Use headphones. Microphone audio is analysed locally and never stored.'}
+   {state.calibration ? <>Noise floor {state.calibration.noiseFloorDb.toFixed(0)} dBFS · latency {Math.round(effectiveLatencyFrames(state.calibration) / state.calibration.sampleRate * 1000)} ms{state.calibration.offsetAdjustMs ? ' incl. trim' : ''} ({state.calibration.latencySource === 'tap-along' ? 'calibrated' : 'browser estimate — calibrate for tight timing'})</> : 'Use headphones. Microphone audio is analysed locally and never stored.'}
    {state.analysisP95Ms !== null && <> · analysis p95 {state.analysisP95Ms.toFixed(1)} ms</>}
   </p>
   {micReady && <MicCheckPanel state={state} onReport={() => voice.testReport()} />}
+  {micReady && <CalibrationPanel voice={voice} state={state} disabled={busy || state.calibrating === 'noise'} playing={!!transport?.playing} />}
 
   {uncalibrated && recordingState === 'idle' && <p role="note" style={{ ...small, color: '#e0a030' }}>⚠ {state.readiness.advice}</p>}
   <div style={row} role="group" aria-label="Recording target">
@@ -94,9 +96,13 @@ export function InputPanel({ voice, session, transport, enabled, dispatch }: Pro
    {position && <> · bar {position.bar} beat {position.beat}</>}
   </p>
   <Grid cells={cells} playhead={position?.step ?? null} label={`${label} pattern`} />
-  <p style={small}>
-   {state.recorder.committed} {melodic ? 'note' : 'hit'} event(s) committed · {state.recorder.provisional.length} pending · {state.recorder.dropped} ignored
-   {state.recorder.inFlight && ' · applying at next loop'}
+  <p style={small} aria-label="Take status">
+   {(() => {
+    const heard = state.recorder.provisional.filter(p => p.status === 'provisional').length;
+    const queued = state.recorder.provisional.filter(p => p.status === 'submitted').length;
+    const unit = melodic ? 'note' : 'hit';
+    return <>{heard} {unit}(s) heard, waiting for verification · {queued} queued for the next loop · {state.recorder.committed} committed · {state.recorder.dropped} ignored (low confidence or outside the take)</>;
+   })()}
   </p>
   {(state.message || state.recorder.lastError) && <p style={{ ...small, color: '#c33' }}>{state.recorder.lastError ?? state.message}</p>}
  </section>;
