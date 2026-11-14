@@ -3,7 +3,7 @@ name: Publish team coordination update
 on:
   push:
     branches: [engine-integration]
-    paths: [docs/TEAM-UPDATE.md]
+    paths: [docs/TEAM-UPDATE.md, docs/PR-REVIEWS.json]
 
 permissions:
   contents: read
@@ -45,6 +45,22 @@ jobs:
             if (!comments.some(comment => comment.user.login === 'github-actions[bot]' && comment.body.includes(marker))) {
               await github.rest.issues.createComment({owner, repo, issue_number: 3,
                 body: `${marker}\n@leoAndrade2332 @lennyyanza — this report has stale blockers. Candidate UI, recording integration and original CLAP music inference are delivered. Jett has approved new recording/usability priorities after real-device testing. Read ${issue.html_url} and [docs/STATUS.md](${base}/blob/engine-integration/docs/STATUS.md) before the next capability/PR. Please acknowledge branch/base SHA and next owned task there. API access remains deferred.`});
+            }
+            if (fs.existsSync('docs/PR-REVIEWS.json')) {
+              const reviews = JSON.parse(fs.readFileSync('docs/PR-REVIEWS.json', 'utf8'));
+              for (const review of reviews) {
+                const pull = (await github.rest.pulls.get({owner, repo, pull_number: review.pullRequest})).data;
+                if (pull.state !== 'open' || pull.head.sha !== review.headSha) {
+                  core.notice(`Review ${review.pullRequest} skipped: head changed or PR closed`);
+                  continue;
+                }
+                const reviewMarker = `<!-- ws1-review:${review.pullRequest}:${review.headSha} -->`;
+                const existing = await github.paginate(github.rest.issues.listComments, {owner, repo, issue_number: review.pullRequest, per_page: 100});
+                if (!existing.some(c => c.user.login === 'github-actions[bot]' && c.body.includes(reviewMarker))) {
+                  await github.rest.issues.createComment({owner, repo, issue_number: review.pullRequest,
+                    body: `${reviewMarker}\n${review.body}\n\nPosted from the WS1-reviewed coordination commit ${context.sha}.`});
+                }
+              }
             }
             core.notice(`Team update published: ${issue.html_url}`);
             await core.summary.addHeading('Team coordination published').addLink('Read team update', issue.html_url).write();

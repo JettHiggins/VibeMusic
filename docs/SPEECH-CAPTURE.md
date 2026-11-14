@@ -11,7 +11,7 @@ Status: **requirements and open questions only.** Nothing here is a contract. CO
 
 ## Requirements capture must meet
 
-1. **One timeline.** Every speech chunk must be placed on the AudioContext sample clock (`clockId` plus frame) that performance events use. `command-span` and `speech-verified` are defined on the *latency-corrected* performance timeline (CONTRACTS.md), but only the browser knows the calibrated latency. Recommendation: the browser stamps each chunk with the corrected frame of its first sample (`captureFrame − latencyFrames`), so the backend never applies calibration. Never subtract latency twice.
+1. **One timeline.** Every speech chunk must be placed on the AudioContext sample clock (`clockId` plus frame) that performance events use. `command-span` and `speech-verified` are defined on the *latency-corrected* performance timeline (CONTRACTS.md), but only the browser knows the calibrated latency. Recommendation: the browser stamps each chunk with the corrected frame of its first sample (`captureFrame − effectiveLatencyFrames`, including any per-device manual trim), so the backend never applies calibration. Never subtract latency twice.
 2. **Contiguous coverage.** `speech-verified` may only advance over audio that was actually classified. If capture sends audio only when voice activity is detected, silent stretches are never "verified" and takes stall. Either stream continuously (silence included), or define explicit "silence through frame N" markers that the backend can verify. Gaps (device change, dropout, a new AudioContext) must be signalled, never papered over. The capture worklet already reports gaps.
 3. **A separate speech path.** The performance path disables echo cancellation, noise suppression and auto-gain. Recognizers usually do better with noise suppression and gain control. Options to evaluate:
    - (a) feed the same raw track to the recognizer (simplest, one device open);
@@ -39,3 +39,5 @@ Status: **requirements and open questions only.** Nothing here is a contract. CO
 2. A resampling and chunking worker that stamps latency-corrected frames and signals gaps.
 3. A hands-free toggle with consent and status (streaming, behind, unavailable), switching the recorder to `speech` mode.
 4. Tests: timestamp alignment with performance events, gap handling, no-replay on reconnect, and that performance analysis p95 is unaffected.
+
+WS1 review: this is requirements material, not an approved transport or provider choice. When the recording-usability capability merges, coordinate capture cutoff/epoch resets with it; use only the approved shared schemas. Calibration compensation includes manual offset trim and must still be applied exactly once.
