@@ -104,4 +104,16 @@ test('an answered command is not reported as unanswered', async () => {
 test('engine rejections read as actionable sentences', () => {
  assert.equal(describe({ type: 'load-session', session: createSession() }, 'rejected', 'Error: Overlapping monophonic notes'), 'Load session not applied: synth tracks play one note at a time, and this would overlap two notes (remove the overlap or use another synth track)');
  assert.equal(describe({ type: 'undo' }, 'rejected', 'Error: Nothing to undo'), 'Undo not applied: there is nothing to undo');
+ assert.equal(describe({ type: 'erase-event', target: { trackId: 'drums', lane: 'kick' }, step: 15 }, 'applied'), 'Erase Kick step 16: done');
+ assert.equal(describe({ type: 'metronome', enabled: false }, 'applied'), 'Metronome off: done');
+});
+
+test('targeted erasure and metronome stale rejections are never automatically replayed', () => {
+ const session = createSession();
+ const sent: SessionCommand[] = [];
+ const client = new CommandClient({ dispatch: c => { sent.push(c); return { type: 'ack', commandId: c.id, status: 'rejected', revision: 0, reason: 'Stale revision' }; }, getSession: () => session }, () => 'one');
+ client.send({ type: 'erase-event', target: { trackId: 'drums', lane: 'kick' }, step: 3 }, 'immediate');
+ client.send({ type: 'metronome', enabled: false }, 'immediate');
+ assert.equal(sent.length, 2);
+ assert.deepEqual(sent.map(c => c.operation.type), ['erase-event', 'metronome']);
 });

@@ -1,5 +1,5 @@
 import { OnsetDetector, toDb, type Onset } from './onset.ts';
-import { measureNoiseFloor } from './calibration.ts';
+import { isQuietCalibrationFrame, measureNoiseFloor } from './calibration.ts';
 import { NoteSegmenter, YinTracker, readPitch, type PitchReading, type SungNote } from './pitch.ts';
 
 /** Messages from the main thread. Audio arrives on a separate port directly from the capture worklet. */
@@ -65,7 +65,7 @@ function onAudio(startFrame: number, samples: Float32Array) {
  let peak = 0;
  for (const s of samples) peak = Math.max(peak, Math.abs(s));
  if (measuring) {
-  measuring.chunks.push(samples.slice()); measuring.collected += samples.length;
+  if (isQuietCalibrationFrame(pitch, segmenter.openStart !== null)) { measuring.chunks.push(samples.slice()); measuring.collected += samples.length; }
   if (measuring.collected >= measuring.frames) {
    const all = new Float32Array(measuring.collected); let offset = 0;
    for (const c of measuring.chunks) { all.set(c, offset); offset += c.length; }

@@ -6,6 +6,7 @@ import { resolve } from 'node:path';
 import { createSession } from '../packages/contracts/src/index.ts';
 import { exportSession, importSession, listSaved, loadLocal, saveLocal } from '../apps/web/src/persistence/session-file.ts';
 import { loadCalibration, saveCalibration } from '../apps/web/src/persistence/calibration-store.ts';
+import { captureConstraints } from '../apps/web/src/input/processing-profile.ts';
 
 class Memory { data = new Map<string, string>(); getItem(k: string) { return this.data.get(k) ?? null; } setItem(k: string, v: string) { this.data.set(k, v); } }
 function demo() {
@@ -57,9 +58,17 @@ test('calibration is stored per device and ignores malformed entries', () => {
  const calibration = { version: 1 as const, noiseFloorDb: -55, peakDb: null, latencyFrames: 4000, latencySource: 'tap-along' as const, latencySpreadFrames: 100, sampleRate: 44100, deviceId: 'mic-1' };
  saveCalibration(calibration, store);
  assert.deepEqual(loadCalibration('mic-1', store), calibration);
+ saveCalibration({ ...calibration, noiseFloorDb: -43 }, store, 'music');
+ assert.equal(loadCalibration('mic-1', store, 'music')?.noiseFloorDb, -43);
+ assert.equal(loadCalibration('mic-1', store, 'noisy-room')?.noiseFloorDb, -55);
  assert.equal(loadCalibration('mic-2', store), null);
- store.setItem('voicesynth.input-calibration.v1', '{"mic-1":{"version":1,"noiseFloorDb":"loud"}}');
+ store.setItem('voicesynth.input-calibration.v1', '{"mic-1|noisy-room":{"version":1,"noiseFloorDb":"loud"}}');
  assert.equal(loadCalibration('mic-1', store), null);
+});
+
+test('capture profiles request cleanup only in noisy-room mode and keep device selection', () => {
+ assert.deepEqual(captureConstraints('mic-1', 'noisy-room'), { deviceId: { exact: 'mic-1' }, echoCancellation: false, noiseSuppression: true, autoGainControl: false, channelCount: 1 });
+ assert.deepEqual(captureConstraints(undefined, 'music'), { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 });
 });
 
 test('an exported session reloads identically into a fresh real engine via load-session', { skip: !existsSync('apps/web/public/engine/voicesynth.wasm') }, async () => {

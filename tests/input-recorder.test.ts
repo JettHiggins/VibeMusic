@@ -42,7 +42,7 @@ class FakeEngine {
   }
  }
  transport(overrides: Partial<Transport> = {}): ClientMessage {
-  return { type: 'transport', transport: { clockId: CLOCK, sampleRate: 44100, currentFrame: this.frame, loopStartFrame: START, playing: true, recording: this.window.endFrame === null, recordingState: this.window.endFrame === null ? 'recording' : 'idle', recordingStartFrame: START, recordingTarget: this.window.target, pendingCommandIds: this.queued.map(c => c.id), ...overrides } };
+  return { type: 'transport', transport: { clockId: CLOCK, sampleRate: 44100, currentFrame: this.frame, loopStartFrame: START, playing: true, recording: this.window.endFrame === null, recordingState: this.window.endFrame === null ? 'recording' : 'idle', recordingStartFrame: START, recordingTarget: this.window.target, recordingEpoch: 1, pendingCommandIds: this.queued.map(c => c.id), ...overrides } };
  }
 }
 function setup(mode: 'manual' | 'speech' = 'manual', batchLeadSeconds = Infinity) {
@@ -97,6 +97,19 @@ test('hits are not committed beyond analysed audio or the engine clock', () => {
  assert.equal(engine.sent.length, 1, 'clock progress alone does not verify unanalysed audio');
  recorder.addOnsets([], 0, CLOCK, engine.frame);
  assert.equal(engine.sent.length, 2, 'the held hit is sent once analysis passes it');
+});
+
+test('targeted erase fences remove only matching old and delayed melody while retaining unrelated provisional notes', () => {
+ const { engine, recorder, advance } = melodic();
+ advance(5 * STEP);
+ recorder.addNotes([note(6, 10, 60), note(12, 16, 65)], 0, CLOCK, engine.frame);
+ assert.deepEqual(recorder.status().provisional.map(p => p.step), [6, 12]);
+ const fence = { commandId: 'erase-1', recordingEpoch: 1, throughFrame: Math.round(START + 10 * STEP), target: { trackId: 'synth-1' as const }, step: 8 };
+ recorder.handle(engine.transport({ captureErasure: fence }));
+ assert.deepEqual(recorder.status().provisional.map(p => p.step), [12]);
+ recorder.addNotes([note(7, 9, 62), note(20, 24, 67)], 0, CLOCK, engine.frame);
+ assert.deepEqual(recorder.status().provisional.map(p => p.step), [12, 20], 'late old note is fenced, new unrelated note survives');
+ assert.equal(recorder.status().dropped, 2);
 });
 
 test('speech mode waits for verification, excludes command spans, and stops on disconnect', () => {

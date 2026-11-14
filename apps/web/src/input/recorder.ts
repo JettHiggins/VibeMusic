@@ -63,6 +63,9 @@ export class PerformanceRecorder {
   * turn out to have been applied before the replacement reached the audio thread.
   */
  private replaced = new Map<string, Set<string>>();
+ /** Targeted erasures remain active for the current recording epoch so delayed analysis cannot restore them. */
+ private erasures = new Map<string, { clockId: string; fence: NonNullable<Transport['captureErasure']> }>();
+ private seenErasureCommands = new Set<string>();
  /** Revision from the last authoritative ack; never build a batch on an older snapshot. */
  private minRevision = 0;
  private committed = 0;
@@ -149,7 +152,9 @@ export class PerformanceRecorder {
   const event = make({ ...w.target });
   const step = this.stepOf(start);
   const duration = kind === 'drums' ? 1 : Math.max(1, Math.min(64, this.stepOf(end, false) - this.stepOf(start, false)));
-  this.events.push({ event, step, duration, status: 'provisional' });
+  const provisional = { event, step, duration, status: 'provisional' as const };
+  if (this.erased(provisional)) { this.dropped++; return; }
+  this.events.push(provisional);
  }
 
  /** Includes submitted input: Undo must discard capture before consuming musical history. */
@@ -186,6 +191,7 @@ export class PerformanceRecorder {
   // later terminal acks intentionally have nothing to match and cannot resurrect old audio.
   const epochReset = t.recordingEpoch !== undefined && this.window && this.window.epoch !== t.recordingEpoch;
   if (epochReset) {
+   this.erasures.clear(); this.seenErasureCommands.clear();
    this.events = []; this.inFlight = null; this.replaced.clear(); this.retries = 0;
    this.lastError = null; this.analysedThrough = -1; this.speechVerifiedThrough = -1;
    this.window = { ...this.window!, epoch: t.recordingEpoch, captureStart: t.captureStartFrame ?? t.recordingStartFrame ?? t.currentFrame,
@@ -217,7 +223,26 @@ export class PerformanceRecorder {
    this.events = this.events.filter(e => endOf(e.event) > e.event.captureFrame || e.event.kind === 'onset');
    this.dropped += before - this.events.length;
   }
+  const fence = t.captureErasure;
+  if (fence && !this.seenErasureCommands.has(fence.commandId) && fence.recordingEpoch === t.recordingEpoch && this.window?.epoch === fence.recordingEpoch && this.window.clockId === t.clockId) {
+   this.seenErasureCommands.add(fence.commandId);
+   const key = `${t.clockId}|${fence.recordingEpoch}|${fence.target.trackId}|${fence.target.lane ?? ''}|${fence.step}`;
+   const previousFence = this.erasures.get(key)?.fence;
+   if (!previousFence || fence.throughFrame > previousFence.throughFrame) this.erasures.set(key, { clockId: t.clockId, fence });
+   const before = this.events.length;
+   this.events = this.events.filter(event => !this.erased(event));
+   this.dropped += before - this.events.length;
+  }
   this.pump();
+ }
+
+ private erased(event: ProvisionalEvent) {
+  for (const { clockId, fence } of this.erasures.values()) {
+   if (clockId !== event.event.clockId || event.event.captureFrame > fence.throughFrame || event.event.target.trackId !== fence.target.trackId || event.event.target.lane !== fence.target.lane) continue;
+   const duration = event.event.kind === 'note' ? event.duration : 1;
+   for (let i = 0; i < duration; i++) if ((event.step + i) % 64 === fence.step) return true;
+  }
+  return false;
  }
 
  private watermark() {
