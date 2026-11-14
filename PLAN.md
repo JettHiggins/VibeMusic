@@ -17,14 +17,14 @@ Use SLOOP's actual browser WASM DSP and sequencer. The browser groovebox, musica
 - Normal speech outside recording; during recording commands begin with “Groove.” “Groove, stop” stops recording; “Groove, stop playback” stops transport.
 - Agent inference never controls sample timing. Browser musical state is authoritative; validate agent actions before application.
 - Raw microphone recordings are not persisted by default. Diagnostic capture is opt-in. Playback remains usable without AI services.
-- Speech recognition: local faster-whisper (configurable small-model baseline), selected by Jett. Language-model provider remains deferred while existing access is researched; keep the command parser interim and preserve Deep Agents as a completion requirement.
+- Speech recognition: local faster-whisper (configurable small-model baseline), selected by Jett. Language-model provider: OpenRouter, free models only, selected by Jett on 2026-11-14. Keep credentials backend-local, never in Git or the browser. The adapter and Deep Agents remain unfinished; keep the command parser interim until reviewed integration.
 - Current UI direction: dark monochrome DAW workspace, persistent transport/track/editor/inspector controls, drum step sequencer, and an editable synth piano roll. Replace the tab-based layout. Timing calibration includes preparation, practice clicks, progress, cancellation, and a recording-offset adjustment.
 
 ## Current priority: real-device usability
 
 The user tested on Lenny's laptop. Drum microphone capture worked, but recorded hits landed late with wired headphones. Calibration did not provide enough preparation. Waiting four bars to record and delayed/disabled Clear/Undo made performance frustrating. Melody capture produced no notes, and the user recalls a TypeScript/failed-to-load/chord error; its exact cause is unconfirmed. Do not assume missing sound samples or a speech provider will fix it.
 
-First deliver the recording-usability contract and engine behavior (WS1), guided calibration/latency diagnosis and the revised workspace/piano roll (WS2), and backend compatibility plus reproduction support (WS3). Speech transport remains a separate contract proposal. API access remains deferred; Deep Agents remains a requirement. The copyable assignments and dependency order are in docs/STATUS.md. This priority supersedes older handoff and issue instructions that conflict with it.
+First deliver the recording-usability contract and engine behavior (WS1), guided calibration/latency diagnosis and the revised workspace/piano roll (WS2), and backend compatibility plus reproduction support (WS3). Speech transport remains a separate contract proposal. OpenRouter free-model integration is now authorized; credentials remain backend-local and Deep Agents remains a requirement. The copyable assignments and dependency order are in docs/STATUS.md. This priority supersedes older handoff and issue instructions that conflict with it.
 
 ## Milestones and acceptance
 

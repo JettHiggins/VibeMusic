@@ -40,12 +40,23 @@
   },
   {
     "pullRequest": 15,
-    "headSha": "c8f4ed4620d62005d794f017fe7b4f27f24ed1ba",
-    "body": "WS1 review of c8f4ed4620d62005d794f017fe7b4f27f24ed1ba: scoped coverage, background worker, unavailable-on-failure and wake-span-on-failed-interpretation changes are useful. The isolated base backend suite passes (133 passed, 2 optional skips). Not approved yet: one asynchronous capture-context bug is reproduced.\n\nQueue the existing synthetic take with ScriptedWorker(['Groove, stop']) using stream(..., transcribe_each_chunk=False). Before worker.finish(connection), deliver transport recording=False/recordingState='idle' at frame_at(4). Actual replies: command {type:'play',playing:false}, then speech-verified; no command-span. Thus speech captured during recording can later stop playback and become musical input when transcription finishes after the take ends. _recording_at() reads the latest transport at result delivery rather than capture-time context.\n\nPreserve capture-time recording/armed context across delayed transcription and transport transitions, including segments closing or chunks arriving after stop, without reinterpreting an old take as the new one. Expected for this case: measured command-span first, then stop-recording (or a documented obsolete-command rejection with no transport mutation), then only appropriate stream-scoped coverage; playback must continue. Add regressions for delayed result after stop, after a new take/count-in, and late segment closure after stop. Do not change the accepted #14 wire shape without a proposal.\n\nReproduction instructions: docs/reviews/SPEECH-PIPELINE-C8F4ED4.md on engine-integration. #14 is now integrated; browser streaming can proceed. Local faster-whisper is selected; no LLM key is needed for it, and API access remains deferred."
+    "headSha": "c62613de07776def391c1e8fdd01d0db122092f7",
+    "body": "Delayed capture-time context fix reviewed and integrated. Old take results exclude speech, emit error/no mutation, then verify; stop/new take/count-in/late closure regressions pass."
   },
   {
     "pullRequest": 21,
-    "headSha": "b6b2d090a3bc69eb1b7ed3cb75d28df5fa4bd02a",
-    "body": "WS1 review of b6b2d090a3bc69eb1b7ed3cb75d28df5fa4bd02a. The local shared model, off-event-loop handoff and configurable CPU baseline fit the selected approach. Isolated base suite: 136 passed/3 optional skips. With an additional manually installed SciPy in an isolated Python 3.13 ARM64 environment, real base.en CPU/int8 decoded espeak-generated Groove, stop at both 16 kHz and approved browser 44.1 kHz (~0.46/~0.44 s). The real threaded Connection/model opt-in test passed (one test, stop-recording, span before command and scoped coverage). These are synthetic voice checks, not physical users or a latency distribution.\n\nOne new blocker: the declared speech-only install omits SciPy, but stt.py imports scipy.signal.resample_poly whenever sample_rate != 16000. I created a fresh env and installed only requirements-dev.txt + requirements-speech.txt. pip check reported no broken requirements; calling the actual adapter on a 44.1 kHz array raised ModuleNotFoundError: No module named scipy before model decoding. Browser speech intentionally sends approved 44.1 kHz, so this is the normal integration path. Declare the optional resampling dependency (compatible with supported Python versions), or implement resampling using already declared dependencies. Add a clean-install/44.1 kHz-path regression; testing only pre-resampled 16 kHz or a research environment hides this. The above real-model success required installing SciPy separately and does not validate the shipped dependency list.\n\n#21 also inherits #15's delayed capture-context blocker (review/reproduction already posted); extend that fix to held wake words and joined wake/command segments. Do not merge the stacked provider before those capture-time semantics are fixed. No wire change or cloud API access is needed. Full evidence: docs/reviews/LOCAL-STT-B6B2D09.md on engine-integration."
+    "headSha": "d637213face25f6561402129367a6226e6d6bc9c",
+    "body": "Real local faster-whisper reviewed and integrated, including declared SciPy, held wake capture context and optional mic self-check. Fresh declared install: 167 passed/5 skipped plus one real-model synthetic opt-in pass. No human latency acceptance. Stacked source is integrated; retarget to engine-integration.",
+    "retargetBase": "engine-integration"
+  },
+  {
+    "pullRequest": 22,
+    "headSha": "75f41811e9c79e46e64bad8648e9047517939d2e",
+    "body": "Issue #3 research shape and nonmutating audition regressions reviewed and integrated."
+  },
+  {
+    "pullRequest": 23,
+    "headSha": "d34f10ee28ce95a415bd823c2e6feae0a8bfae4c",
+    "body": "Worker-load URL/line diagnostics and updated mic guide reviewed and integrated. Combined checks passed; original physical melody failure still needs reproduction."
   }
 ]
