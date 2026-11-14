@@ -13,7 +13,7 @@ const enabled=process.env.VOICESYNTH_INTEGRATION==='1';
 test('live Python WebSocket proposals apply to real WASM and return authoritative snapshots', {skip:!enabled,timeout:20000},async()=>{
  const reservation=createServer();await new Promise<void>(r=>reservation.listen(0,'127.0.0.1',r));
  const port=(reservation.address() as {port:number}).port;await new Promise<void>(r=>reservation.close(()=>r()));
- const child=spawn(process.env.VOICESYNTH_PYTHON??'python3',['-m','uvicorn','groove_agent.app:app','--app-dir','services/agent','--host','127.0.0.1','--port',String(port)],{stdio:['ignore','ignore','pipe']});
+ const child=spawn(process.env.VOICESYNTH_PYTHON??'python3',['-m','uvicorn','groove_agent.app:app','--app-dir','services/agent','--host','127.0.0.1','--port',String(port)],{stdio:['ignore','ignore','pipe'],env:{...process.env,GROOVE_LLM:'',OPENROUTER_API_KEY:'',GROOVE_STT:'',GROOVE_RESEARCH:''}});
  let logs='';let coordinator:SessionCoordinator|undefined;let agent:WebSocketAgent|undefined;
  try{
   await new Promise<void>((resolve,reject)=>{
@@ -22,6 +22,8 @@ test('live Python WebSocket proposals apply to real WASM and return authoritativ
    child.once('error',e=>{done();reject(e);});child.once('exit',code=>{done();reject(new Error(`Service exited ${code}: ${logs}`));});
    child.stderr.on('data',data=>{logs=(logs+data.toString()).slice(-4000);if(logs.includes('Uvicorn running')){done();resolve();}});
   });
+  const health=await (await fetch(`http://127.0.0.1:${port}/healthz`)).json() as {language:string;speech:string;research:string};
+  assert.equal(health.language,'parser');assert.equal(health.speech,'not configured');assert.equal(health.research,'not configured');
   const dir='apps/web/public/engine';
   const module=await WebAssembly.compile(readFileSync(`${dir}/voicesynth.wasm`));
   const {FirmwareAudio}=await import(pathToFileURL(resolve(`${dir}/preview-worklet.js`)).href);
