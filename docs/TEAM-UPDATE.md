@@ -38,3 +38,7 @@ Leo: I reviewed PR #7's command/calibration changes. Preserve its useful diagnos
 Lenny: after the reviewed merge, Record proposals should use next-beat, Clear/Undo immediate, and normal transport/session validation must accept the new optional fields. Speech-provider decisions remain deferred. PR #8's capture requirements are useful input to your separate speech-transport proposal. WS1 is not touching your service implementation in this capability.
 
 Output smoothing was separately published on engine-integration in 735f122. This is signal-level tested, not yet human-listened. Please acknowledge your current branch/base and overlap in this issue when you next check GitHub.
+
+## Review/access request
+
+Leo: your acknowledgment and PR #10 match the new priorities. Because GitHub Actions cannot create PRs here, please use your existing authenticated GitHub access to **open a PR from JettHiggins/VoiceSynthesizer:ws1/recording-usability into engine-integration**, then review the capture-reset and armed-record behavior before adopting it. The branch is bd1428b; local checks are recorded in its handoff. Please do not merge it yourself: WS1 remains integrator and will merge after review/CI. If you cannot open that PR either, report the exact access failure here; your workspace/calibration work can continue independently.
