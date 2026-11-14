@@ -4,6 +4,7 @@ import {createSession,type SessionCommand,type Transport} from '@voicesynth/cont
 import {BrowserEngine} from './engine/browser.ts';
 import {WebSocketAgent} from './integration/agent.ts';
 import {SessionCoordinator} from './integration/coordinator.ts';
+import {supportsBrowserActions} from './integration/browser-actions.ts';
 import {VoiceInput} from './input/voice-input.ts';
 import {ResearchController} from './integration/research.ts';
 import {ResearchPanel} from './integration/ResearchPanel.tsx';
@@ -13,8 +14,9 @@ const initialSession=createSession();
 initialSession.tracks[0].patch.engine=1;
 const engine=new BrowserEngine(initialSession);
 const agent=new WebSocketAgent();
-const coordinator=new SessionCoordinator(engine,agent,()=>agent.connected);
 const voice=new VoiceInput(engine);
+const coordinator=new SessionCoordinator(engine,agent,()=>agent.connected);
+if(supportsBrowserActions(voice))coordinator.setBrowserActionAdapter(voice);
 voice.configureSpeechSender(message=>agent.send(message),()=>agent.disconnect(),()=>agent.connect());
 coordinator.prepareCommand=command=>voice.prepareCommand(command);
 const research=new ResearchController(engine,agent,()=>agent.connected);
@@ -50,5 +52,5 @@ function App(){
 }
 createRoot(document.getElementById('root')!).render(<App/>);
 if(import.meta.hot)import.meta.hot.dispose(()=>{
- research.dispose();voice.dispose();coordinator.dispose();agent.dispose();engine.dispose();
+ research.dispose();coordinator.dispose();voice.dispose();agent.dispose();engine.dispose();
 });
