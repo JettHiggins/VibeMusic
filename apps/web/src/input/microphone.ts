@@ -5,6 +5,7 @@ import type { PitchReading, SungNote } from './pitch.ts';
 import type { SpeechRequest, SpeechResult } from './speech-worker.ts';
 import type { CaptureSettings } from './diagnostics.ts';
 import { formatWorkerLoadError } from './worker-load-error.ts';
+import { captureConstraints, type ProcessingProfile } from './processing-profile.ts';
 
 export interface AnalysisFrame {
  onsets: Onset[]; notes: SungNote[];
@@ -14,6 +15,8 @@ export interface AnalysisFrame {
  processedThrough?: number;
  levelDb: number; analysisMs: number; pitch?: PitchReading | null;
 }
+
+export type { ProcessingProfile } from './processing-profile.ts';
 
 /**
  * Connects an input (the microphone, or a diagnostic test signal) to the capture worklet on the
@@ -33,7 +36,7 @@ export class MicrophoneInput {
  private speechWorker: Worker | null = null;
  private source: AudioNode | null = null;
  private stream: MediaStream | null = null;
- private noiseWaiters: ((db: number) => void)[] = [];
+ private noiseWaiters: { resolve: (db: number) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }[] = [];
  private static modules = new WeakSet<BaseAudioContext>();
 
  constructor(private context: AudioContext) {}
@@ -49,7 +52,8 @@ export class MicrophoneInput {
   const worker = this.worker = new Worker(new URL('./analysis-worker.ts', import.meta.url), { type: 'module' });
   worker.onmessage = ({ data }: MessageEvent<AnalysisResult>) => {
    if (data.type === 'onsets') this.onAnalysis(data);
-   else if (data.type === 'noise-floor') { this.noiseWaiters.splice(0).forEach(resolve => resolve(data.db)); }
+   else if (data.type === 'noise-floor') { this.noiseWaiters.splice(0).forEach(waiter => { clearTimeout(waiter.timer); waiter.resolve(data.db); }); }
+   else if (data.type === 'noise-floor-unavailable') { this.noiseWaiters.splice(0).forEach(waiter => { clearTimeout(waiter.timer); waiter.reject(new Error(data.message)); }); }
    else this.onError(new Error(data.message));
   };
   worker.onerror = event => this.onError(new Error(formatWorkerLoadError(event)));
@@ -61,11 +65,12 @@ export class MicrophoneInput {
  private request(message: AnalysisRequest, transfer: Transferable[] = []) { this.worker?.postMessage(message, transfer); }
 
  /** Must be called from a user gesture the first time so the permission prompt can appear. */
- async startMicrophone(deviceId?: string) {
+ async startMicrophone(deviceId?: string, profile: ProcessingProfile = 'noisy-room') {
   await this.ensureGraph();
   this.disconnectSource();
-  // Processing designed for calls smears transients and pumps levels; disable it for performance capture.
-  const stream = await navigator.mediaDevices.getUserMedia({ audio: { deviceId: deviceId ? { exact: deviceId } : undefined, echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 } });
+  // Noise suppression is requested only for the noisy-room profile. AGC and echo
+  // cancellation stay off so capture level and timing remain predictable.
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: captureConstraints(deviceId, profile) });
   this.stream = stream;
   const track = stream.getAudioTracks()[0];
   const settings = track.getSettings() as MediaTrackSettings & { latency?: number };
@@ -117,8 +122,12 @@ export class MicrophoneInput {
  measureNoiseFloor(seconds = 1.5): Promise<number> {
   if (!this.source) return Promise.reject(new Error('Enable the microphone first'));
   return new Promise((resolve, reject) => {
-   const timer = setTimeout(() => reject(new Error('No microphone audio arrived; check the input device')), seconds * 1000 + 3000);
-   this.noiseWaiters.push(db => { clearTimeout(timer); resolve(db); });
+   const timer = setTimeout(() => {
+    const index = this.noiseWaiters.findIndex(waiter => waiter.timer === timer);
+    if (index >= 0) this.noiseWaiters.splice(index, 1);
+    reject(new Error('No microphone audio arrived; check the input device'));
+   }, seconds * 7 * 1000 + 3000);
+   this.noiseWaiters.push({ resolve, reject, timer });
    this.request({ type: 'measure-noise', frames: Math.round(seconds * this.context.sampleRate) });
   });
  }

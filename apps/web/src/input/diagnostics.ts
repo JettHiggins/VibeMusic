@@ -1,6 +1,7 @@
 import { effectiveLatencyFrames, type InputCalibration } from './calibration.ts';
 import type { MicCheckState } from './mic-check.ts';
 import type { RecorderStatus } from './recorder.ts';
+import type { ProcessingProfile } from './processing-profile.ts';
 import { summarizeTiming } from './grid-timing.ts';
 
 /** What the browser reports for the capture track. Values are as granted, not as requested. */
@@ -19,13 +20,13 @@ export interface CaptureSettings {
  */
 export interface MicTestReport {
  format: 'voicesynth-mic-test';
- version: 1;
+ version: 3;
  createdAt: string;
  browser: string;
  context: { sampleRate: number; baseLatencyMs: number | null; outputLatencyMs: number | null };
- capture: CaptureSettings & { processingDisabledAsRequested: boolean };
+ capture: CaptureSettings & { processingProfile: ProcessingProfile; processingMatchesProfile: boolean | null };
  calibration: { noiseFloorDb: number; noiseMeasured: boolean; latencyMs: number; latencySource: string; latencySpreadMs: number | null; offsetAdjustMs: number; effectiveLatencyMs: number } | null;
- micCheck: Pick<MicCheckState, 'peakDb' | 'verdict' | 'noisyRoom' | 'onsetsDetected' | 'notesDetected'> & { lastOnsetLevelDb: number | null; lastNoteMidi: number | null };
+ micCheck: Pick<MicCheckState, 'peakDb' | 'verdict' | 'noisyRoom' | 'onsetsDetected' | 'notesDetected'> & { lastOnsetLevelDb: number | null; lastNoteMidi: number | null; foregroundDb: number | null; foregroundMarginDb: number | null };
  takes: { committed: number; dropped: number; lastError: string | null };
  /** Near-grid diagnostic: recent placements relative to the sixteenth grid (numbers only). */
  gridTiming: ReturnType<typeof summarizeTiming> & { recent: { kind: string; midi?: number; startOffsetMs: number; startThresholdMs: number; endOffsetMs?: number; endThresholdMs?: number }[] };
@@ -35,16 +36,20 @@ export interface MicTestReport {
 const ms = (frames: number, rate: number) => Math.round(frames / rate * 10000) / 10;
 
 export function buildMicTestReport(input: {
- now?: Date; browser: string; context: { sampleRate: number; baseLatency?: number; outputLatency?: number };
+ now?: Date; browser: string; context: { sampleRate: number; baseLatency?: number; outputLatency?: number }; processingProfile?: ProcessingProfile;
  capture: CaptureSettings; calibration: InputCalibration | null; micCheck: MicCheckState; recorder: RecorderStatus; analysisP95Ms: number | null;
 }): MicTestReport {
  const { calibration: c, context, capture, micCheck, recorder } = input;
+ const processingProfile = input.processingProfile ?? 'noisy-room';
+ const expected = { echoCancellation: false, noiseSuppression: processingProfile === 'noisy-room', autoGainControl: false };
+ const reported = [capture.echoCancellation, capture.noiseSuppression, capture.autoGainControl];
+ const matches = reported.some(value => value === undefined) ? null : capture.echoCancellation === expected.echoCancellation && capture.noiseSuppression === expected.noiseSuppression && capture.autoGainControl === expected.autoGainControl;
  return {
-  format: 'voicesynth-mic-test', version: 1, createdAt: (input.now ?? new Date()).toISOString(), browser: input.browser,
+  format: 'voicesynth-mic-test', version: 3, createdAt: (input.now ?? new Date()).toISOString(), browser: input.browser,
   context: { sampleRate: context.sampleRate, baseLatencyMs: context.baseLatency === undefined ? null : Math.round(context.baseLatency * 10000) / 10, outputLatencyMs: context.outputLatency === undefined ? null : Math.round(context.outputLatency * 10000) / 10 },
-  capture: { ...pick(capture), processingDisabledAsRequested: capture.echoCancellation === false && capture.noiseSuppression === false && capture.autoGainControl === false },
+  capture: { ...pick(capture), processingProfile, processingMatchesProfile: matches },
   calibration: c && { noiseFloorDb: Math.round(c.noiseFloorDb * 10) / 10, noiseMeasured: c.noiseSource === 'measured', latencyMs: ms(c.latencyFrames, c.sampleRate), latencySource: c.latencySource, latencySpreadMs: c.latencySpreadFrames === null ? null : ms(c.latencySpreadFrames, c.sampleRate), offsetAdjustMs: c.offsetAdjustMs ?? 0, effectiveLatencyMs: ms(effectiveLatencyFrames(c), c.sampleRate) },
-  micCheck: { peakDb: Number.isFinite(micCheck.peakDb) ? Math.round(micCheck.peakDb * 10) / 10 : -120, verdict: micCheck.verdict, noisyRoom: micCheck.noisyRoom, onsetsDetected: micCheck.onsetsDetected, notesDetected: micCheck.notesDetected, lastOnsetLevelDb: micCheck.lastOnset ? Math.round(micCheck.lastOnset.levelDb * 10) / 10 : null, lastNoteMidi: micCheck.lastNote?.midi ?? null },
+  micCheck: { peakDb: Number.isFinite(micCheck.peakDb) ? Math.round(micCheck.peakDb * 10) / 10 : -120, verdict: micCheck.verdict, noisyRoom: micCheck.noisyRoom, onsetsDetected: micCheck.onsetsDetected, notesDetected: micCheck.notesDetected, lastOnsetLevelDb: micCheck.lastOnset ? Math.round(micCheck.lastOnset.levelDb * 10) / 10 : null, lastNoteMidi: micCheck.lastNote?.midi ?? null, foregroundDb: micCheck.foregroundDb === null ? null : Math.round(micCheck.foregroundDb * 10) / 10, foregroundMarginDb: micCheck.foregroundMarginDb === null ? null : Math.round(micCheck.foregroundMarginDb * 10) / 10 },
   takes: { committed: recorder.committed, dropped: recorder.dropped, lastError: recorder.lastError },
   gridTiming: { ...summarizeTiming(recorder.timing ?? []), recent: (recorder.timing ?? []).slice(-16).map(t => ({ kind: t.kind, ...(t.midi === undefined ? {} : { midi: t.midi }), startOffsetMs: t.start.offsetMs, startThresholdMs: t.start.thresholdMs, ...(t.end ? { endOffsetMs: t.end.offsetMs, endThresholdMs: t.end.thresholdMs } : {}) })) },
   analysisP95Ms: input.analysisP95Ms === null ? null : Math.round(input.analysisP95Ms * 10) / 10,

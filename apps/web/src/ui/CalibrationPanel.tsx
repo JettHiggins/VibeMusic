@@ -22,7 +22,7 @@ export function CalibrationPanel({ voice, state, disabled, playing }: { voice: V
   {silence && <div role="status" aria-live="polite" style={{ margin: '6px 0' }}>
    {silence.phase === 'countdown'
     ? <div style={{ fontSize: 24, fontWeight: 700 }}>Stay quiet… measuring in {silence.countdownLeft}</div>
-    : <div style={{ fontWeight: 600 }}>Measuring silence: stay quiet</div>}
+    : <div style={{ fontWeight: 600 }}>Measuring room noise: stay quiet; singing and voices are excluded (up to 6 seconds)</div>}
    <button onClick={() => voice.cancelCalibration()}>Cancel</button>
   </div>}
   <div style={row}>

@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { performance } from 'node:perf_hooks';
 import { OnsetDetector, type Onset } from '../apps/web/src/input/onset.ts';
-import { defaultCalibration, estimateLatency, measureNoiseFloor } from '../apps/web/src/input/calibration.ts';
+import { defaultCalibration, estimateLatency, isQuietCalibrationFrame, measureNoiseFloor } from '../apps/web/src/input/calibration.ts';
 
 const SR = 44100;
 function rng(seed: number) { return () => { seed |= 0; seed = seed + 0x6d2b79f5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
@@ -120,6 +120,15 @@ test('noise floor uses a robust percentile of short windows', () => {
  addHit(buffer, 0.5 * SR, 'hat', -10, random);
  assert.ok(measureNoiseFloor(buffer) < -45, 'a single short hit must not dominate');
  assert.throws(() => measureNoiseFloor(new Float32Array(10)));
+});
+
+test('noise calibration excludes voiced and still-open sung frames', () => {
+ assert.equal(isQuietCalibrationFrame({ state: 'pitch', midi: 60, clarity: 0.9, levelDb: -25, gateDb: -45, holding: true }, true), false);
+ assert.equal(isQuietCalibrationFrame({ state: 'pitch', midi: 60, clarity: 0.9, levelDb: -25, gateDb: -45, holding: false }, false), false);
+ assert.equal(isQuietCalibrationFrame({ state: 'quiet', midi: 60, clarity: 0.9, levelDb: -30, gateDb: -25, holding: false }, false), false);
+ assert.equal(isQuietCalibrationFrame({ state: 'unclear', midi: null, clarity: 0.4, levelDb: -35, gateDb: -45, holding: false }, false), true);
+ assert.equal(isQuietCalibrationFrame({ state: 'silent', midi: null, clarity: 0, levelDb: -60, gateDb: -45, holding: false }, false), true);
+ assert.equal(isQuietCalibrationFrame(null, false), false);
 });
 
 test('tap-along latency is the median click-to-onset offset and rejects inconsistent taps', () => {

@@ -16,7 +16,12 @@ export function MicCheckPanel({ state, onReport }: { state: VoiceInputState; onR
  const [copied, setCopied] = useState<string | null>(null);
  const check = state.micCheck;
  const capture = state.capture;
- const processingOn = capture && (capture.echoCancellation || capture.noiseSuppression || capture.autoGainControl);
+ const processingMismatch = capture && [
+  capture.echoCancellation !== undefined && capture.echoCancellation !== false,
+  capture.noiseSuppression !== undefined && capture.noiseSuppression !== (state.processingProfile === 'noisy-room'),
+  capture.autoGainControl !== undefined && capture.autoGainControl !== false,
+ ].some(Boolean);
+ const setting = (value: boolean | undefined) => value === undefined ? 'not reported' : value ? 'on' : 'off';
  const copy = async () => {
   const text = JSON.stringify(onReport(), null, 1);
   // Clipboard writes can hang (not reject) when the tab is not focused; fall back to showing the text.
@@ -41,9 +46,10 @@ export function MicCheckPanel({ state, onReport }: { state: VoiceInputState; onR
    </div>;
   })()}
   {check && <div style={{ marginTop: 4 }} aria-label="Pitch check"><b style={{ color: check.pitch?.state === 'pitch' ? C.ok : check.pitch?.state === 'quiet' || check.pitch?.state === 'unclear' ? C.warn : C.muted }}>Pitch:</b> {check.pitchAdvice}</div>}
+  {check && <div style={{ marginTop: 4 }} aria-label="Normal-volume voice reference"><b>Normal-volume reference:</b> {check.foregroundDb === null ? check.foregroundAdvice : `${check.foregroundDb.toFixed(0)} dBFS, ${check.foregroundMarginDb!.toFixed(0)} dB above room. ${check.foregroundAdvice}`}</div>}
   {capture && <div style={{ marginTop: 4, opacity: 0.8 }}>
-   Browser granted: echo cancellation {capture.echoCancellation ? 'on' : 'off'}, noise suppression {capture.noiseSuppression ? 'on' : 'off'}, auto gain {capture.autoGainControl ? 'on' : 'off'}{capture.sampleRate ? `, ${capture.sampleRate} Hz` : ''}
-   {processingOn && <span style={{ color: C.warn }}> ⚠ processing is on despite the request; transients and levels may be distorted</span>}
+   Browser granted: echo cancellation {setting(capture.echoCancellation)}, noise suppression {setting(capture.noiseSuppression)}, auto gain {setting(capture.autoGainControl)}{capture.sampleRate ? `, ${capture.sampleRate} Hz` : ''}
+   {processingMismatch && <span style={{ color: C.warn }}> ⚠ browser processing differs from the selected profile</span>}
   </div>}
   {copied && <div style={{ marginTop: 4, wordBreak: 'break-all', opacity: 0.85 }}>{copied}</div>}
  </div>;

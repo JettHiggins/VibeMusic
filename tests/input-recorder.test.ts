@@ -42,7 +42,7 @@ class FakeEngine {
   }
  }
  transport(overrides: Partial<Transport> = {}): ClientMessage {
-  return { type: 'transport', transport: { clockId: CLOCK, sampleRate: 44100, currentFrame: this.frame, loopStartFrame: START, playing: true, recording: this.window.endFrame === null, recordingState: this.window.endFrame === null ? 'recording' : 'idle', recordingStartFrame: START, recordingTarget: this.window.target, pendingCommandIds: this.queued.map(c => c.id), ...overrides } };
+  return { type: 'transport', transport: { clockId: CLOCK, sampleRate: 44100, currentFrame: this.frame, loopStartFrame: START, playing: true, recording: this.window.endFrame === null, recordingState: this.window.endFrame === null ? 'recording' : 'idle', recordingStartFrame: START, recordingTarget: this.window.target, recordingEpoch: 1, pendingCommandIds: this.queued.map(c => c.id), ...overrides } };
  }
 }
 function setup(mode: 'manual' | 'speech' = 'manual', batchLeadSeconds = Infinity) {
@@ -97,6 +97,48 @@ test('hits are not committed beyond analysed audio or the engine clock', () => {
  assert.equal(engine.sent.length, 1, 'clock progress alone does not verify unanalysed audio');
  recorder.addOnsets([], 0, CLOCK, engine.frame);
  assert.equal(engine.sent.length, 2, 'the held hit is sent once analysis passes it');
+});
+
+test('targeted erase fences remove only matching old and delayed melody while retaining unrelated provisional notes', () => {
+ const { engine, recorder, advance } = melodic();
+ advance(5 * STEP);
+ recorder.addNotes([note(6, 10, 60), note(12, 16, 65)], 0, CLOCK, engine.frame);
+ assert.deepEqual(recorder.status().provisional.map(p => p.step), [6, 12]);
+ const fence = { commandId: 'erase-1', recordingEpoch: 1, throughFrame: Math.round(START + 10 * STEP), target: { trackId: 'synth-1' as const }, step: 8 };
+ recorder.handle(engine.transport({ captureErasure: fence }));
+ assert.deepEqual(recorder.status().provisional.map(p => p.step), [12]);
+ recorder.addNotes([note(7, 9, 62), note(20, 24, 67)], 0, CLOCK, engine.frame);
+ assert.deepEqual(recorder.status().provisional.map(p => p.step), [12, 20], 'late old note is fenced, new unrelated note survives');
+ assert.equal(recorder.status().dropped, 2);
+});
+
+test('targeted erase keeps the same in-flight command and surviving event IDs', () => {
+ const { engine, recorder, advance, hit } = setup();
+ advance(20 * STEP);
+ recorder.addOnsets([hit(3), hit(12)], 0, CLOCK, engine.frame);
+ const command = engine.sent[0];
+ assert.ok(command.operation.type === 'commit-performance' && command.operation.events.length === 2);
+ const fence = { commandId: 'erase-queued', recordingEpoch: 1, throughFrame: hit(3).frame, target: { trackId: 'drums' as const, lane: 'kick' as const }, step: 3 };
+ recorder.handle(engine.transport({ captureErasure: fence }));
+ assert.equal(recorder.status().inFlight, command.id);
+ assert.deepEqual(recorder.status().provisional.map(p => [p.step, p.status]), [[12, 'submitted']]);
+ assert.equal(engine.sent.length, 1, 'erasure does not submit survivors as a new batch');
+ engine.ack(command, 'applied');
+ assert.equal(recorder.status().committed, 1);
+ assert.equal(recorder.status().lastError, null);
+});
+
+test('terminal rejection of an all-erased batch is quiet and does not count erased events twice', () => {
+ const { engine, recorder, advance, hit } = setup();
+ advance(20 * STEP);
+ recorder.addOnsets([hit(3)], 0, CLOCK, engine.frame);
+ const command = engine.sent[0];
+ recorder.handle(engine.transport({ captureErasure: { commandId: 'erase-all', recordingEpoch: 1, throughFrame: hit(3).frame, target: { trackId: 'drums', lane: 'kick' }, step: 3 } }));
+ assert.equal(recorder.status().dropped, 1);
+ engine.ack(command, 'rejected', 'All events erased');
+ assert.equal(recorder.status().dropped, 1);
+ assert.equal(recorder.status().lastError, null);
+ assert.equal(recorder.status().inFlight, null);
 });
 
 test('speech mode waits for verification, excludes command spans, and stops on disconnect', () => {

@@ -96,19 +96,22 @@ test('the mic test report holds measurements only', () => {
  const report = buildMicTestReport({
   now: new Date('2026-11-14T00:00:00Z'), browser: 'Chrome 140 / Windows',
   context: { sampleRate: SR, baseLatency: 0.01, outputLatency: 0.042 },
-  capture: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, sampleRate: 48000, latency: 0.01, channelCount: 1, ...({ deviceId: 'secret-id', label: 'My Headset' } as object) },
+  capture: { echoCancellation: false, noiseSuppression: true, autoGainControl: false, sampleRate: 48000, latency: 0.01, channelCount: 1, ...({ deviceId: 'secret-id', label: 'My Headset' } as object) },
+  processingProfile: 'noisy-room',
   calibration: cal({ noiseSource: 'measured', noiseFloorDb: -38.94, latencySource: 'tap-along', latencyFrames: 5292, latencySpreadFrames: 220 }),
   micCheck: check.state(-38.9),
   recorder: { mode: 'manual', capturing: false, provisional: [], timing: [], committed: 4, dropped: 1, lastError: null, inFlight: null },
   analysisP95Ms: 3.21,
  });
- assert.equal(report.capture.processingDisabledAsRequested, true);
+ assert.equal(report.capture.processingProfile, 'noisy-room');
+ assert.equal(report.capture.processingMatchesProfile, true);
  assert.equal(report.calibration?.latencyMs, 120);
  assert.equal(report.context.outputLatencyMs, 42);
  const text = JSON.stringify(report);
  assert.ok(!/secret-id|My Headset|deviceId|label/.test(text), 'no device identifiers');
  assert.equal(report.takes.committed, 4);
  assert.equal(report.micCheck.onsetsDetected, 1);
+ assert.equal(report.micCheck.foregroundDb, null);
 });
 
 test('live pitch diagnosis explains why singing does or does not become notes', async () => {
@@ -135,4 +138,21 @@ test('live pitch diagnosis explains why singing does or does not become notes', 
  // A momentary quieter frame does not hide a usable pitch heard just before it.
  check.add(frame(4096, -40, { pitch: readPitch([f(-44, null, 0)], -39, true) }));
  assert.match(check.state(-39).pitchAdvice, /Hearing C4/);
+
+ const reference = new MicCheck(SR);
+ for (let i = 0; i < 30; i++) reference.add(frame((i + 1) * Math.round(SR * 0.025), -30, { pitch: quiet }));
+ const lowMargin = reference.state(-39);
+ assert.equal(lowMargin.foregroundDb, -30);
+ assert.equal(lowMargin.foregroundMarginDb, 9);
+ assert.match(lowMargin.foregroundAdvice, /9 dB above room noise; notes need about 15 dB/);
+ const clearReference = new MicCheck(SR);
+ const normalPitch = readPitch([f(-18, 220, 0.95)], -39, false)!;
+ for (let i = 0; i < 30; i++) clearReference.add(frame((i + 1) * Math.round(SR * 0.025), -18, { pitch: normalPitch }));
+ assert.equal(clearReference.state(-39).foregroundMarginDb, 21);
+ assert.match(clearReference.state(-39).foregroundAdvice, /clears the pitch level gate/);
+ const referenceReport = buildMicTestReport({
+  browser: 'test', context: { sampleRate: SR }, capture: {}, processingProfile: 'noisy-room', calibration: cal({ noiseFloorDb: -39 }),
+  micCheck: clearReference.state(-39), recorder: { mode: 'manual', capturing: false, provisional: [], timing: [], committed: 0, dropped: 0, lastError: null, inFlight: null }, analysisP95Ms: null,
+ });
+ assert.equal(referenceReport.micCheck.foregroundMarginDb, 21);
 });

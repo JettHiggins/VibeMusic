@@ -10,9 +10,10 @@ type Hit = SessionState['tracks'][number]['hits'][number];
  * Drum step lanes: one row of 64 steps per lane. Click a step to toggle it; click a lane name to
  * select it as the recording lane and hear it.
  */
-export function DrumGrid({ hits, provisional, playhead, lane, disabled, onEdit, onSelectLane, onAudition }: {
+export function DrumGrid({ hits, provisional, playhead, lane, disabled, eraseEnabled = true, onEdit, onErase, onSelectLane, onAudition }: {
  hits: Hit[]; provisional: { lane: Lane; step: number }[]; playhead: number | null; lane: Lane; disabled: boolean;
- onEdit: (op: PatternOp) => void; onSelectLane: (lane: Lane) => void; onAudition?: (lane: Lane) => void;
+ eraseEnabled?: boolean;
+ onEdit: (op: PatternOp) => void; onErase: (lane: Lane, step: number) => void; onSelectLane: (lane: Lane) => void; onAudition?: (lane: Lane) => void;
 }) {
  return <div aria-label="Drum step sequencer">
   {LANES.map(({ lane: l, label }) => <div key={l} style={{ display: 'flex', gap: 6, alignItems: 'center', margin: '4px 0' }}>
@@ -21,7 +22,7 @@ export function DrumGrid({ hits, provisional, playhead, lane, disabled, onEdit, 
     {Array.from({ length: 64 }, (_, step) => {
      const on = hits.some(h => h.lane === l && h.step === step);
      const pending = provisional.some(p => p.lane === l && p.step === step);
-     return <button key={step} role="gridcell" aria-pressed={on} aria-label={`${label} step ${step + 1}`} disabled={disabled} onClick={() => onEdit(toggleHit(l, step))}
+     return <button key={step} role="gridcell" aria-pressed={on || pending} aria-label={`${pending ? (eraseEnabled ? 'Erase provisional' : 'Erase unavailable for provisional') : on ? (eraseEnabled ? 'Erase' : 'Erase unavailable') : 'Add'} ${label} step ${step + 1}`} disabled={disabled || ((on || pending) && !eraseEnabled)} onClick={() => on || pending ? onErase(l, step) : onEdit(toggleHit(l, step))}
       style={{ height: 24, padding: 0, minWidth: 0, borderRadius: 2, border: pending ? `1px dashed ${C.pending}` : `1px solid ${playhead === step ? C.accent : 'transparent'}`,
        background: on ? C.note : step % 16 === 0 ? '#2c2c31' : step % 4 === 0 ? '#232327' : '#1a1a1d' }} />;
     })}
