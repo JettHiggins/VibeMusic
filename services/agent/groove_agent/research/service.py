@@ -37,6 +37,7 @@ class ResearchBackend:
     budget: int = MAX_VARIATIONS
     corpus_seed: int = 0
     corpus: Optional[Corpus] = None
+    corpus_dir: Optional[Path] = None  # where a freshly built corpus is saved for the next start
 
     @property
     def label(self) -> str:
@@ -153,6 +154,8 @@ class ResearchPort:
                                                   seed=backend.corpus_seed,
                                                   variations_per_preset=backend.variations_per_preset,
                                                   cancelled=job.cancel.is_set)
+                    if backend.corpus_dir is not None:
+                        backend.corpus.save(backend.corpus_dir)
                 query = unit(backend.embedder.embed_text(description))
                 # Refinement starts from the candidates being refined, rescored for the new text.
                 # A fresh search, or a refinement whose seeds are all unusable, starts from retrieval.
@@ -195,10 +198,11 @@ def backend_from_env(root: Path) -> Optional[ResearchBackend]:
     mode = os.environ.get("GROOVE_RESEARCH", "").strip().lower()
     if not mode:
         return None
-    if mode != "mock":
-        raise RuntimeError(f"GROOVE_RESEARCH={mode!r} is not supported; only 'mock' exists so far")
+    if mode not in ("mock", "sloop"):
+        raise RuntimeError(f"GROOVE_RESEARCH={mode!r} is not supported; use 'sloop' or 'mock'")
     from .mock import MockEmbedder, MockRenderer
-    path = Path(os.environ.get("GROOVE_ENGINE_METADATA", root / "apps" / "web" / "public" / "engine" / "metadata.json"))
+    engine_dir = Path(os.environ.get("GROOVE_ENGINE_DIR", root / "apps" / "web" / "public" / "engine"))
+    path = Path(os.environ.get("GROOVE_ENGINE_METADATA", engine_dir / "metadata.json"))
     if not path.exists():
         raise RuntimeError(f"engine metadata not found at {path}; build it with scripts/build-engine.py")
     revision = os.environ.get("GROOVE_ENGINE_REVISION", "bac9c05ea7627449405aa10e48da21d75b6c8c56")
@@ -206,4 +210,26 @@ def backend_from_env(root: Path) -> Optional[ResearchBackend]:
         space = ParameterSpace(json.loads(path.read_text(encoding="utf-8")), revision)
     except (ValueError, MetadataError) as error:
         raise RuntimeError(f"engine metadata at {path} is unusable: {error}") from error
-    return ResearchBackend(space, MockRenderer(space), MockEmbedder())
+    if mode == "mock":
+        return ResearchBackend(space, MockRenderer(space), MockEmbedder())
+    from .sloop import SloopRenderer
+    if not (engine_dir / "voicesynth.wasm").exists():
+        raise RuntimeError(f"engine WASM not found in {engine_dir}; build it with scripts/build-engine.py")
+    renderer = SloopRenderer.from_directory(engine_dir, revision)
+    embedder_name = os.environ.get("GROOVE_EMBEDDER", "").strip().lower()
+    if embedder_name == "clap":
+        from .clap import ClapEmbedder
+        embedder: Embedder = ClapEmbedder()
+    elif embedder_name == "mock":
+        embedder = MockEmbedder()
+    else:
+        raise RuntimeError("GROOVE_RESEARCH=sloop needs GROOVE_EMBEDDER=clap (or 'mock' for wiring tests)")
+    corpus_dir = Path(os.environ.get("GROOVE_CORPUS_DIR", root / "artifacts" / "corpus" / embedder_name))
+    backend = ResearchBackend(space, renderer, embedder)
+    if (corpus_dir / "corpus.json").exists():
+        corpus = Corpus.load(corpus_dir)
+        if (corpus.engine_revision, corpus.renderer, corpus.embedder, corpus.recipe) == (
+                revision, renderer.name, embedder.name, backend.recipe):
+            backend.corpus = corpus  # otherwise it is stale and gets rebuilt on the first request
+    backend.corpus_dir = corpus_dir
+    return backend
