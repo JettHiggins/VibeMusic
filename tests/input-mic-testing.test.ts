@@ -100,7 +100,7 @@ test('the mic test report holds measurements only', () => {
   processingProfile: 'noisy-room',
   calibration: cal({ noiseSource: 'measured', noiseFloorDb: -38.94, latencySource: 'tap-along', latencyFrames: 5292, latencySpreadFrames: 220 }),
   micCheck: check.state(-38.9),
-  recorder: { mode: 'manual', capturing: false, provisional: [], committed: 4, dropped: 1, lastError: null, inFlight: null },
+  recorder: { mode: 'manual', capturing: false, provisional: [], timing: [], committed: 4, dropped: 1, lastError: null, inFlight: null },
   analysisP95Ms: 3.21,
  });
  assert.equal(report.capture.processingProfile, 'noisy-room');
@@ -152,7 +152,7 @@ test('live pitch diagnosis explains why singing does or does not become notes', 
  assert.match(clearReference.state(-39).foregroundAdvice, /clears the pitch level gate/);
  const referenceReport = buildMicTestReport({
   browser: 'test', context: { sampleRate: SR }, capture: {}, processingProfile: 'noisy-room', calibration: cal({ noiseFloorDb: -39 }),
-  micCheck: clearReference.state(-39), recorder: { mode: 'manual', capturing: false, provisional: [], committed: 0, dropped: 0, lastError: null, inFlight: null }, analysisP95Ms: null,
+  micCheck: clearReference.state(-39), recorder: { mode: 'manual', capturing: false, provisional: [], timing: [], committed: 0, dropped: 0, lastError: null, inFlight: null }, analysisP95Ms: null,
  });
  assert.equal(referenceReport.micCheck.foregroundMarginDb, 21);
 });

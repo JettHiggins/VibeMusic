@@ -78,6 +78,13 @@ follows, then gets one span covering both, or is excluded and reported as not un
 streams that phrase between beatboxed hits through the real Connection, worker and model. Do not commit the WAV.
 Physical microphones, real voices, accents and room noise are not yet measured.
 
+Noisy rooms: the speech threshold adapts to the quietest 20 ms window of the last 1.5 s (6 dB above it, never
+below -40 dBFS). A loud run that stays within 6 dB for over 1 s is treated as steady noise (or a held sung note) and
+is never transcribed, and the recognizer hears 0.2 s of padding around each measured segment while spans stay
+tight. Measured with Windows TTS commands (voice about -20 dBFS) plus steady synthetic room noise, three noise draws:
+63/63 correct up to -35 dBFS noise, 20/21 at -30, 15/21 at -25 (misses are silence, never wrong commands); speech-free
+noise up to -25 dBFS sent nothing to the recognizer. Not measured: babble/music noise, real rooms, real voices.
+
 Without a configured worker the service answers `available:false` and never sends `speech-verified`.
 EXPERIMENTAL: energy segmentation stands in for a real VAD and treats sustained singing as a candidate segment.
 `tests/test_speech_harness.py` streams a synthetic WAV through the real `Connection` with a SCRIPTED worker; it

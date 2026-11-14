@@ -1,5 +1,6 @@
 import type { ClientMessage, PerformanceEvent, SessionCommand, SessionState, Transport } from '@voicesynth/contracts';
 import type { Onset } from './onset.ts';
+import { gridTiming, type GridTimingEntry } from './grid-timing.ts';
 import type { SungNote } from './pitch.ts';
 
 /**
@@ -30,10 +31,14 @@ export interface RecorderOptions {
 export interface Span { startFrame: number; endFrame: number }
 /** step/duration are the expected quantized cells, for live feedback only; the engine quantizes authoritatively. */
 export interface ProvisionalEvent { event: PerformanceEvent; step: number; duration: number; status: 'provisional' | 'submitted' }
+/** How many recent placements the near-grid timing diagnostic keeps. */
+const TIMING_HISTORY = 32;
 export interface RecorderStatus {
  mode: VerificationMode;
  capturing: boolean;
  provisional: ProvisionalEvent[];
+ /** Recent accepted events with their grid placement (diagnostic only; placement is unchanged). */
+ timing: GridTimingEntry[];
  committed: number;
  dropped: number;
  lastError: string | null;
@@ -52,6 +57,7 @@ export class PerformanceRecorder {
  private transport: Transport | null = null;
  private window: Window | null = null;
  private events: ProvisionalEvent[] = [];
+ private timing: GridTimingEntry[] = [];
  private spans: (Span & { clockId: string })[] = [];
  private analysedThrough = 0;
  private speechVerifiedThrough = -1;
@@ -155,6 +161,8 @@ export class PerformanceRecorder {
   const provisional = { event, step, duration, status: 'provisional' as const };
   if (this.erased(provisional)) { this.dropped++; return; }
   this.events.push(provisional);
+  this.timing.push(gridTiming({ kind: kind === 'drums' ? 'onset' : 'note', ...(event.kind === 'note' ? { midi: event.midi, end } : {}), start }, w.gridOrigin, w.tempo, this.transport?.sampleRate ?? 44100));
+  if (this.timing.length > TIMING_HISTORY) this.timing.shift();
  }
 
  /** Includes submitted input: Undo must discard capture before consuming musical history. */
@@ -173,7 +181,7 @@ export class PerformanceRecorder {
  }
 
  status(): RecorderStatus {
-  return { mode: this.mode, capturing: this.capturing, provisional: this.events.map(e => ({ ...e })), committed: this.committed, dropped: this.dropped, lastError: this.lastError, inFlight: this.inFlight?.id ?? null };
+  return { mode: this.mode, capturing: this.capturing, provisional: this.events.map(e => ({ ...e })), timing: this.timing.slice(), committed: this.committed, dropped: this.dropped, lastError: this.lastError, inFlight: this.inFlight?.id ?? null };
  }
 
  private stepOf(frame: number, wrap = true) {

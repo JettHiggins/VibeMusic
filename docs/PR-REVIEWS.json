@@ -87,12 +87,14 @@
   {
     "pullRequest": 33,
     "headSha": "713975de4d1cb8f6a2461e501204eb05a0711587",
-    "body": "WS1 source review and isolated combined backend verification: 263 passed / 12 optional skips across #33/#34/#35 plus offline isolation. Adaptive steady-noise coverage and recognition padding have focused regressions; preserve the documented steady-noise/TTS limits. Suitable as a repair building block, not evidence of real room conversation or foreground discrimination. Root is preparing reviewed integration; do not restart or duplicate this work."
+    "body": "WS1 source review and isolated combined backend verification: 263 passed / 12 optional skips across #33/#34/#35 plus offline isolation. Adaptive steady-noise coverage and recognition padding have focused regressions; preserve the documented steady-noise/TTS limits. Suitable as a repair building block, not evidence of real room conversation or foreground discrimination. Root is preparing reviewed integration; do not restart or duplicate this work.",
+    "retargetBase": "engine-integration"
   },
   {
     "pullRequest": 35,
     "headSha": "ecbc07b50e64db475c70047077429990fdae71c9",
-    "body": "WS1 reviewed the incremental span/hangover fix against #33 and ran the combined backend suite (263 passed / 12 optional skips). Trimming after the final speech run addresses the reproduced post-command beatboxing case; retain the explicit limitation for speech-like sustained/percussive runs. Suitable for integration with #33, pending combined browser flow. Physical playtest remains required."
+    "body": "WS1 reviewed the incremental span/hangover fix against #33 and ran the combined backend suite (263 passed / 12 optional skips). Trimming after the final speech run addresses the reproduced post-command beatboxing case; retain the explicit limitation for speech-like sustained/percussive runs. Suitable for integration with #33, pending combined browser flow. Physical playtest remains required.",
+    "retargetBase": "engine-integration"
   },
   {
     "pullRequest": 34,
@@ -103,5 +105,16 @@
     "pullRequest": 36,
     "headSha": "5295c5f1629df110000ad1968527c2a4ac88f588",
     "body": "WS1 isolated combined review with both engine capabilities: Node 186 passed / one optional skip; shared checks passed with Python jsonschema available. The profile and same-ID in-flight fence integration are useful; no human acceptance claimed. Follow-up before frozen test: when measure-noise filters sustained pitched input, collected frames may never reach the target, but microphone.ts times out with \"No microphone audio arrived\" although real audio is flowing. Report insufficient quiet/background speech rather than a missing device and test the actual worker/lifecycle path. The approved normal-volume foreground reference/guidance is also still missing; document remaining scope and implement it in a focused WS2 PR. WS1 will exercise mouse erasure with real AudioWorklet and surviving queued input. Do not duplicate engine work."
+  },
+  {
+    "pullRequest": 37,
+    "headSha": "fcfcbb39c82499d07e17d631e08a69e3e539148c",
+    "body": "WS1 reviewed and reproduced remaining ambiguous erase mutations at fcfcbb39: with synth-1 selected, \"erase synth four bar one beat two\" erases synth-1 step 4; \"erase kick and snare bar one beat two\" picks kick; \"erase kick bar one beat two and three\" picks beat two; \"erase synth two and synth three bar one beat two\" picks synth-2. Please reject conflicting/invalid targets and leftover ambiguous positional numbers before any mutation or LLM fallback. Share target resolution with the requested #34 fix and add parser + Connection no-command regressions. The published contract requires ambiguous requests to have no mutation. Positive operation shape/boundaries, captured target context and captureErasure.commandId invalidation are aligned; root is testing compatibility in an isolated integration branch. Keep the PR focused on repair."
+  },
+  {
+    "pullRequest": 32,
+    "headSha": "c4d11c532407c5d4100ec88af17fbfb0dfa208c1",
+    "retargetBase": "engine-integration",
+    "body": "WS1 reviewed the grid-origin/latency-compensated boundary math, bounded 32-event diagnostics and numbers-only export, then integrated #32. Three focused tests passed with real YIN/segmenter boundary fixtures and shared checks passed. In isolated combined repair integration, Node 190 passed / one optional skip and shared checks passed; the merge preserves erase-fence rejection before recording timing entries and retains both processing-profile and grid diagnostics. This provides diagnostic evidence only, without changing quantization, latency compensation or physical timing acceptance."
   }
 ]
