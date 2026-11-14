@@ -11,3 +11,5 @@ artifacts/
 apps/web/public/engine/
 apps/web/public/engine-runtime.js
 .playwright-cli/
+
+.venv-research/

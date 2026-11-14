@@ -109,3 +109,19 @@ VOICESYNTH_INTEGRATION=1 node --import tsx --test services/agent/tests/integrati
 ```
 
 Activate the virtualenv so the subprocess's python3 resolves dependencies, or set VOICESYNTH_PYTHON. This test builds a temporary corpus, tests WAV retrieval and candidate acceptance/undo against real WASM, then removes it. Its embedder is explicitly MOCK, so it cannot establish ranking quality.
+
+## Optional local CLAP and listening evaluation
+
+The local CLAP adapter and blind-listening generator are integrated. Install `requirements-research.txt` in a separate research virtualenv, together with the base requirements. They download model weights on first use and do not use an API key. Do not commit model caches.
+
+The teammate-tested general checkpoint (`laion/clap-htsat-unfused`) is an experimental comparison path. The planned music checkpoint (`laion/larger_clap_music`) is still under compatibility investigation: the teammate observed degenerate text embeddings with transformers 5.23. The adapter refuses degenerate text spaces instead of returning arbitrary rankings. This is not evidence that the music checkpoint itself is broken. Default service research remains unconfigured.
+
+Opt-in commands (from repository root, using the research virtualenv):
+
+```sh
+GROOVE_TEST_CLAP=1 python -m pytest services/agent/tests/test_clap.py
+GROOVE_RESEARCH=sloop GROOVE_EMBEDDER=clap python -m uvicorn groove_agent.app:app --app-dir services/agent --host 127.0.0.1 --port 8000
+GROOVE_RESEARCH=sloop GROOVE_EMBEDDER=clap python -m groove_agent.research.evaluate artifacts/evaluation
+```
+
+For the evaluation module, include `PYTHONPATH=services/agent` when launching from the repository root. Evaluation writes seeded A/B WAVs, a listening sheet, a separate answer key, and measured latencies. Keep the key separate from listeners until preferences are recorded. Embedding scores and synthetic tests do not replace the three-person listening comparison in PLAN.md.
