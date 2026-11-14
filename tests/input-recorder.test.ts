@@ -18,7 +18,13 @@ class FakeEngine {
  dispatch = (input: SessionCommand): ClientMessage => {
   const c = CommandSchema.parse(input); this.sent.push(c);
   if (c.expectedRevision !== this.session.revision) return this.ack(c, 'rejected', 'Stale revision');
-  this.queued.push(c); return this.ack(c, 'queued');
+  if(c.operation.type==='commit-performance'&&c.operation.replacesCommandId){
+   const replaces=c.operation.replacesCommandId;
+   const index=this.queued.findIndex(queued=>queued.id===replaces);
+   if(index<0)return this.ack(c,'rejected','Performance batch no longer queued');
+   const old=this.queued[index];this.queued[index]=c;this.ack(old,'rejected','Performance batch superseded');
+  }else this.queued.push(c);
+  return this.ack(c, 'queued');
  };
  ack(c: SessionCommand, status: 'queued' | 'applied' | 'rejected', reason?: string): ClientMessage {
   const m: ClientMessage = { type: 'ack', commandId: c.id, status, revision: this.session.revision, ...(reason ? { reason } : {}) };
@@ -66,16 +72,16 @@ test('manual takes commit latency-compensated hits once, quantized to sixteenths
  assert.equal(recorder.status().provisional.length, 0);
 });
 
-test('only one batch is in flight; later hits wait for the authoritative acknowledgment', () => {
+test('later verified hits replace the queued batch before the same loop boundary', () => {
  const { engine, recorder, advance, hit } = setup();
  advance(20 * STEP);
  recorder.addOnsets([hit(1)], 0, CLOCK, engine.frame);
  recorder.addOnsets([hit(3)], 0, CLOCK, engine.frame);
- assert.equal(engine.sent.length, 1);
- assert.deepEqual(recorder.status().provisional.map(p => p.status), ['submitted', 'provisional']);
- engine.boundary();
  assert.equal(engine.sent.length, 2);
+ assert.equal(engine.queued.length,1);
+ assert.deepEqual(recorder.status().provisional.map(p => p.status), ['submitted', 'submitted']);
  engine.boundary();
+ assert.equal(recorder.status().committed,2);
  assert.deepEqual(kicks(engine.session), [1, 3]);
 });
 

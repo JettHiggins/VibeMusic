@@ -56,3 +56,13 @@ Meaning: every utterance that starts at or before `throughFrame` has been classi
 ## Next integration step
 
 Integrator: review the `main.tsx` wiring, merge `ui-input` into `engine-integration`, and decide on the `speech-verified` proposal. Workstream 3: emit `command-span` for wake-phrase commands with measured capture-clock frames, plus the verification watermark once agreed.
+
+## Integrated engine/input corrections
+
+The branch is merged into engine-integration. The speech-verified proposal is accepted and routed to PerformanceRecorder, with latency-corrected timestamp semantics in CONTRACTS.md; no fake watermark is generated from connectivity. Hands-free speech is still pending.
+
+Later verified hits now replace the still-queued batch so the complete take can land at the following loop. The superseded command is terminally rejected and the new command includes the older immutable events plus new events. Stopping capture no longer changes the saved session revision. Real-WASM tests now require the complete verified take by the following loop.
+
+Browser testing exposed double triggers on low kick chirps at different FFT-hop phases. Energy-rise detection now uses full-window RMS instead of sub-cycle hop RMS, and a six-phase regression reproduces the earlier failure. Diagnostic test buffers have zero round-trip compensation because they bypass microphone/speaker latency; actual microphone defaults and tap calibration are unchanged. The panel no longer pins a completed take's lane after selecting another lane.
+
+The Linux Chromium software-path diagnostic produced exactly steps [4, 8, 12, 20], four committed hits, continued playback after stop, and about 3.2 ms analysis p95. It injects synthetic audio after the microphone; it does not validate acoustic latency or real beatboxing. The reusable Playwright CLI function is tests/browser/input-pipeline.js.

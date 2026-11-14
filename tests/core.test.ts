@@ -127,3 +127,16 @@ test('record cancelled before any audio callback never opens a recording window'
  s.core.dispatch(s.command('cancel-early',{type:'stop-recording'}));s.render(352801);
  assert.equal(s.core.transport().recording,false);assert.equal(s.core.transport().recordingState,'idle');assert.equal(s.core.transport().playing,true);
 });
+test('verified hits replace a queued performance batch and survive stop-recording until the next loop', {skip:!ready},async()=>{
+ const s=await setup(120);const target={trackId:'drums' as const,lane:'snare' as const};
+ s.core.dispatch(s.command('record-complete',{type:'record',target},'next-loop'));s.render(352801);s.render(20000);
+ const hit=(id:string,offset:number)=>({kind:'onset' as const,id,target,clockId:'clock',captureFrame:352800+offset,confidence:1,velocity:1});
+ const first=hit('first',5500),second=hit('second',11000);
+ s.core.dispatch(s.command('early',{type:'commit-performance',events:[first],excludedSpans:[],verifiedThroughFrame:s.core.transport().currentFrame},'next-loop'));
+ s.core.dispatch(s.command('expanded',{type:'commit-performance',events:[first,second],excludedSpans:[],verifiedThroughFrame:s.core.transport().currentFrame,replacesCommandId:'early'},'next-loop'));
+ assert.deepEqual(s.core.transport().pendingCommandIds,['expanded']);
+ const revision=s.core.getSession().revision;s.core.dispatch(s.command('stop-complete',{type:'stop-recording'}));assert.equal(s.core.getSession().revision,revision);
+ s.render(352800);
+ assert.deepEqual(s.core.getSession().tracks[3].hits.filter(h=>h.lane==='snare').map(h=>h.step).sort((a,b)=>a-b),[1,2]);
+ assert.ok(s.messages.some(m=>m.type==='ack'&&m.commandId==='expanded'&&m.status==='applied'));assert.equal(s.core.transport().playing,true);
+});

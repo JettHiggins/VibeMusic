@@ -21,7 +21,7 @@ export function InputPanel({ voice, session, transport, enabled, dispatch }: Pro
  useEffect(() => { voice.onChange = setState; return () => { voice.onChange = () => {}; }; }, [voice]);
 
  const drums = session.tracks.find(t => t.id === 'drums')!;
- const lane: Lane = (transport?.recordingTarget?.lane ?? session.selected.lane ?? 'kick') as Lane;
+ const lane: Lane = displayedLane(session,transport);
  const recordingState = transport?.recordingState ?? 'idle';
  const position = transport ? describePosition(transport, session.tempo) : null;
  const committed = new Set(drums.hits.filter(h => h.lane === lane).map(h => h.step));
@@ -31,6 +31,7 @@ export function InputPanel({ voice, session, transport, enabled, dispatch }: Pro
 
  return <section aria-label="Drum recording" style={{ border: '1px solid #8884', borderRadius: 8, padding: 16, marginTop: 24 }}>
   <h2 style={{ marginTop: 0 }}>Beatbox drums</h2>
+  <p style={small}>Manual microphone takes: use the controls to start and stop. Speech recognition is not connected yet.</p>
   <div style={row}>
    <button disabled={!enabled || busy || state.microphone === 'starting'} onClick={() => run(() => voice.enableMicrophone())}>{micReady ? 'Restart microphone' : 'Enable microphone'}</button>
    <Meter db={state.levelDb} floor={state.calibration?.noiseFloorDb ?? -60} active={micReady} />
@@ -70,6 +71,11 @@ export function InputPanel({ voice, session, transport, enabled, dispatch }: Pro
   </p>
   {(state.message || state.recorder.lastError) && <p style={{ ...small, color: '#c33' }}>{state.recorder.lastError ?? state.message}</p>}
  </section>;
+}
+
+export function displayedLane(session:SessionState,transport:Transport|null):Lane {
+ const target=transport?.recording?transport.recordingTarget:transport?.recordingState==='armed'?transport.armedTarget:session.selected;
+ return target?.lane??session.selected.lane??'kick';
 }
 
 function describePosition(t: Transport, tempo: number) {

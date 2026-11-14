@@ -35,7 +35,7 @@ type Window = { clockId: string; startFrame: number; target: NonNullable<Transpo
 const MAX_EVENTS = 256, MAX_SPANS = 64, MAX_RETRIES = 4;
 /** The engine ignores events below this confidence (CONTRACTS.md); filter locally so counters stay honest. */
 export const MIN_CONFIDENCE = 0.6;
-const RETRYABLE = /Stale revision|Playback stopped/;
+const RETRYABLE = /Stale revision|Playback stopped|Performance batch no longer queued/;
 
 export class PerformanceRecorder {
  onChange: (status: RecorderStatus) => void = () => {};
@@ -156,21 +156,22 @@ export class PerformanceRecorder {
  }
 
  private pump() {
-  if (this.inFlight || !this.session || !this.window || this.window.clockId !== this.transport?.clockId) { this.changed(); return; }
+  if (!this.session || !this.window || this.window.clockId !== this.transport?.clockId) { this.changed(); return; }
   if (this.mode === 'speech' && !this.speechAvailable) { this.changed(); return; }
   if (this.session.revision < this.minRevision) { this.changed(); return; }
   const mark = this.watermark();
-  const ready = this.events.filter(e => e.status === 'provisional' && e.event.captureFrame <= mark).slice(0, MAX_EVENTS);
+  const submitted = this.inFlight ? this.events.filter(e => this.inFlight!.ids.has(e.event.id)) : [];
+  const ready = this.events.filter(e => e.status === 'provisional' && e.event.captureFrame <= mark).slice(0, MAX_EVENTS-submitted.length);
   if (!ready.length) { this.changed(); return; }
-  this.submit(ready, mark);
+  this.submit([...submitted,...ready], mark, this.inFlight?.id);
  }
 
- private submit(batch: ProvisionalEvent[], mark: number) {
+ private submit(batch: ProvisionalEvent[], mark: number, replacesCommandId?: string) {
   const first = Math.min(...batch.map(e => e.event.captureFrame)), last = Math.max(...batch.map(e => e.event.captureFrame));
   const excludedSpans = this.spans.filter(s => s.clockId === this.window!.clockId && s.startFrame <= last && s.endFrame >= first).slice(-MAX_SPANS).map(({ startFrame, endFrame }) => ({ startFrame, endFrame }));
   const command: SessionCommand = {
    id: this.deps.newId(), expectedRevision: this.session!.revision, boundary: 'next-loop',
-   operation: { type: 'commit-performance', events: batch.map(e => e.event), excludedSpans, verifiedThroughFrame: mark },
+   operation: { type: 'commit-performance', events: batch.map(e => e.event), excludedSpans, verifiedThroughFrame: mark, ...(replacesCommandId?{replacesCommandId}:{}) },
   };
   batch.forEach(e => { e.status = 'submitted'; });
   this.inFlight = { id: command.id, ids: new Set(batch.map(e => e.event.id)) };

@@ -75,7 +75,7 @@ export class OnsetDetector {
  private readonly sensitivity: number;
  private readonly riseDb: number;
  private readonly riseHops: number;
- /** Recent hop RMS levels (dBFS), newest last. */
+ /** Recent window RMS levels (dBFS), newest last. */
  private levels: number[] = [];
  private noiseFloorDb: number;
  /** Ring of raw samples covering the FFT window plus rise-search lookback. */
@@ -158,11 +158,11 @@ export class OnsetDetector {
   let energy = 0;
   for (let i = 0; i < n; i++) {
    const s = this.sample(end - n + i);
-   this.re[i] = s * this.window[i]; this.im[i] = 0;
+   this.re[i] = s * this.window[i]; this.im[i] = 0; energy += s*s;
   }
-  // Energy over the newest hop gives a level with transient-scale time resolution.
-  for (let i = end - this.hop; i < end; i++) { const s = this.sample(i); energy += s * s; }
-  const rmsDb = toDb(Math.sqrt(energy / this.hop));
+  // A hop is shorter than a bass half-cycle: near-zero crossings would appear to be
+  // silence followed by another energy rise. Window RMS follows the envelope instead.
+  const rmsDb = toDb(Math.sqrt(energy / n));
   fft(this.re, this.im);
   let flux = 0;
   const bins = n / 2 + 1;

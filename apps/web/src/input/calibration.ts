@@ -62,6 +62,6 @@ export function estimateLatency(clickFrames: number[], onsetFrames: number[], op
 
 /** Browser-reported latency is a starting point until the performer calibrates. */
 export function defaultCalibration(context: { sampleRate: number; baseLatency?: number; outputLatency?: number }, inputLatencySeconds = 0, deviceId: string | null = null): InputCalibration {
- const seconds = (context.baseLatency ?? 0) + (context.outputLatency ?? 0) + inputLatencySeconds;
+ const seconds = deviceId==='test-signal'?0:(context.baseLatency ?? 0) + (context.outputLatency ?? 0) + inputLatencySeconds;
  return { version: 1, noiseFloorDb: -60, peakDb: null, latencyFrames: Math.round(seconds * context.sampleRate), latencySource: 'default', latencySpreadFrames: null, sampleRate: context.sampleRate, deviceId };
 }

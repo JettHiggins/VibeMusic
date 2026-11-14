@@ -64,3 +64,16 @@ After pulling new contracts, restart uvicorn so it reloads the schemas. For engi
 The workflow now includes macOS and Windows artifact-consumer jobs: they use the Linux-built WASM, run contracts/engine/backend tests and live service integration, and build the browser app. These jobs do not establish physical-microphone latency, browser audio quality, or the WSL2 installation process. Pending or failed remote checks must not be reported as passed.
 
 Optional model experiments use a separate `.venv-research` environment, ignored by git. The CLAP adapter records an immutable Hub snapshot and library versions, rejects incomplete/degenerate model features, and uses restricted weights-only loading for the official PyTorch checkpoints. Model tests require GROOVE_TEST_CLAP=1; ordinary CI does not download weights. General CLAP has passed a local CPU feature-space probe; music compatibility and blind-listening quality are separate acceptance gates.
+
+### Browser input diagnostic
+
+With Vite running and playwright-cli installed, open the page, activate audio, then run the committed browser function:
+
+```sh
+playwright-cli -s=voicesynth-input open http://127.0.0.1:5173/
+playwright-cli -s=voicesynth-input click "getByRole('button', { name: 'Enable audio' })"
+playwright-cli -s=voicesynth-input run-code --filename=tests/browser/input-pipeline.js
+playwright-cli -s=voicesynth-input close
+```
+
+It uses an isolated real engine/context and a synthetic buffer through the actual worklet/worker/recorder. It requires four correctly quantized hits by the following loop and analysis p95 below 50 ms. It does not request microphone permission, upload audio, or measure a real device. Current UI microphone takes are manual; speech and melody input remain pending.

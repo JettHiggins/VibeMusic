@@ -75,9 +75,7 @@ test('beatboxed kick take lands on the grid in the real engine and playback cont
  recorder.verifyThrough('clock', frame - 1);
  core.dispatch(command('stop', { type: 'stop-recording' }));
  // Let the verified batch apply at the next loop boundary while playback keeps running.
- run(Math.ceil(loop), []);
- recorder.verifyThrough('clock', frame - 1);
- run(Math.ceil(loop), []);
+ run(Math.ceil(loop), []); // the complete verified take must land by the following loop
  const kicks = core.getSession().tracks[3].hits.filter(h => h.lane === 'kick').map(h => h.step).sort((a, b) => a - b);
  assert.deepEqual(kicks, intended);
  assert.equal(core.transport().playing, true, 'playback continues after Groove stop');

@@ -1,6 +1,7 @@
 import type { ClientMessage, ServerMessage, SessionCommand, Transport } from '@voicesynth/contracts';
 import { defaultCalibration, estimateLatency, type InputCalibration } from './calibration.ts';
 import { MicrophoneInput, type AnalysisFrame } from './microphone.ts';
+import { handleSpeechMessage } from './speech-messages.ts';
 import { PerformanceRecorder, type RecorderStatus, type VerificationMode } from './recorder.ts';
 import { loadCalibration, saveCalibration } from '../persistence/calibration-store.ts';
 
@@ -45,7 +46,7 @@ export class VoiceInput {
 
  /** Server messages from the agent coordinator; command spans exclude speech from takes. */
  handleServerMessage(message: ServerMessage) {
-  if (message.type === 'command-span') this.recorder.addCommandSpan({ clockId: message.clockId, startFrame: message.startFrame, endFrame: message.endFrame });
+  handleSpeechMessage(this.recorder,message);
  }
  setSpeechAvailable(available: boolean) { this.recorder.setSpeechAvailable(available); }
 
