@@ -365,13 +365,19 @@ def test_describe_audition_refine_accept_by_voice(session):
     assert conn.handle(utter("u5", "use number nine"), 0)[0]["type"] == "error"
     assert conn.handle(utter("u6", "cancel"), 0) == [] and port.cancelled == ["u3:job"]
 
-    # A refinement cancelled before it produced anything leaves the earlier candidates usable.
-    assert conn.handle(utter("u7", "make it darker"), 0) == []
-    conn.observe_research({"type": "research", "jobId": "u7:job", "status": "cancelled", "progress": 0, "candidates": []})
+    # A new job cannot replace a patch acceptance whose authoritative ack is pending.
+    blocked = conn.handle(utter("u7", "make it darker"), 0)
+    assert blocked[0]["status"] == "failed" and "pending" in blocked[0]["error"]
     out = conn.handle(utter("u8", "use the first one"), 0)
     assert out == []  # queued behind the unacknowledged apply-patch from u4
     assert conn.handle({"type": "ack", "commandId": "u4:cmd", "status": "applied", "revision": 1}, 0)[0]["command"][
         "operation"]["patch"] == candidates("u3:job")[0]["patch"]
+    conn.handle({"type": "ack", "commandId": "u8:cmd", "status": "applied", "revision": 2}, 0)
+    # Legacy/default-off producers still retain previous candidates if a later empty
+    # refinement is cancelled. The enabled context consumer instead clears its display.
+    assert conn.handle(utter("u9", "make it darker"), 0) == []
+    conn.observe_research({"type": "research", "jobId": "u9:job", "status": "cancelled", "progress": 0, "candidates": []})
+    assert conn.handle(utter("u10", "use the first one"), 0)[0]["command"]["operation"]["patch"] == candidates("u3:job")[0]["patch"]
 
 
 def test_sound_search_needs_a_synth_track_and_a_backend(session):
