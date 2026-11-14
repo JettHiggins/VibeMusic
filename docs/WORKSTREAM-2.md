@@ -148,3 +148,30 @@ Not yet: reproduction on Lenny's device itself, and next-beat recording / immedi
 - **Armed Record (integration note)**: when WS1's recording-usability contract is adopted, Record leaves the command client's automatic re-issue list (WS1 pins an armed Record to its target and deadline). Until then Record still uses next-loop, and re-issue prevents the stale drop reproduced earlier.
 
 Verified in the browser (test signal): silence countdown 3-2-1 → measuring → −44.6 dBFS for injected noise of about −44.8 dBFS; stopping the mic during timing calibration settled immediately and kept the timing. `npm test` 125 pass, 1 skipped; build ok.
+## Dark monochrome workspace and synth piano roll (branch `ws2-workspace`)
+
+This implements STATUS.md item 4. `ui/Groovebox.tsx` (same export, so `main.tsx` is unchanged) is now a DAW workspace with **no tabs**:
+
+- **Transport bar** (`TransportBar.tsx`, persistent at the top):
+  - Play/Stop, Rec for the selected target (disabled until the mic is on, with the calibration hint when uncalibrated), Stop rec, the REC/COUNT-IN state, Undo, Clear target, tempo −/+, bar.beat;
+  - a fixed-height status line with the pending-change count (it never re-wraps and shifts the editor under the pointer);
+  - a compact **Session** menu (save/load/import/export; closes on Escape or an outside click).
+- **Tracks** (`TrackList.tsx`, left): select, engine · preset, note/hit count, mute, and volume that follows the slider while dragging (throttled to ~10 commands per second).
+- **Editor** (center):
+  - Drums use **step lanes** (`DrumGrid.tsx`): click to toggle; click a lane name to select it as the recording lane and audition it; playhead; dashed pending hits.
+  - Synths use a **piano roll** (`PianoRoll.tsx`): keyboard/pitch axis (25 rows, octave up/down, Center), a four-bar 1/16 grid with beat and bar lines, playhead, create by click with a chosen length, move by drag (time and pitch), resize by dragging the right edge, delete with Delete/Backspace or double-click. Notes that wrap the loop edge render as two segments, recorded-but-unconfirmed notes show dashed, and new/moved notes are auditioned. Empty rolls center on C4; existing rolls center on the median note.
+- **Inspector** (right, collapsible): Sound (`SoundPanel`), Input (`InputInspector`: mic, device, meter, silence, mic check, guided calibration, readiness, take status) and Agent (the WS1/WS3 harness, unchanged).
+- Synth tracks are monophonic, as in the engine: `moveNote`/`resizeNote` replace notes they land on. One shared `PatternEditQueue` and one sound queue stay mounted, so pending edits always receive acknowledgments.
+- The status line ignores `main.tsx`'s raw ack echoes ("applied"), keeping the command client's plain-language text, while still showing engine/asset errors.
+- **FM6** voices use packed factory data, so their generic sliders (which read 0 and would overwrite the real voice) are hidden with an explanation.
+
+Bugs found by browser testing and fixed with tests:
+- Unapplied notes shared one placeholder ID, so React left duplicate notes in the roll after the engine applied the edit. Placeholders are now unique (`pending:N`).
+- The pending indicator wrapped the header, shifting the editor by ~28 px mid-edit. The status is now one fixed line.
+
+Verified:
+- Node: `npm test` 120 pass, 1 skipped; build ok. New `tests/piano-roll.test.ts`: move/resize/delete keep tracks monophonic, centering and pointer mapping, unique placeholders, and real-WASM edits through the queue.
+- Browser, with the mouse: on Synth 1 during playback, added C5 at step 41, dragged C4 to D4 at step 5, lengthened E4 to 10 steps, and deleted G4. After two loop boundaries the engine's notes exactly matched the roll, with no duplicates, a 44 px header throughout, and the status cleared.
+- The 1440 px layout shows transport / tracks / roll / inspector; at narrower widths the inspector moves below. The session menu opens and closes.
+
+Not yet wired: next-beat Record and immediate Clear/Undo. Those buttons still use next-loop until WS1's recording-usability contract is merged.
