@@ -197,3 +197,7 @@ If fingerprints differ, pool results only for one shared kit. Embedding scores a
 the three-person listening comparison in PLAN.md.
 
 `scripts/clap_native_parity.py` reproduces the comparison with LAION's native model code (see its docstring).
+
+### Speech timing inside joined singing/command segments
+
+Local recognition now returns internal word alignment: the existing wire command-span begins at the measured Groove/Grove onset with 120 ms pre-roll, rather than deleting all preceding singing in the same energy segment. It includes the measured end plus at most 120 ms of already-classified quiet. Invalid/missing alignment remains conservative. Paused wake joining and capture-time take checks stay enabled. See TIMED-SPEECH-HANDOFF.md for tests and the pending exact browser reproduction.
