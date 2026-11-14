@@ -30,3 +30,13 @@ python3 vendor/sloop/tools/build_preview.py
 ```
 
 WASM tooling/build validation is Workstream 1's next milestone; it is not needed to start UI or backend work. The upstream preview test script is `vendor/sloop/tests/run_preview_tests.sh`; it will be incorporated into engine CI once the toolchain is established. No firmware flashing is part of this project.
+
+### Engine compiler container
+
+If native clang + lld or Emscripten is unavailable, install Docker and run:
+
+```sh
+python3 scripts/build-engine.py --docker --test
+```
+
+The image contains clang/lld, Python, and Node for upstream native/WASM parity tests. It stages WASM and the upstream worklet in ignored `apps/web/public/engine/`, together with metadata exported from actual C descriptors and factory patches. Generated metadata is not sourced from the upstream editor's mock implementation. For environments where Docker bridge networking cannot reach package mirrors, add `--docker-network host` to the build command. The native build path is `python3 scripts/build-engine.py --test`.
