@@ -1,0 +1,11 @@
+--- a/services/agent/groove_agent/connection.py
++++ b/services/agent/groove_agent/connection.py
+@@ -410,8 +410,6 @@
+             return True
+         if self.session is None or len(split_commands(text)) != 1:
+             return False  # several commands: run them now rather than delaying a stop behind a fragment
+-        if self._hold_lag_exceeded(job):
+-            return False  # the browser's coverage-stall limit wins; act on what was heard
+         result = self._parses(job, text)
+         if isinstance(result, Command) and result.operation["type"] in ("stop-recording", "play"):
+             return False
