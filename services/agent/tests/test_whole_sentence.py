@@ -328,3 +328,60 @@ def test_a_stale_probe_result_cannot_clear_or_act_for_a_newer_probe(tmp_path):
     from dataclasses import replace
     stale = replace(current, job_id=current.job_id + ":old")
     assert connection.speech_result(stale, "Groove, stop.", None, 0.0) == [] and state.probing is current
+
+
+# -- WS1 late-result review (docs/reviews/PR43-late-result-reproduction.py) ---------------------------
+
+def late_research_run(tmp_path, texts, speech, more=(), seconds=13.0, deliver_at=8.0):
+    """Recognition of every segment is delayed until `deliver_at` seconds (a slow recognizer)."""
+    worker = ScriptedWorker(texts)
+    connection = connect(worker, recording=False)
+    connection.session["selected"] = {"trackId": "synth-1"}
+    connection._research = port = FakePort()
+    connection._voice_research = True
+    take = synth_take(tmp_path / "late.wav", hits=(), speech=speech, more_speech=more, seconds=seconds)
+    log = []
+    for chunk in chunks_from_wav(take):
+        replies = connection.handle(chunk, 0.0)
+        if chunk["endFrame"] >= frame_at(deliver_at):
+            replies += worker.finish(connection)
+        log.append((chunk, replies))
+    return port, log
+
+
+def test_a_late_result_for_a_sentence_still_open_is_refused_not_executed(tmp_path):
+    port, log = late_research_run(tmp_path, ["Groove make it sound like a warm piano", "with a soft attack",
+                                             "and a little chorus"], speech=(1, 9.5))
+    replies = flat(log)
+    assert port.started == [] and not [r for r in replies if r["type"] == "research-context"]
+    assert any(r["type"] == "error" and "too long" in r["message"] for r in replies)
+
+
+def test_a_late_result_while_its_continuation_is_still_transcribing_is_refused(tmp_path):
+    # The sentence ends at 6.0 s, but both results arrive only at 8 s: the continuation is pending.
+    port, log = late_research_run(tmp_path, ["Groove make it sound like a warm piano", "with a soft attack"],
+                                  speech=(1, 6), seconds=11)
+    # Past the budget with the continuation still being transcribed, it cannot be known complete:
+    # the whole request is refused, never partly executed.
+    replies = flat(log)
+    assert port.started == [] and not [r for r in replies if r["type"] == "research-context"]
+    assert [r["message"][:36] for r in replies if r["type"] == "error"] == ["that request was too long to hold wh"]
+
+
+def test_a_late_result_for_a_sentence_that_has_ended_is_acted_on_whole(tmp_path):
+    # A short complete request, recognized late (after the budget) once everything is quiet.
+    port, log = late_research_run(tmp_path, ["Groove, find a warm piano"], speech=(1.0, 2.2), seconds=11, deliver_at=8.0)
+    assert [description for _, description, _ in port.started] == ["warm piano"]
+
+
+def test_priority_stop_is_not_held_even_when_recognized_late(tmp_path):
+    worker = ScriptedWorker(["Groove, stop"])
+    connection = connect(worker, recording=True)
+    take = synth_take(tmp_path / "late-stop.wav", hits=(), speech=(1.0, 1.6), seconds=9)
+    log = []
+    for chunk in chunks_from_wav(take):
+        replies = connection.handle(chunk, 0.0)
+        if chunk["endFrame"] >= frame_at(8.0):
+            replies += worker.finish(connection)
+        log.append((chunk, replies))
+    assert commands(flat(log)) == [{"type": "stop-recording"}]

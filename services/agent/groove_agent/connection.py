@@ -411,8 +411,9 @@ class Connection:
             return True
         if self.session is None or len(split_commands(text)) != 1:
             return False  # several commands: run them now rather than delaying a stop behind a fragment
-        if self._hold_lag_exceeded(job):
-            return False  # the browser's coverage-stall limit wins; act on what was heard
+        # No budget shortcut here: a late recognition result past the hold budget is still held, and
+        # _advance_speech then refuses it if the sentence is open or transcribing, or acts on it if
+        # the sentence has ended (WS1 late-result review).
         result = self._parses(job, text)
         if isinstance(result, Command) and result.operation["type"] in ("stop-recording", "play"):
             return False
