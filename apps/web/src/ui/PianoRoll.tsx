@@ -165,9 +165,15 @@ export function PianoRoll({ notes, provisional, playhead, disabled, eraseEnabled
        overflow: 'hidden', whiteSpace: 'nowrap', textAlign: 'left', fontSize: 9, fontFamily: MONO, lineHeight: `${ROW_H - 4}px`, ...LIVE_STYLE[p.state ?? 'provisional'] }}>{k === 0 ? noteName(p.midi) : ''}</button>))}
     {(['above', 'below'] as const).map(side => off[side].length > 0 && <EdgeMarker key={side} side={side} notes={off[side]}
      onShow={midi => navigate(followCenter(center, midi, ROWS))} />)}
+    {/* Chord tones (Note.chord) belong to their root note: drawn with it, moved with it, not separately editable. */}
+    {notes.map(shape).flatMap(n => (n.chord ?? []).map(m => m + n.midi - (notes.find(x => x.id === n.id)?.midi ?? n.midi)).filter(m => rowOf(m) >= 0).flatMap(m =>
+     segments(n.step, n.duration).map(([s, d], k) => <div key={`${n.id}-c${m}-${k}`} aria-hidden data-chord-tone={noteName(m)}
+      style={{ position: 'absolute', left: `${s / STEPS * 100}%`, width: `${d / STEPS * 100}%`, top: rowOf(m) * ROW_H + 2, height: ROW_H - 4, boxSizing: 'border-box', pointerEvents: 'none',
+       background: '#d6d6da40', border: `1px solid ${n.id === selected ? C.accent : C.note}`, borderRadius: 2, fontSize: 8, color: C.text, fontFamily: MONO, overflow: 'hidden', whiteSpace: 'nowrap', paddingLeft: 2, lineHeight: `${ROW_H - 6}px` }}>
+       {k === 0 ? noteName(m) : ''}</div>)))}
     {notes.map(shape).flatMap(n => rowOf(n.midi) < 0 ? [] : segments(n.step, n.duration).map(([s, d], k) => {
      const sel = n.id === selected, pending = PatternEditQueue.isPlaceholder(n.id);
-     return <div key={`${n.id}-${k}`} role="gridcell" aria-label={`${noteName(n.midi)} step ${n.step + 1} length ${n.duration}`} aria-selected={sel}
+     return <div key={`${n.id}-${k}`} role="gridcell" aria-label={`${noteName(n.midi)}${n.chord?.length ? ` chord with ${n.chord.map(noteName).join(' ')}` : ''} step ${n.step + 1} length ${n.duration}`} aria-selected={sel}
       onPointerDown={e => onNoteDown(e, notes.find(x => x.id === n.id)!, 'move')} onDoubleClick={e => { e.stopPropagation(); if (!disabled && eraseEnabled && !pending) { const { x, y, w } = local(e); const cell = cellAt(x, y, w, ROW_H, rows); if (cell) onErase(cell.step); setSelected(null); } }}
       style={{ position: 'absolute', left: `${s / STEPS * 100}%`, width: `${d / STEPS * 100}%`, top: rowOf(n.midi) * ROW_H + 1, height: ROW_H - 2, boxSizing: 'border-box',
        background: pending ? C.pending : sel ? C.noteSelected : C.note, border: `1px solid ${sel ? C.accent : '#0008'}`, borderRadius: 2, cursor: disabled || pending ? 'default' : 'grab',

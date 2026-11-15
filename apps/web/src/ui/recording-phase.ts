@@ -73,7 +73,7 @@ export function takeFeedback(r: RecorderStatus, live: boolean): TakeFeedback {
 export const waitingLabel = (mode: VerificationMode) => mode === 'speech' ? 'waiting for speech check' : 'waiting to be sent';
 
 /** Per-take baseline: the recorder's counters run for the whole microphone session. */
-export interface TakeTracker { startFrame: number | null; epoch: number | null; baseSaved: number; baseNotKept: number; unsaved: number; reset: string | null }
+export interface TakeTracker { startFrame: number | null; epoch: number | null; baseSaved: number; baseNotKept: number; unsaved: number; reset: string | null; grid?: string }
 export const emptyTracker: TakeTracker = { startFrame: null, epoch: null, baseSaved: 0, baseNotKept: 0, unsaved: 0, reset: null };
 
 /**
@@ -81,10 +81,10 @@ export const emptyTracker: TakeTracker = { startFrame: null, epoch: null, baseSa
  * A new recordingEpoch inside the same take is the engine's live-edit restart (Undo, or Clear of the recording
  * target, during capture), which discards notes not yet saved; that is reported from the epoch itself.
  */
-export function trackTake(prev: TakeTracker, t: Transport | null, r: RecorderStatus): TakeTracker {
+export function trackTake(prev: TakeTracker, t: Transport | null, r: RecorderStatus, grid?: string): TakeTracker {
  const unsaved = r.provisional.length + (r.live ? 1 : 0);
  const start = t?.recordingStartFrame ?? null, epoch = t?.recordingEpoch ?? null;
- if (start !== null && start !== prev.startFrame) return { startFrame: start, epoch, baseSaved: r.committed, baseNotKept: r.dropped, unsaved, reset: null };
+ if (start !== null && start !== prev.startFrame) return { startFrame: start, epoch, baseSaved: r.committed, baseNotKept: r.dropped, unsaved, reset: null, grid };
  // Counters only grow for one recorder; a smaller value means a new microphone session.
  const rebase = r.committed < prev.baseSaved || r.dropped < prev.baseNotKept;
  const base = rebase ? { baseSaved: r.committed, baseNotKept: r.dropped } : { baseSaved: prev.baseSaved, baseNotKept: prev.baseNotKept };

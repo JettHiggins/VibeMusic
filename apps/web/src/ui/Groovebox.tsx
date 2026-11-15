@@ -14,7 +14,8 @@ import { InputInspector } from './InputInspector.tsx';
 import { PitchSnapControls } from './PitchSnapControls.tsx';
 import { snapMidiToScale } from '@voicesynth/contracts';
 import { currentTake, emptyTracker, recordingPhase, trackTake, type TakeTracker } from './recording-phase.ts';
-import { RecordingPhaseStrip, TakeFeedbackLine } from './RecordingPhase.tsx';
+import { RecordingPhaseStrip, TakeFeedbackLine, TakeSettings } from './RecordingPhase.tsx';
+import { GRID_OPTIONS, chordBlocked, chordHint, chordOf, gridHint, rhythmOf } from './recording-settings.ts';
 import { C, workspaceCss } from './theme.ts';
 
 export interface GrooveboxProps {
@@ -101,7 +102,9 @@ export function Groovebox({ engine, voice, session, transport, enabled, busy, me
  const status = patterns.lastError ?? result?.text ?? engineMessage ?? '';
  const phase = recordingPhase(transport, session.tempo, TRACK_LABEL[trackId]);
  const tracker = useRef<TakeTracker>(emptyTracker);
- tracker.current = trackTake(tracker.current, transport, input.recorder);
+ const grid = rhythmOf(session), chord = chordOf(session);
+ tracker.current = trackTake(tracker.current, transport, input.recorder, grid);
+ const takeGrid = rec === 'recording' ? (tracker.current.grid as typeof grid | undefined) ?? null : null;
  const take = currentTake(input.recorder, tracker.current);
  const liveNote = input.recorder.live?.event.kind === 'note' ? noteName(snapMidiToScale(input.recorder.live.event.midi, session.pitchSnap)) : null;
  const showTake = micReady && (rec !== 'idle' || take.waiting + take.sent + take.saved + take.notKept > 0 || !!take.reason);
@@ -117,7 +120,11 @@ export function Groovebox({ engine, voice, session, transport, enabled, busy, me
    </aside>
    <main className="vs-center" style={pane} aria-label="Editor">
     <h2>{TRACK_LABEL[trackId]}{trackId === 'drums' ? ' · step sequencer' : ' · piano roll'}{view.pending ? ' · edits apply at the next loop' : ''}</h2>
-    <RecordingPhaseStrip phase={phase} />
+    <RecordingPhaseStrip phase={phase}>
+     <TakeSettings grid={grid} chord={chord} options={GRID_OPTIONS} enabled={enabled}
+      gridHint={gridHint(grid, takeGrid)} chordHint={chordHint(chord, session.pitchSnap)} chordBlocked={chordBlocked(trackId, enabled)}
+      onGrid={g => send({ type: 'set-rhythm-snap', grid: g as typeof grid }, 'immediate')} onChord={m => send({ type: 'set-chord-mode', mode: m as typeof chord }, 'immediate')} />
+    </RecordingPhaseStrip>
     <PitchSnapControls settings={session.pitchSnap ?? null} trackId={trackId} noteCount={view.notes.length} enabled={enabled}
      onChange={settings => send({ type: 'set-pitch-snap', settings }, 'immediate')}
      onSnap={() => { if (trackId !== 'drums') send({ type: 'snap-notes', trackId }, 'next-loop'); }} />
