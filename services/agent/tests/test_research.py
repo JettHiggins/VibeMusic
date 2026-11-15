@@ -4,6 +4,8 @@ import threading
 
 import numpy as np
 import pytest
+
+from groove_agent.research.search import CANDIDATES
 from fastapi.testclient import TestClient
 
 from groove_agent.app import app
@@ -164,7 +166,7 @@ def run_search(seed=11, budget=48, renderer=None, **kwargs):
 def test_search_is_seeded_bounded_and_never_worse_than_retrieval():
     s, seeds, result = run_search()
     assert result.rendered == 48
-    assert len(result.best) == 5 and len({c.key() for c in result.best}) == 5
+    assert len(result.best) == CANDIDATES and len({c.key() for c in result.best}) == CANDIDATES
     assert all(s.problem(c.patch) is None for c in result.best)
     assert result.best[0].score >= max(x.score for x in seeds)
     assert [c.score for c in result.best] == sorted((c.score for c in result.best), reverse=True)
@@ -222,12 +224,15 @@ def test_job_streams_retrieval_first_then_progress_then_complete():
     statuses = [m["status"] for m in messages]
     assert statuses == ["running"] * (len(messages) - 1) + ["complete"]
     assert messages[0]["candidates"] == [] and messages[0]["progress"] == 0
-    retrieval = messages[1]
-    assert len(retrieval["candidates"]) == 5 and all("retrieved" in c["provenance"] for c in retrieval["candidates"])
+    # Retrieved candidates stream one at a time as each preview renders, then evolution begins.
+    streamed = [m for m in messages[1:] if m["candidates"] and all("retrieved" in c["provenance"] for c in m["candidates"])]
+    assert [len(m["candidates"]) for m in streamed][:3] == [1, 2, 3]
+    retrieval = streamed[-1]
+    assert len(retrieval["candidates"]) == CANDIDATES
     progress = [m["progress"] for m in messages]
     assert progress == sorted(progress) and progress[-1] == 1.0 and progress[-2] < 1.0
     final = messages[-1]["candidates"]
-    assert len(final) == 5 and final[0]["score"] >= retrieval["candidates"][0]["score"]
+    assert len(final) == CANDIDATES and final[0]["score"] >= retrieval["candidates"][0]["score"]
     for candidate in final:
         assert "MOCK" in candidate["provenance"]  # mock output is always labeled
         assert service.backend.space.problem(candidate["patch"]) is None
@@ -236,7 +241,11 @@ def test_job_streams_retrieval_first_then_progress_then_complete():
         assert service.preview(token)[:4] == b"RIFF"
     ids = {c["id"]: json.dumps(c["patch"], sort_keys=True) for m in messages for c in m["candidates"]}
     assert len(set(ids.values())) == len(ids)  # an ID always names the same patch
-    assert [c["patch"] for c in collect(ResearchService(backend(budget=32)))[-1]["candidates"]] == [c["patch"] for c in final]
+    # Each search uses a fresh seed (playtest: asking again should explore new sounds); a fixed seed
+    # still reproduces a search exactly for evaluation.
+    fixed = [collect(ResearchService(backend(budget=32, search_seed=7)))[-1]["candidates"] for _ in range(2)]
+    assert [c["patch"] for c in fixed[0]] == [c["patch"] for c in fixed[1]]
+    assert "seed 7" in fixed[0][-1]["provenance"] or any("seed 7" in c["provenance"] for c in fixed[0])
 
 
 def test_job_without_backend_fails_with_the_dependency_named():
@@ -267,7 +276,7 @@ def test_job_cancellation_reports_cancelled_and_keeps_last_candidates():
     assert port.cancel("job1") is True
     release.set()
     port.join()
-    assert messages[-1]["status"] == "cancelled" and len(messages[-1]["candidates"]) == 5
+    assert messages[-1]["status"] == "cancelled" and len(messages[-1]["candidates"]) == CANDIDATES
     assert state["count"] < 12 + 128
     assert port.cancel("job1") is False and port.cancel("nope") is False
 
@@ -414,7 +423,7 @@ def test_sound_request_cancel_and_preview_over_websocket(monkeypatch):
         while not messages or messages[-1]["status"] == "running":
             messages.append(json.loads(ws.receive_text()))
             validate("ServerMessage", messages[-1])
-        assert messages[-1]["status"] == "complete" and len(messages[-1]["candidates"]) == 5
+        assert messages[-1]["status"] == "complete" and len(messages[-1]["candidates"]) == CANDIDATES
         url = messages[-1]["candidates"][0]["previewUrl"]
         path = url.removeprefix("http://127.0.0.1:8000")
         response = client.get(path, headers={"origin": "http://localhost:5173"})
@@ -455,8 +464,45 @@ def test_cached_corpus_candidates_have_real_previews_after_restart(tmp_path):
     port.start('cached', 'electric piano')
     port.join(5)
     assert messages[-1]['status'] == 'complete', messages[-1].get('error')
-    assert len(messages[-1]['candidates']) == 5
+    assert len(messages[-1]['candidates']) == CANDIDATES
     for candidate in messages[-1]['candidates']:
         assert candidate['previewUrl']
         token = candidate['previewUrl'].rsplit('/', 1)[1][:-4]
         assert service.preview(token)[:4] == b'RIFF'
+
+
+def test_candidates_are_diverse_and_fresh_searches_explore_new_variations():
+    from groove_agent.research.search import Scored, diverse
+    near = lambda *v: unit(np.asarray(v, dtype=np.float32))
+    clones = [Scored({"id": i}, 0.9 - i * 0.001, "clone", None, near(1, 0.01 * i)) for i in range(4)]
+    distinct = Scored({"id": "other"}, 0.8, "distinct", None, near(0, 1))
+    picked = diverse(clones + [distinct], k=2)
+    assert [p.patch["id"] for p in picked] == [0, "other"]  # not two near-identical clones
+    runs = [collect(ResearchService(backend(budget=32)))[-1]["candidates"] for _ in range(2)]
+    assert [c["patch"] for c in runs[0]] != [c["patch"] for c in runs[1]]  # random seed per search
+
+
+@pytest.mark.parametrize("text, description", [
+    ("change the sound to a warm electric piano", "warm electric piano"), ("switch to a bright pluck", "bright pluck"),
+    ("use a soft pad sound", "soft pad"), ("can I get a deep bass", "deep bass"), ("let me hear a glassy bell", "glassy bell"),
+    ("try a dark synth lead", "dark synth lead"), ("turn it into an organ", "organ"), ("make it a string section", "string section"),
+    ("Groove, load a vintage organ", "vintage organ"),
+])
+def test_common_sound_requests_need_no_language_model(session, text, description):
+    assert interpret(text, session, False) == SoundSearch(description)
+
+
+@pytest.mark.parametrize("text, index", [("use number two", 2), ("use it", 1), ("take the second one", 2),
+                                         ("keep this one", 1), ("accept candidate 3", 3), ("apply number ten", 10)])
+def test_accepting_needs_an_explicit_candidate(session, text, index):
+    assert interpret(text, session, False) == AcceptCandidate(index)
+
+
+@pytest.mark.parametrize("text", ["use the soft one", "use the last one", "take the warm one"])
+def test_ambiguous_accepts_refuse_instead_of_applying_candidate_one(session, text):
+    assert isinstance(interpret(text, session, False), NotUnderstood)
+
+
+def test_track_selection_phrases_are_unchanged(session):
+    assert interpret("switch to synth two", session, False).operation == {"type": "select", "target": {"trackId": "synth-2"}}
+    assert interpret("change to snare", session, False).operation["target"] == {"trackId": "drums", "lane": "snare"}

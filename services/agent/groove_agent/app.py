@@ -44,7 +44,8 @@ def language_label() -> str:
         return "parser"
     gate = getattr(language, "gate", None)
     remaining = gate.blocked() if gate is not None else None
-    label = "openrouter/deepagents (free-only)"
+    config = getattr(language, "config", None)
+    label = config.label if config is not None else "openrouter/deepagents (free-only)"
     return label if remaining is None else f"{label}; cooling down {max(1, round(remaining))} s, exact commands only"
 
 
