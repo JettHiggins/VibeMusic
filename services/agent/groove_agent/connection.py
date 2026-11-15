@@ -16,7 +16,7 @@ import secrets
 from collections import OrderedDict, deque
 from copy import deepcopy
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Callable, Deque, Mapping, Optional, Protocol, Sequence, Union
 
 from .intents import (BOUNDARY, MELODIC_TRACKS, WAKE_WORDS, AcceptCandidate, AuditionCandidate, CancelSearch, Command, Ignored, Interpretation,
@@ -39,6 +39,11 @@ REMEMBERED_UTTERANCES = 256
 # People pause after the wake word ("Groove, ... stop"); segmentation then splits it off.
 # A segment that is only the wake word waits this long for the command that follows it.
 WAKE_JOIN_SECONDS = 2.0
+# The same wait applies to an addressed sentence that is not yet a complete command ("Groove, set the
+# tempo to <pause> one twenty") or that the segmenter cut at its maximum length: it is held for its
+# continuation instead of executing (or reaching the language model) as a fragment. Complete
+# commands such as "Groove stop" never wait. A held sentence is never extended beyond this length.
+MAX_SENTENCE_SECONDS = 12.0
 # Without a configured recognizer, speech-audio is validated and dropped and speech-verified is
 # never sent: nothing was classified.
 # Browser input actions (MUSICAL-CONTROL-CONTRACT.md): a request the browser never starts is given up
@@ -69,7 +74,7 @@ class _SpeechStream:
     pending: "Deque[SpeechJob]"
     verified: int = -1
     failed: bool = False
-    held_wake: Optional[tuple] = None  # (job, text): a bare wake word waiting for its command
+    held_wake: Optional[tuple] = None  # (job, text): a bare wake word or unfinished sentence waiting for the rest
     input_key: Optional[tuple] = None  # browser (clockId, inputRevision) when the stream began
 
 
@@ -287,14 +292,17 @@ class Connection:
         held = state.held_wake
         if held is not None and text:
             state.held_wake = None
-            wake_job, wake_text = held
-            if job.segment.start_frame - wake_job.segment.last_frame <= self._wake_join_frames():
-                out.extend(self._speech_utterance(wake_job, f"{wake_text} {text}", now, end=job.segment.last_frame))
-                text = ""
+            held_job, held_text = held
+            joined = f"{held_text} {text}"
+            if (job.segment.start_frame - held_job.segment.last_frame <= self._wake_join_frames()
+                    and self._continues(held_job, held_text, text, joined)):
+                job = replace(held_job, segment=replace(held_job.segment, last_frame=job.segment.last_frame,
+                                                        cut=job.segment.cut))
+                text = joined
             else:
-                out.extend(self._speech_utterance(wake_job, wake_text, now))
+                out.extend(self._speech_utterance(held_job, held_text, now))
         if text:
-            if _bare_wake(text):
+            if self._unfinished(job, text):
                 state.held_wake = (job, text)
             else:
                 out.extend(self._speech_utterance(job, text, now))
@@ -319,6 +327,41 @@ class Connection:
                 research_obsolete=(job.research_epoch < self._research_epoch or self._older_research_intent(job.clock_id, context_start)),
                 emit_span=not any(m["type"] == "command-span" for m in out)))
         return out
+
+    def _speech_context(self, job: SpeechJob) -> tuple[bool, bool, Optional[dict]]:
+        start = job.context_start_frame if job.context_start_frame is not None else job.segment.start_frame
+        window = self._window_at(start)
+        recording = window is not None and window.kind == "recording"
+        return recording, window is not None and window.kind == "armed", window.target if recording else None
+
+    def _parses(self, job: SpeechJob, text: str) -> Interpretation:
+        recording, armed, target = self._speech_context(job)
+        return self._interpret(text, self.session, recording, take_armed=armed, recording_target=target)
+
+    def _unfinished(self, job: SpeechJob, text: str) -> bool:
+        """Hold a bare wake word, or one addressed sentence that does not yet parse as a command."""
+        if _bare_wake(text):
+            return True
+        if self.session is None or len(split_commands(text)) != 1:
+            return False  # several commands: run them now rather than delaying a stop behind a fragment
+        rate = (self.transport or {}).get("sampleRate", 44100)
+        if job.segment.last_frame - job.segment.start_frame > MAX_SENTENCE_SECONDS * rate:
+            return False
+        return isinstance(self._parses(job, text), NotUnderstood)
+
+    def _continues(self, held_job: SpeechJob, held_text: str, text: str, joined: str) -> bool:
+        """Whether the next segment completes the held sentence rather than being separate audio."""
+        tokens = tokenize(text)
+        if tokens and tokens[0] in WAKE_WORDS:
+            return False  # a new addressed command, not the rest of this one
+        if _bare_wake(held_text):
+            return True
+        recording, _, _ = self._speech_context(held_job)
+        if not recording or held_job.segment.cut:
+            return True
+        # During a take, never stretch a command span over singing that merely followed a refused
+        # fragment: join only when the result is an actual command.
+        return not isinstance(self._parses(held_job, joined), NotUnderstood)
 
     def _wake_join_frames(self) -> int:
         return round(WAKE_JOIN_SECONDS * (self.transport or {}).get("sampleRate", 44100))

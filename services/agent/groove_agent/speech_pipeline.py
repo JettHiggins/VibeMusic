@@ -64,6 +64,8 @@ class Segment:
     # raised threshold clips weak onsets/endings ("Play" was heard as "Light"/"Clear" without it).
     pre: np.ndarray = field(default_factory=lambda: np.zeros(0, np.float32))
     post: np.ndarray = field(default_factory=lambda: np.zeros(0, np.float32))
+    # Closed by max_segment while speech was still going: the sentence continues in the next segment.
+    cut: bool = False
 
     @property
     def recognition_samples(self) -> np.ndarray:
@@ -198,13 +200,16 @@ class EnergySegmenter:
             return None
         speech = state[1] >= windows(self.min_speech_s)
         full = len(self._history_s) >= windows(self.max_segment_s)
+        cut = False
         if speech:
             # The hangover runs from the last speech, not the last burst; close between bursts.
             since_speech = len(self._history_s) - 1 - state[5]
             # Close only in a real gap (burst_gap of quiet): a word onset like the "st" of "stop"
             # is followed by its vowel within ~40 ms, while beatboxed hits leave ~0.2 s gaps.
-            if not full and (loud or since_speech < windows(self.hangover_s) or state[2] < windows(self.burst_gap_s)):
+            still_speaking = loud or since_speech < windows(self.hangover_s) or state[2] < windows(self.burst_gap_s)
+            if not full and still_speaking:
                 return None
+            cut = full and still_speaking
             keep = self._speech_end(state[5], windows(self.tail_s)) + 1
         else:
             # Short bursts close after a brief gap, so beatboxing never holds the watermark.
@@ -222,7 +227,7 @@ class EnergySegmenter:
         self._decided_through = int(win_frames[-1])
         if not speech or not len(frames):
             return None  # only short bursts such as beatboxed hits: not speech
-        return Segment(int(frames[0]), int(frames[-1]), samples, self.sample_rate, pre, post)
+        return Segment(int(frames[0]), int(frames[-1]), samples, self.sample_rate, pre, post, cut)
 
     def _speech_end(self, last_speech: int, tail: int) -> int:
         """Last window of the command: its last speech run plus a final consonant that starts

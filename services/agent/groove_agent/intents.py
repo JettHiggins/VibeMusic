@@ -368,7 +368,7 @@ def interpret(text: str, session: Mapping[str, Any], during_recording: bool, tak
     if verb == "undo":
         return _command({"type": "undo"})
 
-    if verb in ("stop", "end", "finish", "pause"):
+    if verb in ("stop", "stops", "stopped", "end", "finish", "pause"):
         if any(word in _STOP_PLAYBACK_WORDS for word in rest):
             return _command({"type": "play", "playing": False})
         if "recording" in rest or "record" in rest:
