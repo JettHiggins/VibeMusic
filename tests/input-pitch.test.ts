@@ -177,3 +177,26 @@ test('a mixed transition frame cannot veto the following settled pitch indefinit
  assert.deepEqual(notes.map(n=>n.midi),[67,65]);
  assert.ok(Math.abs(notes[1].startFrame-40*hop)<4*hop,'transition should retain its boundary rather than drop the note');
 });
+
+test('fast adjacent semitones survive low and high vocal registers',()=>{
+ for(const base of [43,48,57,67,76])for(const db of [-22,-42])for(const seed of [1,4,7]){
+  const phrase:Sung[]=[base,base+1,base+2,base+3].map((midi,i)=>({midi,start:.15+i*.125,end:.15+(i+1)*.125,db}));
+  const {notes}=analyse(sing(phrase,.9,-60,seed));
+  const context=`register ${base}, level ${db}, seed ${seed}`;
+  assert.deepEqual(notes.map(n=>n.midi),phrase.map(n=>n.midi),context);
+  notes.forEach((n,i)=>{
+   assert.ok(Math.abs(ms(n.startFrame)-phrase[i].start*1000)<35,`${context}, onset ${i}`);
+   assert.ok(Math.abs(ms(n.endFrame)-phrase[i].end*1000)<40,`${context}, release ${i}`);
+  });
+ }
+});
+
+test('fast repeated articulated notes retain separate onsets across vocal registers',()=>{
+ for(const midi of [43,60,76])for(const period of [.125,.25])for(const db of [-22,-42])for(const seed of [1,4,7]){
+  const start=.15+seed*256/SR/8;
+  const phrase:Sung[]=Array.from({length:4},(_,i)=>({midi,start:start+i*period,end:start+(i+1)*period-.03,db}));
+  const {notes}=analyse(sing(phrase,1.3,-60,seed));
+  assert.equal(notes.length,4,`pitch ${midi}, period ${period}, level ${db}, seed ${seed}: ${JSON.stringify(notes)}`);
+  assert.ok(notes.every(n=>n.midi===midi),`pitch ${midi}, period ${period}, level ${db}, seed ${seed}: ${JSON.stringify(notes)}`);
+ }
+});
