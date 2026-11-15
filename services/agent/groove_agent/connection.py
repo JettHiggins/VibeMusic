@@ -16,7 +16,7 @@ import secrets
 from collections import OrderedDict, deque
 from copy import deepcopy
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Callable, Deque, Mapping, Optional, Protocol, Sequence, Union
 
 from .intents import (BOUNDARY, MELODIC_TRACKS, WAKE_WORDS, AcceptCandidate, AuditionCandidate, CancelSearch, Command, Ignored, Interpretation,
@@ -25,8 +25,9 @@ from .control_phrases import InputAction
 from .speech import ChunkError, StreamTracker, decode_chunk
 from .speech_pipeline import EnergySegmenter, SpeechJob, SpeechWorker
 from .speech_pipeline import Transcript
-from .speech_alignment import locate_command
+from .speech_alignment import SUNG_SYLLABLES, locate_command
 from .preview import PreviewRequests
+from .research.service import NOT_CONFIGURED
 
 from .language import LanguageJob
 from .contracts import ContractError, validate
@@ -39,6 +40,16 @@ REMEMBERED_UTTERANCES = 256
 # People pause after the wake word ("Groove, ... stop"); segmentation then splits it off.
 # A segment that is only the wake word waits this long for the command that follows it.
 WAKE_JOIN_SECONDS = 2.0
+# The same wait applies to an addressed sentence that is not yet a complete command ("Groove, set the
+# tempo to <pause> one twenty"), to a segment the segmenter cut at its maximum length even when its
+# prefix already parses, and to open-ended sound descriptions ("make it sound like a warm piano
+# <pause> with a soft attack"): each is held for its continuation instead of executing, starting
+# research or reaching the language model as a fragment. Stop commands never wait.
+# Holding keeps speech-verified at the held sentence's start. The browser fails a stream whose
+# coverage lags received audio by more than 8 s (SpeechSession SPEECH_STALL_SECONDS), so a hold is
+# released once the audio received since the sentence began exceeds this budget, leaving margin for
+# recognition of the following segment.
+HOLD_LAG_BUDGET_SECONDS = 6.5
 # Without a configured recognizer, speech-audio is validated and dropped and speech-verified is
 # never sent: nothing was classified.
 # Browser input actions (MUSICAL-CONTROL-CONTRACT.md): a request the browser never starts is given up
@@ -69,8 +80,12 @@ class _SpeechStream:
     pending: "Deque[SpeechJob]"
     verified: int = -1
     failed: bool = False
-    held_wake: Optional[tuple] = None  # (job, text): a bare wake word waiting for its command
+    held_wake: Optional[tuple] = None  # (job, text): a bare wake word or unfinished sentence waiting for the rest
     input_key: Optional[tuple] = None  # browser (clockId, inputRevision) when the stream began
+    probing: Optional[SpeechJob] = None  # latest early-stop probe of the open segment
+    # Last frame of a request refused at the hold budget. Speech continuing it (within the join
+    # window, not a new "Groove ...") belongs to that refused request and is never acted on alone.
+    refused_through: Optional[int] = None
 
 
 @dataclass
@@ -254,7 +269,19 @@ class Connection:
                 self._speech_state.popitem(last=False)
         if state.failed:
             return out
-        for segment in state.segmenter.feed(chunk):
+        segments = state.segmenter.feed(chunk)
+        probes, state.segmenter.probes = state.segmenter.probes, []
+        if segments:
+            state.probing = None  # the closed segment's own transcript decides
+        elif (probes and getattr(self._speech, "supports_probe", False) and state.held_wake is None
+              and state.probing is None):  # at most one probe in flight: no recognizer backlog
+            window = self._window_at(probes[-1].start_frame)
+            if window is not None and window.end is None and window.kind in ("recording", "armed"):
+                self._segment_count += 1
+                state.probing = SpeechJob(f"{stream_id}:probe-{self._segment_count}", stream_id, chunk.clock_id,
+                                          probes[-1], research_epoch=self._research_epoch, probe=True)
+                self._speech.submit(state.probing)
+        for segment in segments:
             self._segment_count += 1
             job = SpeechJob(f"{stream_id}:speech-{self._segment_count}", stream_id, chunk.clock_id, segment,
                             research_epoch=self._research_epoch)
@@ -272,6 +299,8 @@ class Connection:
         if self._closed:
             return []
         state = self._speech_state.get(job.stream_id)
+        if job.probe:
+            return self._probe_result(state, job, text, error, now)
         if state is None or state.failed or job not in state.pending:
             return []
         state.pending.remove(job)
@@ -284,17 +313,30 @@ class Connection:
                      "reason": "recognition failed; speech-verified stopped for this stream; hold speech-dependent commits"}]
         out: list[dict] = []
         job, text = locate_command(job, text or "", state.segmenter.decided_through)
+        if state.refused_through is not None:
+            tokens = tokenize(text)
+            continuing = (job.segment.start_frame - state.refused_through <= self._wake_join_frames()
+                          and not (tokens and tokens[0] in WAKE_WORDS)
+                          and not (tokens and all(token in SUNG_SYLLABLES for token in tokens)))
+            if continuing:
+                state.refused_through = job.segment.last_frame
+                out.extend(self._refused_span(job))
+                return out + self._advance_speech(job.stream_id, job.clock_id, now)
+            state.refused_through = None
         held = state.held_wake
         if held is not None and text:
             state.held_wake = None
-            wake_job, wake_text = held
-            if job.segment.start_frame - wake_job.segment.last_frame <= self._wake_join_frames():
-                out.extend(self._speech_utterance(wake_job, f"{wake_text} {text}", now, end=job.segment.last_frame))
-                text = ""
+            held_job, held_text = held
+            joined = f"{held_text} {text}"
+            if (job.segment.start_frame - held_job.segment.last_frame <= self._wake_join_frames()
+                    and self._continues(held_job, held_text, text, joined)):
+                job = replace(held_job, segment=replace(held_job.segment, last_frame=job.segment.last_frame,
+                                                        cut=job.segment.cut))
+                text = joined
             else:
-                out.extend(self._speech_utterance(wake_job, wake_text, now))
+                out.extend(self._speech_utterance(held_job, held_text, now))
         if text:
-            if _bare_wake(text):
+            if self._unfinished(job, text):
                 state.held_wake = (job, text)
             else:
                 out.extend(self._speech_utterance(job, text, now))
@@ -320,6 +362,79 @@ class Connection:
                 emit_span=not any(m["type"] == "command-span" for m in out)))
         return out
 
+    def _probe_result(self, state: Optional[_SpeechStream], job: SpeechJob, text, error: Optional[str],
+                      now: float) -> list[dict]:
+        """Act on a probe only when it is exactly a stop of the current take; then split the open
+        segment there so the stop is not repeated and following singing stays in the take."""
+        if state is None or state.probing is not job:
+            return []  # a stale probe never clears or acts for a newer one
+        state.probing = None  # this probe is finished, whatever its result: later dips may probe again
+        if state.failed or error is not None or state.pending:
+            return []
+        located, words = locate_command(job, text or "")
+        if not words or len(split_commands(words)) != 1:
+            return []
+        result = self._parses(located, words)
+        if not isinstance(result, Command) or result.operation != {"type": "stop-recording"}:
+            return []
+        if not state.segmenter.split_after(job.segment.start_frame, located.segment.last_frame):
+            return []
+        return self._speech_utterance(located, words, now) + self._advance_speech(job.stream_id, job.clock_id, now)
+
+    def _refused_span(self, job: SpeechJob) -> list[dict]:
+        """During a take, refused addressed speech is still command audio: exclude it, act on nothing."""
+        recording, _, _ = self._speech_context(job)
+        if not recording or self._obsolete(self._window_at(job.segment.start_frame)):
+            return []
+        return [{"type": "command-span", "utteranceId": job.job_id, "clockId": job.clock_id,
+                 "startFrame": job.segment.start_frame, "endFrame": job.segment.last_frame}]
+
+    def _speech_context(self, job: SpeechJob) -> tuple[bool, bool, Optional[dict]]:
+        start = job.context_start_frame if job.context_start_frame is not None else job.segment.start_frame
+        window = self._window_at(start)
+        recording = window is not None and window.kind == "recording"
+        return recording, window is not None and window.kind == "armed", window.target if recording else None
+
+    def _parses(self, job: SpeechJob, text: str) -> Interpretation:
+        recording, armed, target = self._speech_context(job)
+        return self._interpret(text, self.session, recording, take_armed=armed, recording_target=target)
+
+    def _hold_lag_exceeded(self, job: SpeechJob) -> bool:
+        rate = (self.transport or {}).get("sampleRate", 44100)
+        received = self._received_capture.get(job.clock_id, job.segment.last_frame)
+        return received - job.segment.start_frame > HOLD_LAG_BUDGET_SECONDS * rate
+
+    def _unfinished(self, job: SpeechJob, text: str) -> bool:
+        """Hold a bare wake word, a cut segment, an open-ended sound description, or a sentence that
+        does not yet parse. A stop is never held, even inside a cut segment."""
+        if _bare_wake(text):
+            return True
+        if self.session is None or len(split_commands(text)) != 1:
+            return False  # several commands: run them now rather than delaying a stop behind a fragment
+        # No budget shortcut here: a late recognition result past the hold budget is still held, and
+        # _advance_speech then refuses it if the sentence is open or transcribing, or acts on it if
+        # the sentence has ended (WS1 late-result review).
+        result = self._parses(job, text)
+        if isinstance(result, Command) and result.operation["type"] in ("stop-recording", "play"):
+            return False
+        return job.segment.cut or isinstance(result, (NotUnderstood, SoundSearch))
+
+    def _continues(self, held_job: SpeechJob, held_text: str, text: str, joined: str) -> bool:
+        """Whether the next segment completes the held sentence rather than being separate audio."""
+        tokens = tokenize(text)
+        if tokens and tokens[0] in WAKE_WORDS:
+            return False  # a new addressed command, not the rest of this one
+        if tokens and all(token in SUNG_SYLLABLES for token in tokens):
+            return False  # singing after the sentence is music, never part of the request
+        if _bare_wake(held_text):
+            return True
+        recording, _, _ = self._speech_context(held_job)
+        if not recording or held_job.segment.cut:
+            return True
+        # During a take, never stretch a command span over singing that merely followed a refused
+        # fragment: join only when the result is an actual command.
+        return not isinstance(self._parses(held_job, joined), NotUnderstood)
+
     def _wake_join_frames(self) -> int:
         return round(WAKE_JOIN_SECONDS * (self.transport or {}).get("sampleRate", 44100))
 
@@ -331,9 +446,23 @@ class Connection:
             return []
         out: list[dict] = []
         decided = state.segmenter.decided_through
-        if (state.held_wake is not None and not state.pending
-                and decided >= state.held_wake[0].segment.last_frame + self._wake_join_frames()):
-            wake_job, wake_text = state.held_wake  # no command followed: excluded, then not understood
+        if (state.held_wake is not None and self._hold_lag_exceeded(state.held_wake[0])
+                and (state.pending or state.segmenter.speaking)):
+            # The browser's coverage-stall bound is reached while the sentence may still be going on:
+            # refuse truthfully instead of acting on an unfinished request, and treat its
+            # continuation as part of it. Unclassified audio after it stays unverified.
+            held_job, held_text = state.held_wake
+            state.held_wake = None
+            state.refused_through = held_job.segment.last_frame
+            out.extend(self._refused_span(held_job))
+            out.append(_error(held_job.job_id, "that request was too long to hold while listening; nothing was changed. "
+                                               f"Say it again as one sentence of under {HOLD_LAG_BUDGET_SECONDS - 1:g} seconds"))
+        elif state.held_wake is not None and not state.pending and (
+                decided >= state.held_wake[0].segment.last_frame + self._wake_join_frames()
+                # At the budget with nothing open or transcribing, the sentence has ended: act on it.
+                or (self._hold_lag_exceeded(state.held_wake[0]) and not state.segmenter.speaking
+                    and decided >= state.held_wake[0].segment.last_frame)):
+            wake_job, wake_text = state.held_wake  # nothing followed: act on it (or report it) as heard
             state.held_wake = None
             out.extend(self._speech_utterance(wake_job, wake_text, now))
         bound = decided
@@ -447,8 +576,7 @@ class Connection:
             # The browser only displays research for jobs it knows: its own requests, or ones
             # announced by research-context (voice research). Never start a spoken job it would
             # silently ignore; say why instead.
-            reason = ("sound search is not configured on this service (GROOVE_RESEARCH); no sound was searched"
-                      if self._research is None else
+            reason = (f"{NOT_CONFIGURED}; no sound was searched" if self._research is None else
                       "spoken sound search is off on this service (start it with GROOVE_VOICE_RESEARCH=1); "
                       "use the Sound panel to search, no sound was searched")
             return [_error(voice_request_id, reason)]

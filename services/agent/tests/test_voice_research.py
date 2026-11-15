@@ -222,7 +222,7 @@ def test_closed_speech_job_cannot_supersede_a_newer_ui_request(tmp_path):
     conn, port = connection(speech=worker)
     # Use the WAV harness clock while preserving the selected synth/research backend.
     send(conn, transport_message("recording", 352800))
-    stream(conn, worker, chunks_from_wav(synth_take(tmp_path / "late.wav")), transcribe_each_chunk=False)
+    stream(conn, worker, chunks_from_wav(synth_take(tmp_path / "late.wav", seconds=5.5)), transcribe_each_chunk=False)
     assert worker.jobs
     ui_search(conn, "newer-ui")
     replies = worker.finish(conn)
@@ -240,7 +240,7 @@ def test_open_speech_segment_closing_later_uses_measured_wake_time_for_ui_order(
         Word("Groove", 2, 2.2), Word("find a warm piano", 2.2, 2.7)))])
     conn, port = connection(speech=worker)
     send(conn, transport_message("recording", 352800))
-    take = synth_take(tmp_path / "open.wav", hits=(), speech=(1, 2.5), more_speech=((3, 3.7),), seconds=5)
+    take = synth_take(tmp_path / "open.wav", hits=(), speech=(1, 2.5), more_speech=((3, 3.7),), seconds=6.5)
     chunks = list(chunks_from_wav(take))
     split = next(i for i, c in enumerate(chunks) if c["startFrame"] >= frame_at(2.96))
     stream(conn, worker, chunks[:split])
@@ -260,7 +260,7 @@ def test_open_older_wake_is_refused_when_segment_closes_after_ui_request(tmp_pat
     worker = ScriptedWorker(["Groove find a warm piano"])
     conn, port = connection(speech=worker)
     send(conn, transport_message("recording", 352800))
-    chunks = list(chunks_from_wav(synth_take(tmp_path / "old-open.wav")))
+    chunks = list(chunks_from_wav(synth_take(tmp_path / "old-open.wav", seconds=5.5)))
     split = next(i for i, c in enumerate(chunks) if c["startFrame"] >= frame_at(2.4))
     stream(conn, worker, chunks[:split])
     send(conn, transport_message("recording", frame_at(2.4)))

@@ -172,9 +172,11 @@ def test_watermark_waits_for_a_slow_transcription_then_follows_its_span(take):
     assert late[-1]["throughFrame"] > frame_at(2.7)
 
 
-def test_issue_3d_wake_phrase_not_understood_is_excluded_then_reported_without_mutation(take):
+def test_issue_3d_wake_phrase_not_understood_is_excluded_then_reported_without_mutation(tmp_path):
+    # An unparsed addressed sentence waits WAKE_JOIN_SECONDS for its continuation (whole-sentence
+    # endpointing), so the take runs long enough for that wait to end.
     worker = ScriptedWorker(["Groove, banana"])
-    replies = flat(stream(connect(worker), worker, chunks_from_wav(take)))
+    replies = flat(stream(connect(worker), worker, chunks_from_wav(synth_take(tmp_path / "t.wav", seconds=5.5))))
     kinds = [r["type"] for r in replies]
     assert "command" not in kinds
     span = kinds.index("command-span")

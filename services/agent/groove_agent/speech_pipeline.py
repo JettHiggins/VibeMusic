@@ -64,6 +64,8 @@ class Segment:
     # raised threshold clips weak onsets/endings ("Play" was heard as "Light"/"Clear" without it).
     pre: np.ndarray = field(default_factory=lambda: np.zeros(0, np.float32))
     post: np.ndarray = field(default_factory=lambda: np.zeros(0, np.float32))
+    # Closed by max_segment while speech was still going: the sentence continues in the next segment.
+    cut: bool = False
 
     @property
     def recognition_samples(self) -> np.ndarray:
@@ -101,6 +103,10 @@ class EnergySegmenter:
     burst_gap_s: float = 0.10  # quiet that ends a candidate with only short bursts (beatboxed hits)
     hangover_s: float = 0.60  # keeps "Groove, <pause> stop" in one segment (measured pause ~0.5 s)
     max_segment_s: float = 4.0
+    # Early stop: a brief dip inside a still-open speech segment offers the speech so far as a probe
+    # (see Connection). Singing resumed within the hangover would otherwise delay "Groove, stop".
+    probe_gap_s: float = 0.25
+    probes: list = field(default_factory=list)
     _samples: np.ndarray = field(default_factory=lambda: np.zeros(0, np.float32))
     _frames: np.ndarray = field(default_factory=lambda: np.zeros(0, np.int64))
     _received_through: int = -1
@@ -198,13 +204,22 @@ class EnergySegmenter:
             return None
         speech = state[1] >= windows(self.min_speech_s)
         full = len(self._history_s) >= windows(self.max_segment_s)
+        cut = False
         if speech:
             # The hangover runs from the last speech, not the last burst; close between bursts.
             since_speech = len(self._history_s) - 1 - state[5]
             # Close only in a real gap (burst_gap of quiet): a word onset like the "st" of "stop"
             # is followed by its vowel within ~40 ms, while beatboxed hits leave ~0.2 s gaps.
-            if not full and (loud or since_speech < windows(self.hangover_s) or state[2] < windows(self.burst_gap_s)):
+            still_speaking = loud or since_speech < windows(self.hangover_s) or state[2] < windows(self.burst_gap_s)
+            if not full and still_speaking:
+                if not loud and state[2] == windows(self.probe_gap_s) and state[5] >= 0:
+                    end = self._speech_end(state[5], windows(self.tail_s)) + 1
+                    frames = np.concatenate(self._history_f[:end])
+                    self.probes.append(Segment(int(frames[0]), int(frames[-1]), np.concatenate(self._history_s[:end]),
+                                               self.sample_rate, np.concatenate(self._pre) if self._pre
+                                               else np.zeros(0, np.float32)))
                 return None
+            cut = full and still_speaking
             keep = self._speech_end(state[5], windows(self.tail_s)) + 1
         else:
             # Short bursts close after a brief gap, so beatboxing never holds the watermark.
@@ -222,7 +237,28 @@ class EnergySegmenter:
         self._decided_through = int(win_frames[-1])
         if not speech or not len(frames):
             return None  # only short bursts such as beatboxed hits: not speech
-        return Segment(int(frames[0]), int(frames[-1]), samples, self.sample_rate, pre, post)
+        return Segment(int(frames[0]), int(frames[-1]), samples, self.sample_rate, pre, post, cut)
+
+    def split_after(self, start_frame: int, last_frame: int) -> bool:
+        """End the open segment at `last_frame` because a probe of it was acted on. Later audio
+        continues as the open segment and must contain its own speech to be transcribed. False when
+        that segment has already closed (or a different one is open): its full transcript decides."""
+        if self._open is None or not self._history_f or int(self._history_f[0][0]) != start_frame:
+            return False
+        cut = next((i for i, f in enumerate(self._history_f) if int(f[0]) > last_frame), len(self._history_f))
+        if cut == 0:
+            return False
+        state = self._open
+        self._pre = self._history_s[:cut][-max(1, round(self.pad_s / self.window_s)):]
+        del self._history_s[:cut], self._history_f[:cut], self._history_loud[:cut]
+        state[1] = min(state[0], len(self._history_loud))  # only the current loud run remains
+        state[5] = -1
+        if not self._history_f:
+            self._open = None
+            self._quiet = deque(self._pre)
+            self._pre = []
+        self._decided_through = max(self._decided_through, last_frame)
+        return True
 
     def _speech_end(self, last_speech: int, tail: int) -> int:
         """Last window of the command: its last speech run plus a final consonant that starts
@@ -235,6 +271,11 @@ class EnergySegmenter:
                 break
             index += 1
         return end
+
+    @property
+    def speaking(self) -> bool:
+        """A candidate segment is open: speech (or something loud) is still going on."""
+        return self._open is not None
 
     @property
     def decided_through(self) -> int:
@@ -252,6 +293,7 @@ class SpeechJob:
     segment: Segment
     context_start_frame: Optional[int] = None  # actual first word; exclusion may include pre-roll
     research_epoch: int = 0  # newer UI research must defeat delayed recognition of old speech
+    probe: bool = False  # transcript of an open segment's speech so far (early "Groove, stop")
 
 
 Deliver = Callable[[SpeechJob, Optional[str | Transcript], Optional[str]], None]  # (job, text, error)
@@ -267,6 +309,8 @@ class SpeechWorker(Protocol):
 class ThreadedSpeechWorker:
     """One background thread per connection running a Transcriber. `deliver` is called on that
     thread; the service hands results back to the event loop (call_soon_threadsafe)."""
+
+    supports_probe = True  # probes run in submission order on the same thread
 
     def __init__(self, transcriber: Transcriber, deliver: Deliver) -> None:
         self.name = transcriber.name
