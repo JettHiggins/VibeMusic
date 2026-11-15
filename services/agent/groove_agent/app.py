@@ -39,13 +39,22 @@ language = language_from_env()
 voice_research = voice_research_enabled()
 
 
+def language_label() -> str:
+    if language is None:
+        return "parser"
+    gate = getattr(language, "gate", None)
+    remaining = gate.blocked() if gate is not None else None
+    label = "openrouter/deepagents (free-only)"
+    return label if remaining is None else f"{label}; cooling down {max(1, round(remaining))} s, exact commands only"
+
+
 @app.get("/healthz")
 def healthz() -> dict:
     backend = research_service.backend
     return {"status": "ok", "version": __version__, "contract": 1,
             "research": backend.label if backend else "not configured",
             "speech": transcriber.name if transcriber else "not configured",
-            "language": "openrouter/deepagents (free-only)" if language else "parser",
+            "language": language_label(),
             "voiceResearch": voice_research}
 
 

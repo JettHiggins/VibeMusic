@@ -591,6 +591,13 @@ class Connection:
             # Familiar commands and explicit parser refusals never wait on a provider. Only
             # unknown addressed speech takes the optional bounded async interpretation path.
             if self._language is not None and result.reason == "command not recognized":
+                unavailable = getattr(self._language, "unavailable", None)
+                blocked = unavailable() if unavailable is not None else None
+                if blocked is not None:
+                    return out + [_error(utterance_id, blocked)]  # cooldown: no provider call at all
+                normalized = " ".join(tokenize(message["text"]))
+                if any(" ".join(tokenize(job.text)) == normalized for job, _ in self._language_pending.values()):
+                    return out + [_error(utterance_id, "the same request is already being interpreted")]
                 if len(self._language_pending) >= 5:
                     return out + [_error(utterance_id, "language queue is full; try again shortly")]
                 latest = self._latest_search(with_candidates=not self._voice_research)
