@@ -1,6 +1,6 @@
 # Melody-retention round: WS2 handoff (downbeat preparation and truthful take feedback)
 
-Branch `ws2/recording-phase-feedback` from `origin/engine-integration` at `81a49c4`. This change touches presentation only:
+Branch `ws2/recording-phase-feedback` from `origin/engine-integration` at `81a49c4`. Pull request: JettHiggins/VoiceSynthesizer#47. Implementation commit: `5bb712f`. This change touches presentation only:
 - `apps/web/src/ui/**`
 - one unit test file and one browser script
 
