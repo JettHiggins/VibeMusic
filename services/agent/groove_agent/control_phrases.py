@@ -121,3 +121,28 @@ def input_phrase(verb: str, rest: Sequence[str]) -> Optional[Any]:
             return None, "offset must be between minus 150 and 150 milliseconds"
         return InputAction({"type": "set-input-offset", "milliseconds": value}), None
     return None
+
+
+_GRIDS = {"quarter": "quarter", "quarters": "quarter", "beat": "quarter", "beats": "quarter",
+          "eighth": "eighth", "eighths": "eighth", "eight": "eighth", "eights": "eighth",
+          "sixteenth": "sixteenth", "sixteenths": "sixteenth", "sixteen": "sixteenth"}
+
+
+def rhythm_chord_phrase(verb: str, rest: Sequence[str]) -> Optional[Any]:
+    """`set-rhythm-snap` / `set-chord-mode` as (operation, None) or (None, refusal); None otherwise.
+
+    "quarter notes", "snap to eighth notes", "rhythm sixteenth", "chords on", "chord mode off"."""
+    tokens = [verb, *rest]
+    if any(w in ("chord", "chords", "triad", "triads") for w in tokens):
+        if any(w in _OFF or w in ("single", "melody") for w in tokens):
+            return {"type": "set-chord-mode", "mode": "off"}, None
+        if any(w in ("on", "enable", "enabled", "mode", "triad", "triads") for w in tokens) or tokens[-1] in ("chord", "chords"):
+            return {"type": "set-chord-mode", "mode": "triad"}, None
+        return None, "say chords on or chords off"
+    grids = {_GRIDS[w] for w in tokens if w in _GRIDS}
+    rhythmic = any(w in ("notes", "note", "rhythm", "grid", "snap", "timing", "quantize", "quantise") for w in tokens)
+    if grids and rhythmic:
+        if len(grids) != 1:
+            return None, "say one rhythm: quarter, eighth or sixteenth notes"
+        return {"type": "set-rhythm-snap", "grid": grids.pop()}, None
+    return None

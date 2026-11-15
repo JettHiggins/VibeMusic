@@ -92,7 +92,7 @@ test('research candidates from real engine audio are accepted and undone by the 
     await until('research to finish', () => research.some(m => m.status !== 'running'), 150000);
     const final = research.at(-1)!;
     assert.equal(final.status, 'complete', final.error);
-    assert.equal(final.candidates.length, 5);
+    assert.equal(final.candidates.length, 10); // research.search.CANDIDATES (playtest: 10 diverse candidates)
     assert.deepEqual(panel.getSnapshot().candidates, final.candidates);
     assert.ok(research.findIndex(m => m.candidates.length > 0) < research.length - 1, 'retrieval arrives before completion');
     const preview = await fetch(final.candidates[0].previewUrl);

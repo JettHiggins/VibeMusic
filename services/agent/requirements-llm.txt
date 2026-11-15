@@ -3,3 +3,5 @@ deepagents==0.7.38
 langchain-openrouter==0.2.9
 openrouter==0.11.46
 python-dotenv==1.2.2
+langchain-google-genai==4.5.0
+google-genai==3.3.0

@@ -385,3 +385,38 @@ def test_priority_stop_is_not_held_even_when_recognized_late(tmp_path):
             replies += worker.finish(connection)
         log.append((chunk, replies))
     assert commands(flat(log)) == [{"type": "stop-recording"}]
+
+
+# -- on-screen transcript (docs/PLAYTEST-CONTROLS-CONTRACT.md) -------------------------------------
+
+from groove_agent.contracts import validate as _validate  # noqa: E402
+
+
+def transcripts(replies):
+    found = [r for r in replies if r["type"] == "speech-transcript"]
+    for message in found:
+        _validate("ServerMessage", message)
+    return [(m["text"], m["outcome"], m.get("detail")) for m in found]
+
+
+def test_every_recognized_segment_is_reported_with_what_was_done(tmp_path):
+    _, _, replies = run(tmp_path, ["Groove, set the tempo to", "one forty"], recording=False,
+                        speech=(2.0, 2.8), more=((3.7, 4.2),))
+    assert transcripts(replies) == [("Groove, set the tempo to", "held", "waiting for the rest of the sentence"),
+                                    ("Groove, set the tempo to one forty", "command", "tempo 140")]
+
+
+def test_refusals_ignored_singing_and_model_requests_are_reported(tmp_path):
+    _, _, replies = run(tmp_path, ["Groove, stop", "la la la"], recording=True, speech=(2.0, 2.6), more=((3.6, 4.2),),
+                        seconds=5.5)
+    assert transcripts(replies) == [("Groove, stop", "command", "stop-recording"), ("la la la", "ignored", None)]
+    _, _, replies = run(tmp_path, ["Groove, tempo 999"], recording=False, speech=(2.0, 2.8), seconds=5.5)
+    assert transcripts(replies)[-1] == ("Groove, tempo 999", "refused", "tempo must be between 40 and 240 BPM")
+    connection, _, replies = run(tmp_path, ["Groove, make the bass line bouncy"], recording=False, speech=(2.0, 2.8),
+                                 seconds=5.5, language=True)
+    assert transcripts(replies)[-1] == ("Groove, make the bass line bouncy", "interpreting", "sent to the language model")
+
+
+def test_a_spoken_sound_request_is_reported_as_research(tmp_path):
+    _, _, log = research_run(tmp_path, ["Groove, find a warm piano"], speech=(1.0, 2.2), seconds=5.0)
+    assert transcripts(flat(log))[-1] == ("Groove, find a warm piano", "research", "searching: warm piano")
