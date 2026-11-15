@@ -10,7 +10,8 @@ function operation(events:PerformanceEvent[]):PerformanceOperation{return {type:
 test('quantized correction preserves notes outside occupied time including wrapped phrases',()=>{
  const session=createSession();session.tracks[0].notes=[{id:'old',step:2,duration:4,midi:60,velocity:1},{id:'preserve',step:12,duration:1,midi:60,velocity:1}];
  const result=commitPerformance(session,operation([note('new',2.1,1.8)]),window,'clock',1100000);
- assert.deepEqual(result.tracks[0].notes.map(n=>n.id),['preserve','new']);assert.equal(result.tracks[0].notes[1].step,2);assert.equal(result.tracks[0].notes[1].duration,2);
+ // Playtest fix: over-recording trims the older note to its untouched cells instead of deleting it.
+ assert.deepEqual(result.tracks[0].notes.map(n=>[n.id,n.step,n.duration]),[['old',4,2],['preserve',12,1],['new',2,2]]);
  assert.equal(session.tracks[0].notes[0].id,'old');
  const wrapped=commitPerformance(result,operation([note('wrap',63.9,1.2)]),window,'clock',1100000);assert.equal(wrapped.tracks[0].notes.at(-1)!.step,0);
 });
