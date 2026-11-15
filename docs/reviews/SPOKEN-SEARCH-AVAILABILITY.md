@@ -39,3 +39,7 @@ playwright-cli -s=acoustic-research close
 ```
 
 The final desired result still requires real preview completion, exact candidate acceptance and Undo preserving music/playback, without restarting speech mid-flow or bypassing capture. Then run the human microphone/fun acceptance. Never check generated clips, models or corpus into Git. The current probe fails before completing that gate; earlier typed end-to-end acceptance is separate evidence and cannot close it.
+
+## Fixture predecode follow-up
+
+WS1 applied WS3's harness observation: decode all5 synthetic clips **before** enabling capture, then only create/play the prepared sources during the speech stream. On another actual local-model/browser run, search and spoken audition still completed with real started/ended audio acks, but capture again became discontinuous before apply-patch (171 speech-audio chunks sent, no apply-patch command). The robotic request was heard as80 0 trick piano on this run. Thus predecoding alone did not eliminate the observed failure in this environment. The probe now avoids that known confound; it remains an unfinished diagnostic. Dynamic synthetic source insertion and host resource pressure still differ from a physical continuous microphone; neither a universal product regression nor reliable full acoustic acceptance is established. All generated public assets and owned test browser/model/server processes were cleaned up afterward.
