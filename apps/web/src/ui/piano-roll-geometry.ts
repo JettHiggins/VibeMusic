@@ -25,3 +25,34 @@ export function cellAt(x: number, y: number, width: number, rowHeight: number, r
 }
 
 export const isBlackKey = (midi: number) => [1, 3, 6, 8, 10].includes(midi % 12);
+
+/** Where a pitch sits relative to the visible rows. */
+export function rangeSide(midi: number, rows: number[]): 'above' | 'below' | null {
+ if (!rows.length) return null;
+ return midi > rows[0] ? 'above' : midi < rows[rows.length - 1] ? 'below' : null;
+}
+
+/** Off-view notes grouped by side, each side ordered nearest-first, so edge markers can name them. */
+export function offRange<T extends { midi: number }>(notes: T[], rows: number[]): { above: T[]; below: T[] } {
+ const above = notes.filter(n => rangeSide(n.midi, rows) === 'above').sort((a, b) => a.midi - b.midi);
+ const below = notes.filter(n => rangeSide(n.midi, rows) === 'below').sort((a, b) => b.midi - a.midi);
+ return { above, below };
+}
+
+export const MIN_CENTER = 12, MAX_CENTER = 115;
+
+/**
+ * Center that brings `midi` into view at least `margin` rows from an edge, moving in whole octaves so
+ * the C labels and the user's octave orientation stay put. Returns `center` unchanged when the note is
+ * already comfortably visible.
+ */
+export function followCenter(center: number, midi: number, rows = DEFAULT_ROWS, margin = 2): number {
+ const inView = (c: number) => { const r = visibleRows(c, rows); return midi <= r[0] - margin && midi >= r[r.length - 1] + margin; };
+ let c = center;
+ for (let i = 0; i < 11 && !inView(c); i++) {
+  const next = Math.max(MIN_CENTER, Math.min(MAX_CENTER, c + (midi > c ? 12 : -12)));
+  if (next === c) break;
+  c = next;
+ }
+ return c;
+}
