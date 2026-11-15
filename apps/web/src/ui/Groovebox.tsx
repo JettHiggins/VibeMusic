@@ -39,6 +39,15 @@ export interface GrooveboxProps {
  */
 export function Groovebox({ engine, voice, session, transport, enabled, busy, message, onEnable, agent, agentActivityKey }: GrooveboxProps) {
  const agentDetails = useRef<HTMLDetailsElement>(null);
+ const root = useRef<HTMLDivElement>(null);
+ // The transport bar can wrap; keep the sticky inspector just below its actual height.
+ useEffect(() => {
+  const el = root.current, bar = el?.querySelector('header');
+  if (!el || !bar || typeof ResizeObserver === 'undefined') return;
+  const sync = () => el.style.setProperty('--vs-top', `${Math.ceil(bar.getBoundingClientRect().height)}px`);
+  const observer = new ResizeObserver(sync); observer.observe(bar); sync();
+  return () => observer.disconnect();
+ }, []);
  useEffect(() => { if (agentActivityKey && agentDetails.current) agentDetails.current.open = true; }, [agentActivityKey]);
  const client = useMemo(() => new CommandClient({ getSession: () => engine.getSession(), dispatch: c => engine.dispatch(voice.prepareCommand(c)) }), [engine, voice]);
  const patterns = useMemo(() => new PatternEditQueue({ dispatch: c => engine.dispatch(c), newId: () => crypto.randomUUID() }), [engine]);
@@ -89,7 +98,7 @@ export function Groovebox({ engine, voice, session, transport, enabled, busy, me
  const provisional = input.recorder.provisional.filter(p => p.event.target.trackId === trackId);
  const status = patterns.lastError ?? result?.text ?? engineMessage ?? '';
 
- return <div className="vs" style={{ minHeight: '100vh', background: C.bg }}>
+ return <div ref={root} className="vs" style={{ minHeight: '100vh', background: C.bg }}>
   <style>{workspaceCss + layoutCss}</style>
   <TransportBar session={session} transport={transport} enabled={enabled} busy={busy} onEnable={onEnable} send={send} target={target}
    canRecord={micReady&&speechReady} recordHint={!speechReady ? 'Speech recognition unavailable; retry or explicitly select manual mode' : !micReady ? 'Enable the microphone in the Input inspector first' : uncalibrated ? input.readiness.advice : null}
@@ -113,14 +122,14 @@ export function Groovebox({ engine, voice, session, transport, enabled, busy, me
        onAudition={engine.audition ? (midi, on) => engine.audition!({ kind: 'note', trackId: trackId as Exclude<TrackId, 'drums'>, midi, velocity: on ? 0.8 : 0, on }) : undefined} />}
     {rec !== 'idle' && <p style={{ color: C.rec, marginTop: 8 }} role="status">{rec === 'armed' ? (transport?.countInBeatsRemaining === undefined ? 'Armed: starts on the next beat' : `Count-in: ${transport.countInBeatsRemaining} beat(s) until recording`) : `Recording ${TRACK_LABEL[trackId]}: ${trackId === 'drums' ? 'beatbox now' : 'sing now; sing over a phrase to replace it'}`}</p>}
    </main>
-   <aside className="vs-right" style={{ ...pane, display: 'grid', gap: 10, alignContent: 'start' }} aria-label="Inspector">
+   <aside className="vs-right" style={{ ...pane, display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 10, alignContent: 'start' }} aria-label="Inspector">
+    <details open>
+     <summary>Input</summary>
+     <InputInspector voice={voice} state={input} transport={transport} enabled={enabled} melodic={trackId !== 'drums'} pitchSnap={session.pitchSnap ?? null} />
+    </details>
     <details open>
      <summary>Sound</summary>
      <SoundPanel engine={engine} metadata={engine.metadata} session={session} trackId={trackId} enabled={enabled} />
-    </details>
-    <details open>
-     <summary>Input</summary>
-     <InputInspector voice={voice} state={input} transport={transport} enabled={enabled} melodic={trackId !== 'drums'} />
     </details>
     <details ref={agentDetails}>
      <summary>Agent</summary>
@@ -134,6 +143,11 @@ export function Groovebox({ engine, voice, session, transport, enabled, busy, me
 const pane: React.CSSProperties = { background: C.panel, border: `1px solid ${C.line}`, borderRadius: 6, padding: 12, minWidth: 0 };
 const layoutCss = `
  .vs-body { display: grid; grid-template-columns: 210px minmax(0, 1fr) 330px; gap: 10px; padding: 10px; align-items: start; }
+ /* Long device names, URLs and provider errors wrap inside their pane instead of widening the page. */
+ .vs-left, .vs-center, .vs-right { overflow-wrap: anywhere; }
+ .vs-right input:not([type=checkbox]):not([type=range]) { max-width: 100%; box-sizing: border-box; }
+ /* The inspector scrolls on its own so a tall input section never pushes the editor off screen. */
+ @media (min-width: 1101px) { .vs-right { position: sticky; top: calc(var(--vs-top, 52px) + 10px); max-height: calc(100vh - var(--vs-top, 52px) - 20px); overflow-y: auto; overscroll-behavior: contain; } }
  @media (max-width: 1100px) { .vs-body { grid-template-columns: 190px minmax(0, 1fr); } .vs-right { grid-column: 1 / -1; } }
  @media (max-width: 720px) { .vs-body { grid-template-columns: minmax(0, 1fr); } }
 `;
