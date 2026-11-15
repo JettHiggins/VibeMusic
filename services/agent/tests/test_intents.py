@@ -125,3 +125,13 @@ def test_stop_recording_cancels_an_armed_take_only_when_one_is_armed():
     assert interpret("stop recording", session, False, take_armed=True).operation == {"type": "stop-recording"}
     assert interpret("stop", session, False, take_armed=True).operation == {"type": "stop-recording"}
     assert interpret("stop playback", session, False, take_armed=True).operation == {"type": "play", "playing": False}
+
+
+def test_a_spoken_tempo_number_wins_over_faster_or_slower():
+    from groove_agent.contracts import load_fixture
+    from groove_agent.intents import Command, interpret
+    session = load_fixture("SessionState")  # 120 BPM
+    assert interpret("make the beat a little faster, like 128", session, False) == Command({"type": "tempo", "bpm": 128}, "next-loop")
+    assert interpret("slower, about ninety", session, False) == Command({"type": "tempo", "bpm": 90}, "next-loop")
+    assert interpret("faster", session, False) == Command({"type": "tempo", "bpm": 130}, "next-loop")
+    assert interpret("slower", session, False) == Command({"type": "tempo", "bpm": 110}, "next-loop")
