@@ -344,6 +344,35 @@ def _tempo(tokens: Sequence[str], session: Mapping[str, Any]) -> Interpretation:
     return _command({"type": "tempo", "bpm": int(bpm) if float(bpm).is_integer() else bpm})
 
 
+_ALL_WORDS = frozenset({"everything", "song", "tracks"})
+_LANE_WORDS = frozenset({"kick", "kicks", "snare", "snares", "hat", "hats", "hihat", "hihats"})
+
+
+def _clear_several(rest: Sequence[str]) -> Optional[Interpretation]:
+    """Clear more than one lane/track at once (playtest): "clear everything", "clear all tracks",
+    "clear the whole song" -> every track; "clear the drum kit/all the drums" -> every drum lane;
+    "clear synth one and two" -> those synths. None when it is a single target."""
+    words = set(rest)
+    if words & _LANE_WORDS:
+        return None  # a specific lane ("clear all the snares")
+    if words & set(_POSITION_WORDS) and any(_number(w, after_synth=True) or w.isdigit() for w in rest):
+        return None  # a bar/beat position: the positional erase rules decide (and refuse unsafe ones)
+    clear = lambda track: _command({"type": "clear", "target": {"trackId": track}})
+    if words & _ALL_WORDS or ("all" in words and not words & {"drum", "drums", "synth", "synths", "kit"}) or             ("whole" in words and words & {"beat", "thing", "pattern"}):
+        return Plan(tuple(clear(t) for t in ("synth-1", "synth-2", "synth-3", "drums")))
+    if words & {"kit", "drums", "drum", "percussion"} and not words & (_SYNTH_WORDS | _SYNTH_MISHEARINGS):
+        return clear("drums")
+    numbers = sorted({n for i, w in enumerate(rest) if (n := _number(w, after_synth=True)) in (1, 2, 3)
+                      and any(rest[j] in _SYNTH_WORDS | _SYNTH_MISHEARINGS | {"synths"} for j in range(max(0, i - 3), i))})
+    if (len(numbers) >= 2 and words & {"and", "both"}) or ("synths" in words and "all" in words):
+        chosen = numbers if len(numbers) >= 2 else [1, 2, 3]
+        steps = tuple(clear(f"synth-{n}") for n in chosen)
+        if words & {"drum", "drums"}:
+            steps += (clear("drums"),)
+        return Plan(steps)
+    return None
+
+
 def interpret(text: str, session: Mapping[str, Any], during_recording: bool, take_armed: bool = False,
               recording_target: Optional[Mapping[str, Any]] = None) -> Interpretation:
     """Map one utterance transcript to a command, using the browser's latest session snapshot.
@@ -392,6 +421,11 @@ def interpret(text: str, session: Mapping[str, Any], during_recording: bool, tak
             return NotUnderstood(refusal)
         return value if isinstance(value, InputAction) else _command(value)
 
+    if verb in ("clear", "erase", "delete", "wipe"):
+        several = _clear_several(rest)
+        if several is not None:
+            return several  # "clear the whole beat" is every track, not a bar/beat position
+
     if verb in _ERASE_VERBS and any(token in _POSITION_WORDS for token in rest):
         return _erase_event(rest, session, recording_target)
 
@@ -427,6 +461,9 @@ def interpret(text: str, session: Mapping[str, Any], during_recording: bool, tak
         return _tempo(tokens, session)
 
     if verb in ("clear", "erase", "delete", "wipe"):
+        several = _clear_several(rest)
+        if several is not None:
+            return several
         target, refusal = _target_or_selected(rest, session)
         if target is None:
             return NotUnderstood(refusal)  # never erase a guessed track

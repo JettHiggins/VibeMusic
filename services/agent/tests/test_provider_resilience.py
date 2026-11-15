@@ -128,6 +128,8 @@ def test_essential_commands_work_while_the_provider_is_cooling_down(text, operat
     replies = connection.handle({"type": "utterance", "id": "u", "text": text, "clockId": "ctx", "startFrame": 352900,
                                  "endFrame": 353900, "duringRecording": True}, 0)
     assert replies[0]["type"] == "command-span" and replies[-1]["command"]["operation"] == operation
+    if operation["type"] == "select":  # switching instrument mid-take stops the take first (playtest)
+        assert [r["command"]["operation"]["type"] for r in replies if r["type"] == "command"] == ["stop-recording", "select"]
     assert language.jobs == []
 
 

@@ -841,8 +841,11 @@ class Connection:
             return out + [_error(utterance_id, result.reason)]
         if self._defer_to_model(message["text"], result):
             # Structured requests go to the agent, which sees the whole song; the quick parse is kept as
-            # the fallback if the model is unavailable, fails or refuses.
-            return out + self._submit_language(utterance_id, message["text"], during_recording, armed, fallback=result)
+            # the fallback if the model is unavailable, fails or refuses, except a destructive clear: a
+            # counted request ("delete every third snare") must never fall back to clearing the lane.
+            destructive = isinstance(result, Command) and result.operation["type"] == "clear"
+            return out + self._submit_language(utterance_id, message["text"], during_recording, armed,
+                                               fallback=None if destructive else result)
         return out + self._apply_interpretation(utterance_id, result, now)
 
     # Words that make a request structured (counts, positions, exceptions): the quick parser handles exact
@@ -888,6 +891,17 @@ class Connection:
                 return self._apply_interpretation(utterance_id, fallback, 0.0)
             return [_error(utterance_id, "language queue is full; try again shortly")]
         return []  # wake span is already excluded; coverage need not wait for inference
+
+    def _switching_mid_take(self, operation: Mapping[str, Any]) -> bool:
+        """A select/record of a different track while a take is recording or counting in."""
+        if operation["type"] not in ("select", "record"):
+            return False
+        transport = self.transport or {}
+        state = transport.get("recordingState") or ("recording" if transport.get("recording") else "idle")
+        if state not in ("recording", "armed"):
+            return False
+        current = transport.get("recordingTarget") or transport.get("armedTarget")
+        return current != operation["target"]
 
     def _apply_plan(self, utterance_id: str, plan: Plan, now: float) -> list[dict]:
         """Several actions from one request, in order. Music tools build on each other through a working
@@ -984,12 +998,19 @@ class Connection:
             return [_error(job.request_id, "invalid sound request; no change applied")]
         return self._apply_interpretation(job.request_id, result, now)
 
-    def _apply_interpretation(self, utterance_id: str, result: Interpretation, now: float) -> list[dict]:
+    def _apply_interpretation(self, utterance_id: str, result: Interpretation, now: float,
+                              take_stopped: bool = False) -> list[dict]:
         out: list[dict] = []
         if isinstance(result, InputAction):
             return self._request_browser_action(utterance_id, dict(result.operation), now)
         if isinstance(result, MusicTool):
             return self._run_music_tool(utterance_id, result, now)
+        if isinstance(result, Plan):
+            return self._apply_plan(utterance_id, result, now)
+        if isinstance(result, Command) and not take_stopped and self._switching_mid_take(result.operation):
+            # Playtest: switching instrument during a take should stop the take and switch at once.
+            stop = self._issue(_Proposal(f"{utterance_id}:stop", {"type": "stop-recording"}, BOUNDARY["stop-recording"]), now)
+            return [stop] + self._apply_interpretation(f"{utterance_id}:switch", result, now, take_stopped=True)
         if isinstance(result, Command):
             try:
                 validate("SessionCommand", {"id": utterance_id, "expectedRevision": self.revision,

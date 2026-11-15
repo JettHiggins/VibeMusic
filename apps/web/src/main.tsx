@@ -21,8 +21,32 @@ voice.configureSpeechSender(message=>agent.send(message),()=>agent.disconnect(),
 const research=new ResearchController(engine,agent,()=>agent.connected);
 coordinator.prepareCommand=command=>research.prepareCommand(voice.prepareCommand(command));
 coordinator.onReceipt=message=>research.commandReceipt(message);
+/**
+ * Keeps hands-free listening alive (2026-11-15 playtest: "the agent disconnected and having to restart is
+ * annoying"). When listening should be on but speech became unavailable (service restart, dropped socket,
+ * a capture/coverage reset), restart hands-free with backoff 1, 2, 4 ... 10 s. A new connection starts
+ * clean: nothing from the old one is replayed. Turning hands-free off by hand stops the watcher.
+ */
+class KeepListening{
+ private wanted=false;private busy=false;private wait=1000;private next=0;
+ constructor(private onMessage:(text:string)=>void){setInterval(()=>{void this.tick();},500);}
+ start(){this.wanted=true;this.wait=1000;}
+ private async tick(){
+  const speech=voice.getState().speech;
+  if(this.wanted&&!speech.enabled){this.wanted=false;return;} // the user switched hands-free off
+  if(!this.wanted||this.busy||speech.status!=='unavailable'||Date.now()<this.next)return;
+  this.busy=true;this.onMessage('Reconnecting to Groove…');
+  try{await voice.enableHandsFree();}catch{/* reported by the voice state */}
+  finally{
+   this.busy=false;
+   if(voice.getState().speech.status==='unavailable'){this.next=Date.now()+this.wait;this.wait=Math.min(10000,this.wait*2);}
+   else{this.wait=1000;this.onMessage('Listening — say "Groove, …" to control the song.');}
+  }
+ }
+}
 // Development-only handle for driving the capture path with a test signal; absent from production builds.
 if(import.meta.env.DEV)Object.assign(globalThis,{__voicesynth:{engine,voice,coordinator,research}});
+let keepListening:KeepListening|null=null;
 function App(){
  const researchState=useSyncExternalStore(research.subscribe,research.getSnapshot);
  const [session,setSession]=useState(engine.getSession());
@@ -34,6 +58,7 @@ function App(){
   agent.onError=e=>setMessage(e.message);
   coordinator.onError=e=>setMessage(e.message);
   coordinator.onMessage=m=>{voice.handleServerMessage(m);if(m.type==='error')setMessage(m.message);};
+  keepListening??=new KeepListening(setMessage);
   engine.onError=e=>{setMessage(e.message);setBusy(false);};return engine.subscribe(m=>{
   if(m.type==='session')setSession(m.session);
   if(m.type==='transport')setTransport(m.transport);
@@ -46,6 +71,7 @@ function App(){
   if(navigator.webdriver)return;
   try{await voice.enableMicrophone();}catch(e){setMessage(`Microphone: ${String(e)}`);return;}
   await voice.enableHandsFree();
+  keepListening?.start();
   setMessage('Listening — say "Groove, …" to control the song.');
  }
  function command(operation:SessionCommand['operation'],boundary:SessionCommand['boundary']='immediate'){

@@ -291,3 +291,42 @@ def test_adjust_sound_shapes_the_current_patch_within_engine_ranges():
         adjust_sound(song(), "drums", {"reverb": 10})
     with pytest.raises(ToolRefusal):
         adjust_sound(song(), "synth-1", {"wobble": 10})
+
+
+@pytest.mark.parametrize("text, tracks", [
+    ("Groove, clear everything", ["synth-1", "synth-2", "synth-3", "drums"]),
+    ("Groove, clear the whole beat", ["synth-1", "synth-2", "synth-3", "drums"]),
+    ("Groove, clear the whole drum kit", ["drums"]),
+    ("Groove, clear synth one and two", ["synth-1", "synth-2"]),
+    ("Groove, clear all synths", ["synth-1", "synth-2", "synth-3"]),
+])
+def test_clearing_several_tracks_at_once(text, tracks):
+    conn = connection()
+    out = say(conn, text, "u1")
+    assert [m["command"]["operation"]["target"] for m in out] == [{"trackId": t} for t in tracks]
+
+
+def test_specific_lanes_and_positions_are_unchanged():
+    session = song()
+    assert interpret("Groove, clear all the snares", session, False).operation["target"] == {"trackId": "drums", "lane": "snare"}
+    assert interpret("Groove, erase bar 2 beat 3", session, False).operation["type"] == "erase-event"
+
+
+def test_switching_instrument_during_a_take_stops_the_take_then_switches():
+    conn = connection()
+    conn.handle({"type": "transport", "transport": {"clockId": "c", "sampleRate": 44100, "currentFrame": 1000, "loopStartFrame": 0,
+                 "playing": True, "recording": True, "pendingCommandIds": [], "recordingState": "recording",
+                 "recordingStartFrame": 500, "recordingTarget": {"trackId": "synth-1"}}}, 0)
+    out = conn.handle({"type": "utterance", "id": "u1", "text": "Groove, switch to synth two", "clockId": "c", "startFrame": 0,
+                       "endFrame": 1, "duringRecording": True}, 0)
+    assert [m["command"]["operation"]["type"] for m in out if m["type"] == "command"] == ["stop-recording", "select"]
+    same = conn.handle({"type": "utterance", "id": "u2", "text": "Groove, select synth one", "clockId": "c", "startFrame": 2,
+                        "endFrame": 3, "duringRecording": True}, 0)
+    assert [m["command"]["operation"]["type"] for m in same if m["type"] == "command"] == ["select"]  # same track: no stop
+
+
+def test_a_counted_clear_never_falls_back_to_clearing_the_lane():
+    conn = agent_connection()
+    assert say(conn, "Groove, delete every third snare", "u1") == []
+    [error] = conn.language_result(conn._language.jobs[0], None, "language request timed out; no change applied", 1)
+    assert error["type"] == "error" and conn.pending_command_ids == []
