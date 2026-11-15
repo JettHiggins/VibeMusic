@@ -330,3 +330,23 @@ def test_a_counted_clear_never_falls_back_to_clearing_the_lane():
     assert say(conn, "Groove, delete every third snare", "u1") == []
     [error] = conn.language_result(conn._language.jobs[0], None, "language request timed out; no change applied", 1)
     assert error["type"] == "error" and conn.pending_command_ids == []
+
+
+@pytest.mark.parametrize("text, expected", [
+    ("Groove, make the drums one bar long", [("drums", 1)]),
+    ("Groove, set synth three to two bars", [("synth-3", 2)]),
+    ("Groove, make every track four bars", [("synth-1", 4), ("synth-2", 4), ("synth-3", 4), ("drums", 4)]),
+])
+def test_track_length_phrases(text, expected):
+    result = interpret(text, song(), False)
+    steps = result.steps if hasattr(result, "steps") else (result,)
+    assert [(s.operation["trackId"], s.operation["bars"]) for s in steps] == expected
+    for step in steps:
+        validate("SessionCommand", {"id": "x", "expectedRevision": 0, "boundary": step.boundary, "operation": step.operation})
+
+
+def test_drum_patterns_fill_only_a_short_tracks_length():
+    session = song()
+    session["tracks"][3]["bars"] = 1
+    [op] = drum_fill(session, "closed-hat", every=2)
+    assert sorted(h["step"] for h in op["hits"] if h["lane"] == "closed-hat") == list(range(0, 16, 2))

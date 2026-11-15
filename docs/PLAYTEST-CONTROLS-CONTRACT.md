@@ -29,6 +29,14 @@ Published by Lenny's laptop, which holds WS1 contracts while Jett is unavailable
   - Erase, Clear and Undo treat the chord as one note.
   - The piano roll draws the extra pitches as part of the same note.
 
+## Track length
+
+- **Setting:** `Track.bars` is 1, 2 or 4. Missing means 4, so old sessions are unchanged.
+- **Operation:** `set-track-length {trackId, bars}` is **immediate**. It adds one revision and one Undo entry when it changes, and is a no-op otherwise.
+- **Playback:** each track loops over its own length (the firmware's per-track `LEN`, parameter 29 = bars x 16), so a 1-bar drum loop repeats under a 4-bar melody.
+- **Events beyond the length are kept** (not played), so lengthening again restores them.
+- **Recording:** a take on a short track wraps into that track's length (`RecordingWindow.trackCells`, fixed when the take starts). Erase fences use the same wrap.
+
 ## Speech transcript
 
 - **Message:** the server sends `speech-transcript {utteranceId, streamId?, clockId, startFrame, endFrame, text, outcome, detail?}`.

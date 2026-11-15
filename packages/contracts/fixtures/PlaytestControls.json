@@ -86,7 +86,8 @@
       "engineRevision": "bac9c05ea7627449405aa10e48da21d75b6c8c56"
      },
      "notes": [],
-     "hits": []
+     "hits": [],
+     "bars": 1
     }
    ],
    "rhythmSnap": "quarter",
@@ -151,5 +152,18 @@
   "endFrame": 150000,
   "text": "la la la",
   "outcome": "ignored"
+ },
+ {
+  "type": "command",
+  "command": {
+   "id": "drums-one-bar",
+   "expectedRevision": 0,
+   "boundary": "immediate",
+   "operation": {
+    "type": "set-track-length",
+    "trackId": "drums",
+    "bars": 1
+   }
+  }
  }
 ]

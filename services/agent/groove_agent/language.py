@@ -212,6 +212,8 @@ SYSTEM_PROMPT = (
     "the song yourself (its key, tempo and the other tracks) and search for that, e.g. 'warm electric piano', "
     "'deep round synth bass', 'soft string pad', 'bright plucked synth'. Avoid noise or effects unless asked. "
     "match itself; accept_candidate only when the user picks a listed number.\n"
+    "LENGTH: each track loops over its own length (1, 2 or 4 bars: tracks[].bars); change it with propose_command "
+    "set-track-length. A 1-bar track uses steps 0..15 only. "
     "TRANSPORT and settings: propose_command (play, stop, record, select, mute, volume, tempo 40..240, metronome, "
     "set-rhythm-snap, set-chord-mode, set-pitch-snap, clear, undo, erase-event). During recording or count-in "
     "'stop' means stop-recording; otherwise play false. Record/select of drums need a lane. "

@@ -50,6 +50,8 @@ BOUNDARY = {
     "edit-pattern": "next-loop",
     # Mixing: track volume is immediate so it works anywhere (playing, recording, count-in).
     "volume": "immediate",
+    # Per-track loop length (1/2/4 bars) is immediate and keeps events beyond it.
+    "set-track-length": "immediate",
 }
 
 _LANE_PHRASES = (
@@ -344,6 +346,33 @@ def _tempo(tokens: Sequence[str], session: Mapping[str, Any]) -> Interpretation:
     return _command({"type": "tempo", "bpm": int(bpm) if float(bpm).is_integer() else bpm})
 
 
+_BAR_COUNTS = {"one": 1, "1": 1, "a": 1, "single": 1, "two": 2, "2": 2, "to": 2, "too": 2, "four": 4, "4": 4, "for": 4}
+
+
+def _track_length(rest: Sequence[str], tokens: Sequence[str], session: Mapping[str, Any]) -> Optional[Interpretation]:
+    """'make the drums one bar (long)', 'set synth two to two bars', 'loop the drums over 1 bar',
+    'make every track 4 bars' -> set-track-length (1, 2 or 4 bars)."""
+    words = list(tokens)
+    if not {"bar", "bars"} & set(words) or not {"long", "loop", "length", "make", "set", "change"} & set(words):
+        return None
+    if {"erase", "delete", "remove", "clear", "other", "on"} & set(words):
+        return None  # positions/patterns, not a length
+    index = next(i for i, w in enumerate(words) if w in ("bar", "bars"))
+    count = _BAR_COUNTS.get(words[index - 1]) if index else None
+    if count is None:
+        return NotUnderstood("track length can be 1, 2 or 4 bars")
+    command = lambda track: _command({"type": "set-track-length", "trackId": track, "bars": count})
+    if {"every", "all", "tracks", "everything"} & set(words):
+        return Plan(tuple(command(t) for t in ("synth-1", "synth-2", "synth-3", "drums")))
+    head = words[:index - 1]
+    resolution = resolve_target(head, session)
+    if resolution.target is not None:
+        return command(resolution.target["trackId"])
+    if {"drums", "drum", "beat", "kit"} & set(head):
+        return command("drums")
+    return command(session["selected"]["trackId"])
+
+
 _ALL_WORDS = frozenset({"everything", "song", "tracks"})
 _LANE_WORDS = frozenset({"kick", "kicks", "snare", "snares", "hat", "hats", "hihat", "hihats"})
 
@@ -409,6 +438,9 @@ def interpret(text: str, session: Mapping[str, Any], during_recording: bool, tak
     # Exact key and browser-input phrases (deterministic, so they survive provider rate limits).
     control = input_phrase(verb, rest)
     if control is None:
+        length = _track_length(rest, tokens, session)
+        if length is not None:
+            return length
         tool = music_phrase(tokens, session) or volume_phrase(tokens, lambda words: resolve_target(words, session).target)
         if tool is not None:
             return MusicTool(*tool)

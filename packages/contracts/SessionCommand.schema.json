@@ -112,6 +112,46 @@
           "properties": {
             "type": {
               "type": "string",
+              "const": "set-track-length"
+            },
+            "trackId": {
+              "type": "string",
+              "enum": [
+                "synth-1",
+                "synth-2",
+                "synth-3",
+                "drums"
+              ]
+            },
+            "bars": {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "const": 1
+                },
+                {
+                  "type": "number",
+                  "const": 2
+                },
+                {
+                  "type": "number",
+                  "const": 4
+                }
+              ]
+            }
+          },
+          "required": [
+            "type",
+            "trackId",
+            "bars"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
               "const": "snap-notes"
             },
             "trackId": {
@@ -758,6 +798,22 @@
                           ],
                           "additionalProperties": false
                         }
+                      },
+                      "bars": {
+                        "anyOf": [
+                          {
+                            "type": "number",
+                            "const": 1
+                          },
+                          {
+                            "type": "number",
+                            "const": 2
+                          },
+                          {
+                            "type": "number",
+                            "const": 4
+                          }
+                        ]
                       }
                     },
                     "required": [

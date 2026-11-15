@@ -10,7 +10,10 @@ export const Patch = z.strictObject({ engine: z.number().int().nonnegative(), pr
 // up to 4 notes). Missing or empty means a single note, so old saves are unchanged.
 export const Note = z.strictObject({ id, step: z.number().int().min(0).max(63), duration: z.number().int().min(1).max(64), midi: z.number().int().min(0).max(127), velocity: unit, chord: z.array(z.number().int().min(0).max(127)).max(3).optional() });
 export const Hit = z.strictObject({ id, step: z.number().int().min(0).max(63), lane: Lane, velocity: unit });
-export const Track = z.strictObject({ id: TrackId, name: id, muted: z.boolean(), volume: unit, patch: Patch, notes: z.array(Note).max(64), hits: z.array(Hit).max(192) });
+// Playtest round: optional loop length per track (1, 2 or 4 bars; missing = 4). Events beyond it are kept
+// (not played), so lengthening again restores them.
+export const TrackBars = z.union([z.literal(1), z.literal(2), z.literal(4)]);
+export const Track = z.strictObject({ id: TrackId, name: id, muted: z.boolean(), volume: unit, patch: Patch, notes: z.array(Note).max(64), hits: z.array(Hit).max(192), bars: TrackBars.optional() });
 export const PitchSnap = z.strictObject({ root: z.number().int().min(0).max(11), scale: z.enum(['major','minor']) });
 // Recording rhythm grid for newly committed performance: sixteenth (default/legacy), eighth or quarter.
 export const RhythmSnap = z.enum(['sixteenth','eighth','quarter']);
@@ -26,6 +29,7 @@ const Operation = z.discriminatedUnion('type', [
  z.strictObject({ type: z.literal('set-pitch-snap'), settings: PitchSnap.nullable() }),
  z.strictObject({ type: z.literal('set-rhythm-snap'), grid: RhythmSnap }),
  z.strictObject({ type: z.literal('set-chord-mode'), mode: ChordMode }),
+ z.strictObject({ type: z.literal('set-track-length'), trackId: TrackId, bars: TrackBars }),
  z.strictObject({ type: z.literal('snap-notes'), trackId: z.enum(['synth-1','synth-2','synth-3']) }),
  z.strictObject({ type: z.literal('metronome'), enabled: z.boolean() }),
  z.strictObject({ type: z.literal('erase-event'), target: Target, step: z.number().int().min(0).max(63) }),
@@ -107,6 +111,7 @@ export type SessionState = z.infer<typeof SessionState>;
 export type PitchSnap = z.infer<typeof PitchSnap>;
 export type RhythmSnap = z.infer<typeof RhythmSnap>;
 export type ChordMode = z.infer<typeof ChordMode>;
+export type TrackBars = z.infer<typeof TrackBars>;
 export type SpeechTranscript = z.infer<typeof SpeechTranscript>;
 export type BrowserOperation = z.infer<typeof BrowserOperation>;
 export type BrowserAction = z.infer<typeof BrowserAction>;

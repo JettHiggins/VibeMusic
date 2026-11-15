@@ -1,9 +1,10 @@
 import {snapMidiToScale,triadFor,type PerformanceEvent,type SessionState,type SessionCommand} from '@voicesynth/contracts';
 /** gridCells: rhythm-snap unit in sixteenth cells (1/2/4), fixed when the take started; missing = 1. */
-export interface RecordingWindow {startFrame:number;endFrame:number|null;loopStartFrame:number;tempo:number;target:SessionState['selected'];captureStartFrame?:number;erasedThrough?:Record<string,number>;gridCells?:number}
+/** trackCells: the target track's loop length in cells (16/32/64), fixed when the take started; missing = 64. */
+export interface RecordingWindow {startFrame:number;endFrame:number|null;loopStartFrame:number;tempo:number;target:SessionState['selected'];captureStartFrame?:number;erasedThrough?:Record<string,number>;gridCells?:number;trackCells?:number}
 type Note=SessionState['tracks'][number]['notes'][number];
 export type PerformanceOperation=Extract<SessionCommand['operation'],{type:'commit-performance'}>;
-function cells(start:number,length:number){return new Set(Array.from({length},(_,i)=>(start+i)%64));}
+function cells(start:number,length:number,loop=64){return new Set(Array.from({length},(_,i)=>(start+i)%loop));}
 /** Exact quantized cells used by both erasure fences and performance application. */
 /** Quantized [unwrapped start cell, duration] on the take's rhythm grid; shared by commit and erase fences. */
 export function quantize(event:PerformanceEvent,window:RecordingWindow):[number,number]{
@@ -14,19 +15,19 @@ export function quantize(event:PerformanceEvent,window:RecordingWindow):[number,
  return [first*grid,Math.max(grid,Math.min(64,(last-first)*grid))];
 }
 export function performanceCells(event:PerformanceEvent,window:RecordingWindow){
- const [first,duration]=quantize(event,window);
- return cells(((first%64)+64)%64,duration);
+ const [first,duration]=quantize(event,window),loop=window.trackCells??64;
+ return cells(((first%loop)+loop)%loop,Math.min(duration,loop),loop);
 }
 /**
  * Over-recording replaces only the overlapped cells: the rest of an older note survives as one or two
  * shorter notes (its id is kept on the first piece; later pieces get ":s<n>"), instead of deleting it.
  */
-export function trimOverlaps(notes:Note[],occupied:Set<number>):Note[]{
+export function trimOverlaps(notes:Note[],occupied:Set<number>,loop=64):Note[]{
  const out:Note[]=[];
  for(const note of notes){
   const runs:number[][]=[];let run:number[]=[];
   for(let i=0;i<note.duration;i++){
-   const cell=(note.step+i)%64;
+   const cell=(note.step+i)%loop;
    if(occupied.has(cell)){if(run.length)runs.push(run);run=[];}else run.push(cell);
   }
   if(run.length)runs.push(run);
@@ -55,7 +56,8 @@ export function commitPerformance(state:SessionState,op:PerformanceOperation,win
   if(op.excludedSpans.some(span=>event.captureFrame<=span.endFrame&&end>=span.startFrame))continue;
   if(event.confidence<0.6 || event.velocity===0 || performanceWasErased(event,window))continue;
   const [unwrapped,quantizedDuration]=quantize(event,window);
-  const step=((unwrapped%64)+64)%64;
+  const loop=window.trackCells??64; // a 1- or 2-bar track wraps sung/beatboxed input into its own length
+  const step=((unwrapped%loop)+loop)%loop;
   const track=result.tracks.find(t=>t.id===event.target.trackId)!;
   if(event.kind==='onset'){
    if(track.id!=='drums'||!event.target.lane)throw new Error('Onsets require a selected drum lane');
@@ -63,8 +65,8 @@ export function commitPerformance(state:SessionState,op:PerformanceOperation,win
    track.hits.push({id:event.id,step,lane:event.target.lane,velocity:event.velocity});
   }else{
    if(track.id==='drums'||event.target.lane)throw new Error('Notes require a melodic track');
-   const duration=quantizedDuration;
-   track.notes=trimOverlaps(track.notes,cells(step,duration));
+   const duration=Math.min(quantizedDuration,loop);
+   track.notes=trimOverlaps(track.notes,cells(step,duration,loop),loop);
    const midi=snapMidiToScale(event.midi,state.pitchSnap);
    const chord=state.chordMode==='triad'?triadFor(midi,state.pitchSnap):[];
    track.notes.push({id:event.id,step,duration,midi,velocity:event.velocity,...(chord.length?{chord}:{})});

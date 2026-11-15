@@ -96,8 +96,9 @@ def drum_fill(session: Mapping[str, Any], lane: str, every: int, offset: int = 0
     drums = _track(session, "drums")
     kept = [h for h in drums["hits"] if h["lane"] != lane] if replace else list(drums["hits"])
     taken = {h["step"] for h in kept if h["lane"] == lane}
+    length = (drums.get("bars") or 4) * 16  # a 1- or 2-bar drum loop only needs its own steps
     new = [{"id": f"fill-{lane}-{step}", "step": step, "lane": lane, "velocity": round(min(1.0, max(0.05, velocity)), 3)}
-           for step in range(offset, 64, every) if step not in taken]
+           for step in range(offset, length, every) if step not in taken]
     hits = sorted(kept + new, key=lambda h: (h["step"], h["lane"]))
     if not _changed(drums, drums["notes"], hits):
         raise ToolRefusal("that pattern is already there")
@@ -363,7 +364,7 @@ def song_summary(session: Mapping[str, Any]) -> dict:
         "tempo": session.get("tempo"), "key": key_name(key["root"], key["scale"]) if key else None,
         "rhythmSnap": session.get("rhythmSnap", "sixteenth"), "chordMode": session.get("chordMode", "off"),
         "selected": session.get("selected"),
-        "tracks": [{"id": t["id"], "muted": t["muted"], "volume": t["volume"],
+        "tracks": [{"id": t["id"], "muted": t["muted"], "volume": t["volume"], "bars": t.get("bars", 4),
                     "sound": {"engine": t["patch"]["engine"], "preset": t["patch"]["preset"]}} for t in session["tracks"]],
         "drums": {lane: sorted(h["step"] for h in drums["hits"] if h["lane"] == lane) for lane in LANES},
         "melody": melody,

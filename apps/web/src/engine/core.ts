@@ -55,7 +55,7 @@ export class EngineCore {
    if(requiresBoundary && c.boundary!=='next-loop')throw new Error('Operation requires next-loop boundary');
    if(c.operation.type==='metronome'&&c.boundary!=='immediate')throw new Error('Metronome requires immediate boundary');
    if(c.operation.type==='set-pitch-snap'&&c.boundary!=='immediate')throw new Error('Pitch snap setting requires immediate boundary');
-   if((c.operation.type==='set-rhythm-snap'||c.operation.type==='set-chord-mode')&&c.boundary!=='immediate')throw new Error('Recording settings require immediate boundary');
+   if((c.operation.type==='set-rhythm-snap'||c.operation.type==='set-chord-mode'||c.operation.type==='set-track-length')&&c.boundary!=='immediate')throw new Error('Recording settings require immediate boundary');
    if(c.operation.type==='erase-event'&&c.boundary!=='immediate')throw new Error('Erase requires immediate boundary');
    if(c.operation.type==='commit-performance'&&c.operation.replacesCommandId){
     const replacesCommandId=c.operation.replacesCommandId;
@@ -107,6 +107,12 @@ export class EngineCore {
    case 'set-rhythm-snap':{
     if((state.rhythmSnap??'sixteenth')===op.grid)return state;
     state.rhythmSnap=op.grid;break;
+   }
+   case 'set-track-length':{
+    // Loop length per track (1/2/4 bars). Events beyond it are kept, so lengthening restores them.
+    const track=state.tracks.find(t=>t.id===op.trackId)!;
+    if((track.bars??4)===op.bars)return state;
+    track.bars=op.bars;break;
    }
    case 'set-chord-mode':{
     if((state.chordMode??'off')===op.mode)return state;
@@ -180,7 +186,7 @@ export class EngineCore {
    const playing=!!this.dsp.w.vs_playing();this.dsp.w.preview_panic();
    if(playing){this.dsp.w.preview_play(1);this.cycle=0;this.loopStart=this.frame;this.startRequested=true;}
   }
-  if(c.operation.type==='record'){this.captureErasure=null;this.recordingEpoch++;this.recording={startFrame:this.frame,captureStartFrame:this.frame,endFrame:null,loopStartFrame:this.loopStart,tempo:this.session.tempo,target:copy(c.operation.target),gridCells:RHYTHM_CELLS[this.session.rhythmSnap??'sixteenth']};}
+  if(c.operation.type==='record'){this.captureErasure=null;this.recordingEpoch++;this.recording={startFrame:this.frame,captureStartFrame:this.frame,endFrame:null,loopStartFrame:this.loopStart,tempo:this.session.tempo,target:copy(c.operation.target),gridCells:RHYTHM_CELLS[this.session.rhythmSnap??'sixteenth'],trackCells:(this.session.tracks.find(t=>t.id===(c.operation as {target:{trackId:string}}).target.trackId)?.bars??4)*16};}
   if(c.operation.type==='stop-recording'){
    if(this.recording&&this.recording.endFrame===null)this.recording.endFrame=this.frame;
    this.pending=this.pending.filter(queued=>{if(queued.operation.type!=='record')return true;this.scheduledFrames.delete(queued.id);this.countIns.delete(queued.id);this.ack(queued,'rejected','Recording cancelled');return false;});
