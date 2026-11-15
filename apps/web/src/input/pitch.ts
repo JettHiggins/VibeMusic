@@ -229,6 +229,8 @@ export class NoteSegmenter {
   // comparison to the held MIDI note, not a momentarily biased raw vibrato median.
   if (Math.abs(m - Math.round(centre)) > 0.65) {
    this.deviating.push({ ...f, f0: 440 * 2 ** ((m - 69) / 12) });
+   // Forget the mixed-pitch transition instead of letting its first frame veto a settled note forever.
+   if (this.deviating.length > 12) this.deviating.shift();
    if (this.deviating.length >= 12 && this.deviating.every(x => Math.abs(hzToMidi(x.f0!) - hzToMidi(this.deviating[0].f0!)) <= 1)) {
     const d = this.deviating; this.deviating = [];
     this.close(d[0].frame - half, notes);
