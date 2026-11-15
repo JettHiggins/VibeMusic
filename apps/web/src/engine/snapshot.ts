@@ -40,7 +40,9 @@ export function firmwareSnapshot(input: SessionState, metadata: FirmwareMetadata
    for(let offset=0;offset<note.duration;offset++){
     const i=(note.step+offset)%64;
     if(occupied.has(i))throw new Error('Overlapping monophonic notes');occupied.add(i);
-    if(offset===0)Object.assign(step[i],{notes:[note.midi,0,0,0],n:1,time:0,vel:Math.round(note.velocity*127)});
+    // A chord sounds its extra pitches on the same firmware step (up to 4 notes per step).
+    const pitches=[note.midi,...(note.chord??[])].slice(0,4);
+    if(offset===0)Object.assign(step[i],{notes:[...pitches,0,0,0].slice(0,4),n:pitches.length,time:0,vel:Math.round(note.velocity*127)});
     else step[i].time=1;
    }
   }

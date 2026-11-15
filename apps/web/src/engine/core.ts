@@ -1,4 +1,4 @@
-import { AuditionEvent, SessionCommand, snapMidiToScale, type SessionState, type ClientMessage, type Transport, type CaptureErasure } from '@voicesynth/contracts';
+import { AuditionEvent, SessionCommand, snapMidiToScale, RHYTHM_CELLS, type SessionState, type ClientMessage, type Transport, type CaptureErasure } from '@voicesynth/contracts';
 import type { FirmwareMetadata } from './metadata.ts';
 import {OutputTransition} from './output-transition.ts';
 import { firmwareSnapshot } from './snapshot.ts';
@@ -55,6 +55,7 @@ export class EngineCore {
    if(requiresBoundary && c.boundary!=='next-loop')throw new Error('Operation requires next-loop boundary');
    if(c.operation.type==='metronome'&&c.boundary!=='immediate')throw new Error('Metronome requires immediate boundary');
    if(c.operation.type==='set-pitch-snap'&&c.boundary!=='immediate')throw new Error('Pitch snap setting requires immediate boundary');
+   if((c.operation.type==='set-rhythm-snap'||c.operation.type==='set-chord-mode')&&c.boundary!=='immediate')throw new Error('Recording settings require immediate boundary');
    if(c.operation.type==='erase-event'&&c.boundary!=='immediate')throw new Error('Erase requires immediate boundary');
    if(c.operation.type==='commit-performance'&&c.operation.replacesCommandId){
     const replacesCommandId=c.operation.replacesCommandId;
@@ -102,6 +103,14 @@ export class EngineCore {
    case 'set-pitch-snap':{
     if(op.settings?(state.pitchSnap?.root===op.settings.root&&state.pitchSnap?.scale===op.settings.scale):!state.pitchSnap)return state;
     state.pitchSnap=copy(op.settings);break;
+   }
+   case 'set-rhythm-snap':{
+    if((state.rhythmSnap??'sixteenth')===op.grid)return state;
+    state.rhythmSnap=op.grid;break;
+   }
+   case 'set-chord-mode':{
+    if((state.chordMode??'off')===op.mode)return state;
+    state.chordMode=op.mode;break;
    }
    case 'snap-notes':{
     if(!state.pitchSnap)throw new Error('Choose a key and scale before snapping existing notes');
@@ -171,7 +180,7 @@ export class EngineCore {
    const playing=!!this.dsp.w.vs_playing();this.dsp.w.preview_panic();
    if(playing){this.dsp.w.preview_play(1);this.cycle=0;this.loopStart=this.frame;this.startRequested=true;}
   }
-  if(c.operation.type==='record'){this.captureErasure=null;this.recordingEpoch++;this.recording={startFrame:this.frame,captureStartFrame:this.frame,endFrame:null,loopStartFrame:this.loopStart,tempo:this.session.tempo,target:copy(c.operation.target)};}
+  if(c.operation.type==='record'){this.captureErasure=null;this.recordingEpoch++;this.recording={startFrame:this.frame,captureStartFrame:this.frame,endFrame:null,loopStartFrame:this.loopStart,tempo:this.session.tempo,target:copy(c.operation.target),gridCells:RHYTHM_CELLS[this.session.rhythmSnap??'sixteenth']};}
   if(c.operation.type==='stop-recording'){
    if(this.recording&&this.recording.endFrame===null)this.recording.endFrame=this.frame;
    this.pending=this.pending.filter(queued=>{if(queued.operation.type!=='record')return true;this.scheduledFrames.delete(queued.id);this.countIns.delete(queued.id);this.ack(queued,'rejected','Recording cancelled');return false;});
