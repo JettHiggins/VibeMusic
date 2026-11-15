@@ -34,7 +34,7 @@ function Meter({ level }: { level: InputSummary['level'] }) {
  const pct = (db: number) => Math.max(0, Math.min(100, (db + 60) / 60 * 100));
  const label = `Input level ${level.active && Number.isFinite(level.db) ? level.db.toFixed(0) + ' dBFS' : 'off'}`
   + (level.floorDb !== null ? `, room floor ${level.floorDb.toFixed(0)} dBFS` : '') + (level.gateDb !== null ? `, note level ${level.gateDb.toFixed(0)} dBFS` : '');
- return <div className="vs-meter" role="meter" aria-label={label} aria-valuemin={-60} aria-valuemax={0} aria-valuenow={Math.round(Number.isFinite(level.db) ? level.db : -60)}>
+ return <div className="vs-meter" role="meter" aria-label={label} aria-valuemin={-60} aria-valuemax={0} aria-valuenow={Math.max(-60, Math.min(0, Math.round(Number.isFinite(level.db) ? level.db : -60)))}>
   <div style={{ width: `${level.active ? pct(level.db) : 0}%`, height: '100%', background: level.db > -3 ? C.rec : C.note }} />
   {level.floorDb !== null && <div title="Room floor" style={{ position: 'absolute', left: `${pct(level.floorDb)}%`, top: 0, bottom: 0, width: 2, background: C.muted }} />}
   {level.gateDb !== null && <div title="Level a note must reach" style={{ position: 'absolute', left: `${pct(level.gateDb)}%`, top: -2, bottom: -2, width: 2, background: C.accent }} />}

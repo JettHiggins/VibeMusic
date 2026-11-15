@@ -4,7 +4,7 @@ import type { FirmwareMetadata } from '../engine/metadata.ts';
 import type { VoiceInput, VoiceInputState } from '../input/voice-input.ts';
 import { CommandClient, type CommandResult } from './command-client.ts';
 import { PatternEditQueue, type PatternOp } from './pattern-edit.ts';
-import { displayedTarget, playheadStep, TRACK_LABEL, type EditorEngine, type Lane, type TrackId } from './labels.ts';
+import { displayedTarget, noteName, playheadStep, TRACK_LABEL, type EditorEngine, type Lane, type TrackId } from './labels.ts';
 import { TransportBar } from './TransportBar.tsx';
 import { TrackList } from './TrackList.tsx';
 import { PianoRoll } from './PianoRoll.tsx';
@@ -13,6 +13,8 @@ import { SoundPanel } from './SoundPanel.tsx';
 import { InputInspector } from './InputInspector.tsx';
 import { PitchSnapControls } from './PitchSnapControls.tsx';
 import { snapMidiToScale } from '@voicesynth/contracts';
+import { currentTake, emptyTracker, recordingPhase, trackTake, type TakeTracker } from './recording-phase.ts';
+import { RecordingPhaseStrip, TakeFeedbackLine } from './RecordingPhase.tsx';
 import { C, workspaceCss } from './theme.ts';
 
 export interface GrooveboxProps {
@@ -97,6 +99,12 @@ export function Groovebox({ engine, voice, session, transport, enabled, busy, me
  const selectTrack = (id: TrackId) => send({ type: 'select', target: id === 'drums' ? { trackId: 'drums', lane } : { trackId: id } });
  const provisional = [...input.recorder.provisional, ...(input.recorder.live ? [input.recorder.live] : [])].filter(p => p.event.target.trackId === trackId);
  const status = patterns.lastError ?? result?.text ?? engineMessage ?? '';
+ const phase = recordingPhase(transport, session.tempo, TRACK_LABEL[trackId]);
+ const tracker = useRef<TakeTracker>(emptyTracker);
+ tracker.current = trackTake(tracker.current, transport, input.recorder);
+ const take = currentTake(input.recorder, tracker.current);
+ const liveNote = input.recorder.live?.event.kind === 'note' ? noteName(snapMidiToScale(input.recorder.live.event.midi, session.pitchSnap)) : null;
+ const showTake = micReady && (rec !== 'idle' || take.waiting + take.sent + take.saved + take.notKept > 0 || !!take.reason);
 
  return <div ref={root} className="vs" style={{ minHeight: '100vh', background: C.bg }}>
   <style>{workspaceCss + layoutCss}</style>
@@ -109,6 +117,7 @@ export function Groovebox({ engine, voice, session, transport, enabled, busy, me
    </aside>
    <main className="vs-center" style={pane} aria-label="Editor">
     <h2>{TRACK_LABEL[trackId]}{trackId === 'drums' ? ' · step sequencer' : ' · piano roll'}{view.pending ? ' · edits apply at the next loop' : ''}</h2>
+    <RecordingPhaseStrip phase={phase} />
     <PitchSnapControls settings={session.pitchSnap ?? null} trackId={trackId} noteCount={view.notes.length} enabled={enabled}
      onChange={settings => send({ type: 'set-pitch-snap', settings }, 'immediate')}
      onSnap={() => { if (trackId !== 'drums') send({ type: 'snap-notes', trackId }, 'next-loop'); }} />
@@ -120,7 +129,7 @@ export function Groovebox({ engine, voice, session, transport, enabled, busy, me
      : <PianoRoll key={trackId} label={TRACK_LABEL[trackId]} notes={view.notes} playhead={playhead} disabled={!enabled} eraseEnabled={eraseEventAvailable} onEdit={edit} onErase={step => erase({ trackId }, step)}
        provisional={provisional.flatMap(p => p.event.kind === 'note' ? [{ step: p.step, duration: p.duration, midi: snapMidiToScale(p.event.midi, session.pitchSnap), state: p === input.recorder.live ? 'live' as const : p.status }] : [])}
        onAudition={engine.audition ? (midi, on) => engine.audition!({ kind: 'note', trackId: trackId as Exclude<TrackId, 'drums'>, midi, velocity: on ? 0.8 : 0, on }) : undefined} />}
-    {rec !== 'idle' && <p style={{ color: C.rec, marginTop: 8 }} role="status">{rec === 'armed' ? (transport?.countInBeatsRemaining === undefined ? 'Armed: starts on the next beat' : `Count-in: ${transport.countInBeatsRemaining} beat(s) until recording`) : `Recording ${TRACK_LABEL[trackId]}: ${trackId === 'drums' ? 'beatbox now' : 'sing now; sing over a phrase to replace it'}`}</p>}
+    {showTake && <TakeFeedbackLine take={take} liveName={liveNote} unit={trackId === 'drums' ? 'hit' : 'note'} />}
    </main>
    <aside className="vs-right" style={{ ...pane, display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 10, alignContent: 'start' }} aria-label="Inspector">
     <details open>

@@ -72,6 +72,6 @@ test('microphone states and take counters stay concise', () => {
  const recorder = { ...base().recorder, capturing: true, committed: 4, dropped: 1, provisional: [
   { event: {} as never, step: 0, duration: 1, status: 'provisional' as const },
   { event: {} as never, step: 2, duration: 1, status: 'submitted' as const }] };
- assert.equal(takeLine(base({ recorder }), true), '1 note heard · 1 queued · 4 committed · 1 ignored');
- assert.equal(takeLine(base({ recorder: { ...recorder, dropped: 0 } }), false), '1 hit heard · 1 queued · 4 committed');
+ assert.equal(takeLine(base({ recorder }), true), 'Since mic on: 1 note waiting to be sent · 1 sent · 4 saved · 1 not kept');
+ assert.equal(takeLine(base({ recorder: { ...recorder, dropped: 0 } }), false), 'Since mic on: 1 hit waiting to be sent · 1 sent · 4 saved');
 });
