@@ -333,6 +333,15 @@
                           "type": "number",
                           "minimum": 0,
                           "maximum": 1
+                        },
+                        "chord": {
+                          "maxItems": 3,
+                          "type": "array",
+                          "items": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 127
+                          }
                         }
                       },
                       "required": [
@@ -423,6 +432,21 @@
                 {
                   "type": "null"
                 }
+              ]
+            },
+            "rhythmSnap": {
+              "type": "string",
+              "enum": [
+                "sixteenth",
+                "eighth",
+                "quarter"
+              ]
+            },
+            "chordMode": {
+              "type": "string",
+              "enum": [
+                "off",
+                "triad"
               ]
             }
           },

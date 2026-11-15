@@ -13,3 +13,22 @@ export function snapMidiToScale(midi:number,settings?:PitchSnap|null):number{
  }
  throw new RangeError('No scale pitch in MIDI range');
 }
+
+/** Sixteenth-note cells per rhythm-grid unit. Missing rhythmSnap means sixteenth (legacy). */
+export const RHYTHM_CELLS={sixteenth:1,eighth:2,quarter:4} as const;
+
+/**
+ * Extra pitches (third, fifth) for chord mode `triad` on an already snapped root. With a key, the
+ * third and fifth are the 2nd and 4th scale degrees above the root (diatonic triad); without one,
+ * a major triad. Pitches outside MIDI 0..127 are omitted rather than wrapped.
+ */
+export function triadFor(root:number,settings?:PitchSnap|null):number[]{
+ if(!Number.isInteger(root)||root<0||root>127)throw new RangeError('MIDI pitch must be an integer from 0 to 127');
+ let intervals=[4,7];
+ if(settings){
+  const scale:readonly number[]=SCALES[settings.scale];
+  const degree=scale.indexOf(((root-settings.root)%12+12)%12);
+  if(degree>=0)intervals=[2,4].map(step=>{const target=degree+step;return scale[target%7]+12*Math.floor(target/7)-scale[degree];});
+ }
+ return intervals.map(i=>root+i).filter(n=>n<=127);
+}

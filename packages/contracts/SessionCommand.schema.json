@@ -69,6 +69,49 @@
           "properties": {
             "type": {
               "type": "string",
+              "const": "set-rhythm-snap"
+            },
+            "grid": {
+              "type": "string",
+              "enum": [
+                "sixteenth",
+                "eighth",
+                "quarter"
+              ]
+            }
+          },
+          "required": [
+            "type",
+            "grid"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "set-chord-mode"
+            },
+            "mode": {
+              "type": "string",
+              "enum": [
+                "off",
+                "triad"
+              ]
+            }
+          },
+          "required": [
+            "type",
+            "mode"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
               "const": "snap-notes"
             },
             "trackId": {
@@ -406,6 +449,15 @@
                     "type": "number",
                     "minimum": 0,
                     "maximum": 1
+                  },
+                  "chord": {
+                    "maxItems": 3,
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 127
+                    }
                   }
                 },
                 "required": [
@@ -648,6 +700,15 @@
                               "type": "number",
                               "minimum": 0,
                               "maximum": 1
+                            },
+                            "chord": {
+                              "maxItems": 3,
+                              "type": "array",
+                              "items": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 127
+                              }
                             }
                           },
                           "required": [
@@ -738,6 +799,21 @@
                     {
                       "type": "null"
                     }
+                  ]
+                },
+                "rhythmSnap": {
+                  "type": "string",
+                  "enum": [
+                    "sixteenth",
+                    "eighth",
+                    "quarter"
+                  ]
+                },
+                "chordMode": {
+                  "type": "string",
+                  "enum": [
+                    "off",
+                    "triad"
                   ]
                 }
               },
