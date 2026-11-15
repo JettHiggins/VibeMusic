@@ -31,3 +31,8 @@ Application source 4566dd8 passed Linux contracts/web, real-renderer/firmware an
 See VOICE-RELIABILITY-ROUND.md for P0 tasks, file boundaries, reproducible acceptance and independent follow-ups. Push small tested PRs during the work window; each stream writes docs/handoffs/voice-reliability-wsN.md with exact commit/PR, before/after, checks, unresolved failures and physical-test limits. WS1 maintains this ledger and integrates. Do not assume free quota can be removed by code or synthetic tests establish human singing quality.
 
 The previous test freeze is over for development. Keep playtest-musical-controls-1 / playtest-repair-1 immutable as comparison builds. The next human test snapshot follows combined checks; do not claim full-product completion or silently drop remaining Deep Agents/speech/research roadmap requirements.
+
+
+## WS1 first capability published
+
+ws1/melody-reliability **ddaa515** is pushed for focused integration review/PR. It reproduces a steady two-second hum fragmenting into four notes, then fixes held-note amplitude hysteresis and periodicity-aware re-articulation without lowering the new-note acquisition threshold or changing scale mapping. 13 focused pitch tests, full Node 250 pass/one optional skip, shared checks/build pass. Actual capture/YIN/recorder/WASM browser test commits one 16-step/full-bar note; synthetic source, not physical mic/hearing proof. Handoff: docs/handoffs/voice-reliability-ws1.md on that branch. Not yet merged; quiet-start/calibration, real fast-note misses, loop crossing and rendered-envelope tracing remain open. WS1 continues those independent tasks.
