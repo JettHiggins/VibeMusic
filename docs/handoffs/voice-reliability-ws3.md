@@ -115,6 +115,17 @@ Both cases now pass, along with the original 5 s case.
 - **Failed probe:** a finished early-stop probe (failed or irrelevant) clears its slot, only while it's still the current probe, so a later dip can still catch "Groove stop". A stale probe result never clears or acts for a newer probe.
 - **Setup message:** the "not configured" text now gives the actual setup (`GROOVE_RESEARCH=sloop GROOVE_EMBEDDER=clap`, the engine build location, the cached CLAP model, minutes for the first corpus build) instead of implying WS1's renderer was missing.
 
+## WS1 late-result review (docs/reviews/PR43-late-result-reproduction.py)
+
+- **The problem:** a 4 s cut segment whose recognition arrived late (at 8 s, with the sentence still running until 9.5 s) executed its valid "warm piano" prefix. `_unfinished` returned "finished" whenever the hold budget had already expired.
+- **The fix (`eda96f2`):** adopted WS1's proposed deletion of that shortcut. Late results are held like any others, and `_advance_speech` alone decides: refuse while the sentence is open or transcribing, act once it has ended. Priority stop is still never held.
+- **Owned tests:**
+  - late result, sentence still open → refused;
+  - late result with the continuation still transcribing → refused whole, nothing partial;
+  - late result for a sentence that has ended → acted on whole;
+  - late "Groove, stop" → stop.
+- **Results:** all four WS1 reproductions pass, and the backend suite is at **445 passed, 6 skipped**. The spoken browser gate passed every check again on `eda96f2`.
+
 ## Real browser gates (headless Chromium, `services/agent/scripts/browser/*.cjs`)
 
 **Setup:**
@@ -152,7 +163,7 @@ Both cases now pass, along with the original 5 s case.
 
 ## Checks (Windows, Python 3.13)
 
-- **Backend suite:** `pytest -q` → **441 passed, 6 skipped**, now including the 5 real SLOOP engine tests (they previously errored only because the repo root was not on the import path).
+- **Backend suite:** `pytest -q` → **445 passed, 6 skipped**, now including the 5 real SLOOP engine tests (they previously errored only because the repo root was not on the import path).
 - **New test files:**
   - `test_browser_protocol.py` (15 tests, including a real FastAPI WebSocket session)
   - `test_provider_resilience.py` (13 tests: scripted 402/429/Retry-After/timeouts, a worker storm test, and a real WebSocket degrade test)
