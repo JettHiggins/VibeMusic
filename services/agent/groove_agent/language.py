@@ -55,11 +55,14 @@ class LanguageConfig:
             if not re.fullmatch(r"gemini-[\w.-]+", self.model):
                 raise ValueError("GROOVE_LLM_MODEL must be a Gemini model id such as gemini-3.1-flash-lite")
             if self.vertex:
-                if not self.project:
-                    raise ValueError("GOOGLE_CLOUD_PROJECT is required for Gemini on Vertex AI")
+                # Vertex AI is now "Gemini Enterprise Agent Platform"; its API ("Agent Platform API") is still
+                # aiplatform.googleapis.com. An API key restricted to it works alone (express mode); a
+                # service-account file also needs the project id.
                 if not self.api_key and not self.credentials_file:
-                    raise ValueError("Gemini on Vertex AI needs GOOGLE_API_KEY (a key restricted to the Vertex AI API) "
-                                     "or GOOGLE_APPLICATION_CREDENTIALS (a service-account file outside the repo)")
+                    raise ValueError("Gemini on Vertex AI needs GOOGLE_API_KEY (a key restricted to the Agent Platform / "
+                                     "Vertex AI API) or GOOGLE_APPLICATION_CREDENTIALS (a service-account file outside the repo)")
+                if self.credentials_file and not self.project:
+                    raise ValueError("GOOGLE_CLOUD_PROJECT is required with a service-account file")
             elif not self.api_key:
                 raise ValueError("GOOGLE_API_KEY is required for the Gemini Developer API")
         else:
@@ -111,6 +114,46 @@ def decode_decision(decision: dict) -> Interpretation:
     raise ValueError("invalid language decision")
 
 
+# Operations a model may propose: small edits only. Pattern/session/performance payloads and patches
+# are never model-authored (patches come from known research candidates).
+MODEL_OPERATIONS_EXCLUDED = frozenset({"apply-patch", "edit-pattern", "load-session", "commit-performance"})
+
+
+def operation_fields() -> dict[str, frozenset]:
+    """Field names each model-proposable operation type defines in the shared SessionCommand schema."""
+    shared = json.loads((contracts_dir() / "SessionCommand.schema.json").read_text(encoding="utf-8"))
+    return {v["properties"]["type"]["const"]: frozenset(v["properties"])
+            for v in shared["properties"]["operation"]["oneOf"]
+            if v["properties"]["type"]["const"] not in MODEL_OPERATIONS_EXCLUDED}
+
+
+def model_operation_schema() -> dict:
+    """One flat object schema for model tool calls, built from the shared SessionCommand schema.
+
+    The shared schema is a oneOf of strict variants. Gemini's function-calling schema subset drops
+    oneOf/additionalProperties, which left `operation` untyped (it answered 'tempo 128'). A flat object
+    with `type` as an enum of allowed operations and every variant's fields as optional properties works
+    for every provider. Proposals are still validated against the real shared contract (decode_decision).
+    """
+    shared = json.loads((contracts_dir() / "SessionCommand.schema.json").read_text(encoding="utf-8"))
+    variants = [v for v in shared["properties"]["operation"]["oneOf"]
+                if v["properties"]["type"]["const"] not in MODEL_OPERATIONS_EXCLUDED]
+    properties: dict = {"type": {"type": "string", "enum": [v["properties"]["type"]["const"] for v in variants],
+                                 "description": "the operation name"}}
+    for variant in variants:
+        for name, schema in variant["properties"].items():
+            if name == "type":
+                continue
+            if name in properties and "enum" in properties[name] and "enum" in schema:
+                # e.g. snap-notes allows only synths but mute also allows drums: offer the union.
+                merged = properties[name]["enum"] + [v for v in schema["enum"] if v not in properties[name]["enum"]]
+                properties[name] = {**properties[name], "enum": merged}
+            else:
+                properties.setdefault(name, schema)
+    return {"type": "object", "properties": properties, "required": ["type"],
+            "description": "Fill only the fields that this operation type uses (see the system prompt rules)."}
+
+
 def create_graph(model, voice_research: bool = False):
     """A real Deep Agents graph with typed proposal tools and a strict tool allowlist.
 
@@ -127,11 +170,26 @@ def create_graph(model, voice_research: bool = False):
     # is installed without Pillow, even though no video capability is used.
     logging.getLogger("deepagents.middleware._video").setLevel(logging.ERROR)
 
-    operation = json.loads((contracts_dir() / "SessionCommand.schema.json").read_text(encoding="utf-8"))["properties"]["operation"]
-    operation["oneOf"] = [schema for schema in operation["oneOf"]
-                          if schema["properties"]["type"]["const"] != "apply-patch"]
+    operation = model_operation_schema()
+    OPERATION_FIELDS = operation_fields()
 
     def propose_command(operation: dict) -> str:
+        # Gemini's tool-schema subset drops oneOf/additionalProperties, so it may send the operation as a
+        # JSON string. Parse it, then validate exactly like any other proposal (decode_decision).
+        if isinstance(operation, str):
+            try:
+                operation = json.loads(operation)
+            except ValueError:
+                raise ValueError("operation must be a JSON object") from None
+        if not isinstance(operation, dict):
+            raise ValueError("operation must be an object")
+        # The flattened model schema lets a model fill every optional field (Gemini sends defaults such as
+        # muted=false, step=0). Keep only the fields the chosen operation type defines in the shared
+        # contract; validation of what remains is unchanged.
+        allowed = OPERATION_FIELDS.get(operation.get("type"))
+        if allowed is None:
+            raise ValueError("unsupported operation type")
+        operation = {k: v for k, v in operation.items() if k in allowed and v is not None}
         decision = {"kind": "command", "operation": operation}
         decode_decision(decision)
         return json.dumps(decision)
@@ -260,7 +318,17 @@ def gemini_model(config: LanguageConfig):
     options: dict = {"model": config.model, "temperature": 0, "max_output_tokens": config.max_tokens,
                      "timeout": config.timeout_s, "max_retries": 0}
     if config.vertex:
-        options.update(vertexai=True, project=config.project, location=config.location)
+        options["vertexai"] = True
+        # With an API key, Vertex runs in express mode: passing a project makes the Google client ignore the
+        # key and look for Application Default Credentials (DefaultCredentialsError on a laptop without
+        # gcloud). The project is only used with a service-account file.
+        if config.project and not config.api_key:
+            options.update(project=config.project, location=config.location)
+        elif config.api_key:
+            # The Google client also reads these from the environment; either one switches it to project
+            # mode (Application Default Credentials) and the key is ignored. Process-local only.
+            os.environ.pop("GOOGLE_CLOUD_PROJECT", None)
+            os.environ.pop("GOOGLE_CLOUD_LOCATION", None)
         if config.credentials_file:
             from google.oauth2 import service_account
             options["credentials"] = service_account.Credentials.from_service_account_file(

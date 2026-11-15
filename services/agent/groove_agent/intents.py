@@ -307,12 +307,15 @@ def _command(operation: dict) -> Command:
 
 def _tempo(tokens: Sequence[str], session: Mapping[str, Any]) -> Interpretation:
     current = float(session["tempo"])
-    if any(word in tokens for word in ("faster", "quicker")) or _contains(tokens, "speed up"):
-        bpm: Optional[float] = min(TEMPO_MAX, current + TEMPO_NUDGE)
+    spoken = find_number(tokens)
+    if spoken is not None and TEMPO_MIN <= spoken <= TEMPO_MAX:
+        bpm: Optional[float] = spoken  # "a little faster, like 128": the number said wins over the nudge
+    elif any(word in tokens for word in ("faster", "quicker")) or _contains(tokens, "speed up"):
+        bpm = min(TEMPO_MAX, current + TEMPO_NUDGE)
     elif "slower" in tokens or _contains(tokens, "slow down"):
         bpm = max(TEMPO_MIN, current - TEMPO_NUDGE)
     else:
-        bpm = find_number(tokens)
+        bpm = spoken
         if bpm is None:
             return NotUnderstood("say a tempo, for example: tempo 120")
         if not TEMPO_MIN <= bpm <= TEMPO_MAX:
