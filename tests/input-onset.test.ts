@@ -169,3 +169,25 @@ test('diagnostic buffers bypass round-trip latency while real microphone default
  assert.equal(defaultCalibration(context,0.01,'real-device').latencyFrames,10143);
  assert.equal(defaultCalibration(context,0,'test-signal').latencyFrames,0);
 });
+
+test('a brief unpitched cough cannot become the calibrated room-noise floor', () => {
+ const room=noise(Math.round(SR*1.5),-60,rng(70));
+ room.set(noise(Math.round(SR*.25),-20,rng(71)),Math.round(SR*.6));
+ const floor=measureNoiseFloor(room);
+ assert.ok(floor>-63&&floor<-56,`steady room floor was -60 dBFS, measured ${floor}`);
+});
+
+test('calibration refuses a mostly unstable sample rather than accepting a loud transient floor', () => {
+ const room=noise(Math.round(SR*1.5),-60,rng(72));
+ room.set(noise(Math.round(SR*.6),-20,rng(73)),Math.round(SR*.4));
+ assert.throws(()=>measureNoiseFloor(room),/steady|quiet|changed/i);
+ const loud=measureNoiseFloor(noise(Math.round(SR*1.5),-36,rng(74)));
+ assert.ok(loud>-39&&loud<-33,'a genuinely steady noisy room must still be reported honestly');
+});
+
+test('short digital silence from input processing does not hide the steady room level', () => {
+ const room=noise(Math.round(SR*1.5),-50,rng(75));
+ room.fill(0,0,Math.round(SR*.25));
+ const floor=measureNoiseFloor(room);
+ assert.ok(floor>-53&&floor<-47,`the dominant room level must survive brief digital gating: ${floor}`);
+});
