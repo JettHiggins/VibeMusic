@@ -24,6 +24,20 @@ from .retrieval import RETRIEVAL_VERSION, Ranking, RetrievalIndex, TextCache
 
 TEXT_CACHE = "text-embeddings.npz"  # beside the corpus; keyed by embedder identity
 from .search import CANDIDATES, MAX_VARIATIONS, Scored, diverse, evolve
+
+# Playtest: every final candidate was an evolved mutation, which scores well with CLAP but drifts toward
+# crushed, distorted patches; the matching factory presets (real designed instruments) were pushed out.
+# The list now always keeps the best matching presets beside the refined variants.
+PRESETS_KEPT = CANDIDATES // 2
+
+
+def blend(presets: Sequence[Scored], evolved: Sequence[Scored]) -> list[Scored]:
+    """Up to PRESETS_KEPT diverse matching presets plus the best evolved variants, best score first."""
+    kept = diverse(list(presets), PRESETS_KEPT) if presets else []
+    seen = {item.key() for item in kept}
+    rest = [item for item in evolved if item.key() not in seen]
+    chosen = kept + diverse(rest, CANDIDATES - len(kept))
+    return sorted(chosen, key=lambda item: (-item.score, item.key()))
 from .space import MetadataError, ParameterSpace
 
 Emit = Callable[[dict], None]
@@ -226,12 +240,13 @@ class ResearchPort:
                 self._message(job, "running", RETRIEVAL_PROGRESS, diverse(pool, CANDIDATES))
                 # A fresh seed per search, so asking again explores new variations (shown in provenance).
                 seed = backend.search_seed if backend.search_seed is not None else secrets.randbits(32)
+                presets = [item for item in pool if item.origin.startswith("retrieved")]
                 result = evolve(pool, backend.space, backend.renderer, backend.embedder, ranking.query, backend.recipe,
                                 seed=seed, budget=backend.budget, cancelled=job.cancel.is_set,
                                 progress=lambda done, total, best: self._message(
                                     job, "running", RETRIEVAL_PROGRESS + (1 - RETRIEVAL_PROGRESS) * done / max(1, total) * 0.99,
-                                    best), ranking=ranking)
-            self._message(job, "complete", 1.0, result.best)
+                                    blend(presets, best)), ranking=ranking)
+            self._message(job, "complete", 1.0, blend(presets, result.best))
         except Cancelled:
             self._message(job, "cancelled", 0.0, job.last)
         except Exception as error:  # a failed job must never take the service down

@@ -95,7 +95,11 @@ export class ResearchController {
   const binding=JSON.stringify([message.requestId,message.trackId,message.description,message.origin]);
   if(this.seenJobs.has(message.jobId))return; // no re-adoption, including ignored/stale contexts
   try{this.remember(message.jobId,binding);}catch(error){this.cancelJob(message.jobId);this.state={...this.state,error:String(error)};this.changed();return;}
-  if(this.pendingUi||this.pendingPatches.size){this.cancelJob(message.jobId);return;}
+  if(this.pendingUi||this.pendingPatches.size){
+   // Never drop a spoken search silently (2026-11-15 playtest: no candidates appeared, no reason shown).
+   this.cancelJob(message.jobId);
+   this.state={...this.state,error:`Skipped the spoken search for "${message.description}": another sound search or sound change was still finishing. Say it again.`};this.changed();return;
+  }
   if(this.state.status==='running'&&this.state.jobId)this.cancelJob(this.state.jobId);
   this.player.stop('Preview search was replaced',true);
   this.state={jobId:message.jobId,trackId:message.trackId,description:message.description,status:'running',progress:0,candidates:[],error:null,acceptance:null,preview:null};this.changed();

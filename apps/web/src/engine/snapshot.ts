@@ -27,7 +27,7 @@ export function firmwareSnapshot(input: SessionState, metadata: FirmwareMetadata
    p[id]=value;
   }
   // Pattern/mixer are session-owned; presets cannot silently enable an arpeggiator.
-  p[0]=Math.round(track.volume*127);p[17]=0;p[29]=64;p[30]=2;p[31]=0;p[32]=127;p[40]=track.muted?1:0;
+  p[0]=Math.round(track.volume*127);p[17]=0;p[29]=(track.bars??4)*16;p[30]=2;p[31]=0;p[32]=127;p[40]=track.muted?1:0;
   const step=Array.from({length:64},emptyStep);
   const dstep=Array.from({length:64},()=>({on:0,lvl:Array(16).fill(0),rat:Array(16).fill(0)}));
   if(k===3 && track.notes.length)throw new Error('Drum tracks cannot contain melodic notes');

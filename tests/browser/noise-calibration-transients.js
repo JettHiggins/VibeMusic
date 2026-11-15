@@ -1,6 +1,7 @@
 async page=>{
  const base=page.url().startsWith('http://127.0.0.1:')?page.url().split('/').slice(0,3).join('/'):'http://127.0.0.1:5173';
  await page.goto(base);await page.getByRole('button',{name:'Enable audio',exact:true}).click();
+ await page.getByRole('button',{name:'Not now',exact:true}).click();
  await page.waitForFunction(()=>globalThis.__voicesynth.engine.metadata!==null);
  return await page.evaluate(async()=>{
   const {engine,voice}=globalThis.__voicesynth,c=engine.getAudioContext();

@@ -25,6 +25,37 @@ from .stt import transcriber_from_env
 from .language import LanguageWorker, language_from_env, load_backend_env, voice_research_enabled
 
 log = logging.getLogger("groove_agent")
+# Session events go to the service console (local only): what was heard, what was done, research job
+# lifecycle and provider errors, so a failed playtest can be diagnosed afterwards. Never keys or audio.
+if not log.handlers:
+    _handler = logging.StreamHandler()
+    _handler.setFormatter(logging.Formatter("%(asctime)s groove %(levelname)s %(message)s", "%H:%M:%S"))
+    log.addHandler(_handler)
+log.setLevel(logging.INFO)
+log.propagate = False
+
+
+def describe_event(message: dict) -> Optional[str]:
+    """One console line for an outbound message worth recording, or None (watermarks, progress)."""
+    kind = message.get("type")
+    if kind == "speech-transcript":
+        detail = f" ({message['detail']})" if message.get("detail") else ""
+        return f"heard {message['text']!r} -> {message['outcome']}{detail}"
+    if kind == "command":
+        operation = message["command"]["operation"]
+        return f"command {message['command']['id']}: {operation['type']}"
+    if kind == "browser-action":
+        return f"input action {message['id']}: {message['operation']['type']}"
+    if kind == "error":
+        return f"refused {message['requestId']}: {message['message']}"
+    if kind == "research-context":
+        return f"research {message['jobId']} announced for {message['trackId']}: {message['description']!r}"
+    if kind == "research" and message.get("status") != "running":
+        extra = f" error={message['error']!r}" if message.get("error") else ""
+        return f"research {message['jobId']} {message['status']} with {len(message['candidates'])} candidates{extra}"
+    if kind == "candidate-preview":
+        return f"preview {message['candidateId']} requested"
+    return None
 TICK_SECONDS = 1.0
 LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 
@@ -168,7 +199,11 @@ async def session_socket(websocket: WebSocket) -> None:
 
     async def write() -> None:
         while True:
-            await websocket.send_text(json.dumps(checked(await outbox.get())))
+            message = checked(await outbox.get())
+            event = describe_event(message)
+            if event:
+                log.info(event)
+            await websocket.send_text(json.dumps(message))
 
     def finished(task: "asyncio.Task[None]") -> None:
         if not task.cancelled() and task.exception() is not None:
@@ -180,6 +215,14 @@ async def session_socket(websocket: WebSocket) -> None:
     try:
         while True:
             message, error = decode(await websocket.receive_text())
+            if message is not None and message["type"] in ("cancel-job", "utterance", "browser-action-ack", "preview-ack"):
+                if message["type"] == "cancel-job":
+                    log.info("browser cancelled research %s", message["jobId"])
+                elif message["type"] == "utterance":
+                    log.info("typed %r", message["text"])
+                elif message["status"] in ("rejected", "cancelled"):
+                    log.info("browser %s %s: %s%s", message["type"], message["id"], message["status"],
+                             f" ({message['reason']})" if message.get("reason") else "")
             replies = [error] if message is None else connection.handle(message, time.monotonic())
             for reply in replies:
                 outbox.put_nowait(reply)

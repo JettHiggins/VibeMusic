@@ -16,7 +16,8 @@ from dataclasses import dataclass
 from typing import Any, Mapping, Optional, Sequence, Union
 
 from .spoken_numbers import NUMBER_WORDS, find_number
-from .control_phrases import InputAction, input_phrase, key_phrase, rhythm_chord_phrase
+from .control_phrases import InputAction, input_phrase, key_phrase, rhythm_chord_phrase, volume_phrase
+from .music_tools import music_phrase
 
 WAKE_WORDS = frozenset({"groove", "grove"})  # "grove" is a common recognizer spelling
 TEMPO_MIN, TEMPO_MAX, TEMPO_NUDGE = 40, 240, 10
@@ -45,13 +46,20 @@ BOUNDARY = {
     # Playtest controls (PLAYTEST-CONTROLS-CONTRACT.md): recording settings are immediate.
     "set-rhythm-snap": "immediate",
     "set-chord-mode": "immediate",
+    # Whole-pattern edits from Groove music tools: scheduled like hand edits (engine requires a boundary).
+    "edit-pattern": "next-loop",
+    # Mixing: track volume is immediate so it works anywhere (playing, recording, count-in).
+    "volume": "immediate",
+    # Per-track loop length (1/2/4 bars) is immediate and keeps events beyond it.
+    "set-track-length": "immediate",
 }
 
 _LANE_PHRASES = (
     ("closed-hat", ("closed hi hats", "closed hi hat", "closed hats", "closed hat", "hi hats", "hi hat",
                     "high hats", "high hat", "hihats", "hihat", "hats", "hat")),
-    ("kick", ("kick drum", "bass drum", "kick")),
-    ("snare", ("snare drum", "snare")),
+    # Plurals too: "clear the snares" used to miss the lane and clear the selected track instead.
+    ("kick", ("kick drums", "kick drum", "bass drums", "bass drum", "kicks", "kick")),
+    ("snare", ("snare drums", "snare drum", "snares", "snare")),
 )
 _ORDINALS = {"1": 1, "one": 1, "won": 1, "first": 1, "2": 2, "two": 2, "too": 2, "to": 2, "second": 2,
              "3": 3, "three": 3, "third": 3}
@@ -64,6 +72,19 @@ class Command:
     """A recognized command, ready to be wrapped in a SessionCommand."""
     operation: dict
     boundary: str
+
+
+@dataclass(frozen=True)
+class MusicTool:
+    """A whole-song edit (groove_agent.music_tools.run_tool) computed from the session when applied."""
+    name: str
+    args: dict
+
+
+@dataclass(frozen=True)
+class Plan:
+    """Several actions from one request (language model), applied in order."""
+    steps: tuple
 
 
 @dataclass(frozen=True)
@@ -98,7 +119,7 @@ class CancelSearch:
     pass
 
 
-Interpretation = Union[Command, Ignored, NotUnderstood, SoundSearch, AcceptCandidate, AuditionCandidate, CancelSearch, InputAction]
+Interpretation = Union[Command, Ignored, NotUnderstood, SoundSearch, AcceptCandidate, AuditionCandidate, CancelSearch, InputAction, MusicTool, Plan]
 
 
 def tokenize(text: str) -> list[str]:
@@ -325,6 +346,62 @@ def _tempo(tokens: Sequence[str], session: Mapping[str, Any]) -> Interpretation:
     return _command({"type": "tempo", "bpm": int(bpm) if float(bpm).is_integer() else bpm})
 
 
+_BAR_COUNTS = {"one": 1, "1": 1, "a": 1, "single": 1, "two": 2, "2": 2, "to": 2, "too": 2, "four": 4, "4": 4, "for": 4}
+
+
+def _track_length(rest: Sequence[str], tokens: Sequence[str], session: Mapping[str, Any]) -> Optional[Interpretation]:
+    """'make the drums one bar (long)', 'set synth two to two bars', 'loop the drums over 1 bar',
+    'make every track 4 bars' -> set-track-length (1, 2 or 4 bars)."""
+    words = list(tokens)
+    if not {"bar", "bars"} & set(words) or not {"long", "loop", "length", "make", "set", "change"} & set(words):
+        return None
+    if {"erase", "delete", "remove", "clear", "other", "on"} & set(words):
+        return None  # positions/patterns, not a length
+    index = next(i for i, w in enumerate(words) if w in ("bar", "bars"))
+    count = _BAR_COUNTS.get(words[index - 1]) if index else None
+    if count is None:
+        return NotUnderstood("track length can be 1, 2 or 4 bars")
+    command = lambda track: _command({"type": "set-track-length", "trackId": track, "bars": count})
+    if {"every", "all", "tracks", "everything"} & set(words):
+        return Plan(tuple(command(t) for t in ("synth-1", "synth-2", "synth-3", "drums")))
+    head = words[:index - 1]
+    resolution = resolve_target(head, session)
+    if resolution.target is not None:
+        return command(resolution.target["trackId"])
+    if {"drums", "drum", "beat", "kit"} & set(head):
+        return command("drums")
+    return command(session["selected"]["trackId"])
+
+
+_ALL_WORDS = frozenset({"everything", "song", "tracks"})
+_LANE_WORDS = frozenset({"kick", "kicks", "snare", "snares", "hat", "hats", "hihat", "hihats"})
+
+
+def _clear_several(rest: Sequence[str]) -> Optional[Interpretation]:
+    """Clear more than one lane/track at once (playtest): "clear everything", "clear all tracks",
+    "clear the whole song" -> every track; "clear the drum kit/all the drums" -> every drum lane;
+    "clear synth one and two" -> those synths. None when it is a single target."""
+    words = set(rest)
+    if words & _LANE_WORDS:
+        return None  # a specific lane ("clear all the snares")
+    if words & set(_POSITION_WORDS) and any(_number(w, after_synth=True) or w.isdigit() for w in rest):
+        return None  # a bar/beat position: the positional erase rules decide (and refuse unsafe ones)
+    clear = lambda track: _command({"type": "clear", "target": {"trackId": track}})
+    if words & _ALL_WORDS or ("all" in words and not words & {"drum", "drums", "synth", "synths", "kit"}) or             ("whole" in words and words & {"beat", "thing", "pattern"}):
+        return Plan(tuple(clear(t) for t in ("synth-1", "synth-2", "synth-3", "drums")))
+    if words & {"kit", "drums", "drum", "percussion"} and not words & (_SYNTH_WORDS | _SYNTH_MISHEARINGS):
+        return clear("drums")
+    numbers = sorted({n for i, w in enumerate(rest) if (n := _number(w, after_synth=True)) in (1, 2, 3)
+                      and any(rest[j] in _SYNTH_WORDS | _SYNTH_MISHEARINGS | {"synths"} for j in range(max(0, i - 3), i))})
+    if (len(numbers) >= 2 and words & {"and", "both"}) or ("synths" in words and "all" in words):
+        chosen = numbers if len(numbers) >= 2 else [1, 2, 3]
+        steps = tuple(clear(f"synth-{n}") for n in chosen)
+        if words & {"drum", "drums"}:
+            steps += (clear("drums"),)
+        return Plan(steps)
+    return None
+
+
 def interpret(text: str, session: Mapping[str, Any], during_recording: bool, take_armed: bool = False,
               recording_target: Optional[Mapping[str, Any]] = None) -> Interpretation:
     """Map one utterance transcript to a command, using the browser's latest session snapshot.
@@ -361,6 +438,12 @@ def interpret(text: str, session: Mapping[str, Any], during_recording: bool, tak
     # Exact key and browser-input phrases (deterministic, so they survive provider rate limits).
     control = input_phrase(verb, rest)
     if control is None:
+        length = _track_length(rest, tokens, session)
+        if length is not None:
+            return length
+        tool = music_phrase(tokens, session) or volume_phrase(tokens, lambda words: resolve_target(words, session).target)
+        if tool is not None:
+            return MusicTool(*tool)
         control = rhythm_chord_phrase(verb, rest)
     if control is None:
         control = key_phrase(verb, rest, session, lambda words: resolve_target(words, session).target)
@@ -369,6 +452,11 @@ def interpret(text: str, session: Mapping[str, Any], during_recording: bool, tak
         if value is None:
             return NotUnderstood(refusal)
         return value if isinstance(value, InputAction) else _command(value)
+
+    if verb in ("clear", "erase", "delete", "wipe"):
+        several = _clear_several(rest)
+        if several is not None:
+            return several  # "clear the whole beat" is every track, not a bar/beat position
 
     if verb in _ERASE_VERBS and any(token in _POSITION_WORDS for token in rest):
         return _erase_event(rest, session, recording_target)
@@ -405,6 +493,9 @@ def interpret(text: str, session: Mapping[str, Any], during_recording: bool, tak
         return _tempo(tokens, session)
 
     if verb in ("clear", "erase", "delete", "wipe"):
+        several = _clear_several(rest)
+        if several is not None:
+            return several
         target, refusal = _target_or_selected(rest, session)
         if target is None:
             return NotUnderstood(refusal)  # never erase a guessed track

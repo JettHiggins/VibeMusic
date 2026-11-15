@@ -17,7 +17,7 @@ export function TrackList({ session, metadata, selected, enabled, locked, onSele
    const engine = metadata?.engines[track.patch.engine];
    const sound = track.id === 'drums' ? 'Drum kit' : engine ? `${engine.name} · ${engine.presets[track.patch.preset]?.name ?? ''}` : '—';
    const isSel = track.id === selected;
-   return <div key={track.id} style={{ background: isSel ? C.raised : 'transparent', border: `1px solid ${isSel ? C.accent : C.line}`, borderRadius: 6, padding: 8, display: 'grid', gap: 6 }}>
+   return <div key={track.id} style={{ background: isSel ? C.panel : 'transparent', borderLeft: `2px solid ${isSel ? C.accent : 'transparent'}`, padding: '12px 10px', display: 'grid', gap: 6 }}>
     <button aria-pressed={isSel} disabled={!enabled || locked} onClick={() => onSelect(track.id)} style={{ all: 'unset', cursor: enabled && !locked ? 'pointer' : 'default', display: 'grid', gap: 2 }}>
      <span style={{ fontWeight: 600 }}>{TRACK_LABEL[track.id]}</span>
      <span style={{ fontSize: 11, fontFamily: MONO, color: C.muted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{sound}</span>
@@ -27,10 +27,19 @@ export function TrackList({ session, metadata, selected, enabled, locked, onSele
      <button aria-pressed={track.muted} aria-label={`Mute ${TRACK_LABEL[track.id]}`} disabled={!enabled} onClick={() => send({ type: 'mute', trackId: track.id, muted: !track.muted })} style={{ padding: '2px 7px' }}>M</button>
      <Volume value={track.volume} disabled={!enabled} label={`${TRACK_LABEL[track.id]} volume`} onChange={v => send({ type: 'volume', trackId: track.id, volume: v })} />
     </div>
+    <div style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 11, color: C.faint }}>
+     <span>Loop</span>
+     <select aria-label={`${TRACK_LABEL[track.id]} loop length`} title="Loop length" disabled={!enabled} value={track.bars ?? 4} style={{ padding: '1px 2px', fontSize: 11 }}
+      onChange={e => send({ type: 'set-track-length', trackId: track.id, bars: Number(e.target.value) as 1 | 2 | 4 }, 'immediate')}>
+      {[1, 2, 4].map(n => <option key={n} value={n}>{n} bar{n === 1 ? '' : 's'}</option>)}
+     </select>
+    </div>
    </div>;
   })}
  </nav>;
 }
+
+export function barsLabel(bars: number | undefined) { const n = bars ?? 4; return `${n} bar${n === 1 ? '' : 's'}`; }
 
 /** Volume follows the slider while dragging (throttled to ~10 commands per second). */
 function Volume({ value, disabled, label, onChange }: { value: number; disabled: boolean; label: string; onChange: (v: number) => void }) {

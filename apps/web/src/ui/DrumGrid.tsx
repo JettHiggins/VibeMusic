@@ -10,8 +10,8 @@ type Hit = SessionState['tracks'][number]['hits'][number];
  * Drum step lanes: one row of 64 steps per lane. Click a step to toggle it; click a lane name to
  * select it as the recording lane and hear it.
  */
-export function DrumGrid({ hits, provisional, playhead, lane, disabled, eraseEnabled = true, onEdit, onErase, onSelectLane, onAudition }: {
- hits: Hit[]; provisional: { lane: Lane; step: number }[]; playhead: number | null; lane: Lane; disabled: boolean;
+export function DrumGrid({ hits, provisional, playhead, lane, disabled, eraseEnabled = true, onEdit, onErase, onSelectLane, onAudition, loopSteps = 64 }: {
+ hits: Hit[]; provisional: { lane: Lane; step: number }[]; playhead: number | null; lane: Lane; disabled: boolean; loopSteps?: number;
  eraseEnabled?: boolean;
  onEdit: (op: PatternOp) => void; onErase: (lane: Lane, step: number) => void; onSelectLane: (lane: Lane) => void; onAudition?: (lane: Lane) => void;
 }) {
@@ -24,7 +24,8 @@ export function DrumGrid({ hits, provisional, playhead, lane, disabled, eraseEna
      const pending = provisional.some(p => p.lane === l && p.step === step);
      return <button key={step} role="gridcell" aria-pressed={on || pending} aria-label={`${pending ? (eraseEnabled ? 'Erase provisional' : 'Erase unavailable for provisional') : on ? (eraseEnabled ? 'Erase' : 'Erase unavailable') : 'Add'} ${label} step ${step + 1}`} disabled={disabled || ((on || pending) && !eraseEnabled)} onClick={() => on || pending ? onErase(l, step) : onEdit(toggleHit(l, step))}
       style={{ height: 24, padding: 0, minWidth: 0, borderRadius: 2, border: pending ? `1px dashed ${C.pending}` : `1px solid ${playhead === step ? C.accent : 'transparent'}`,
-       background: on ? C.note : step % 16 === 0 ? '#2c2c31' : step % 4 === 0 ? '#232327' : '#1a1a1d' }} />;
+       background: on ? C.note : step % 16 === 0 ? '#2c2c31' : step % 4 === 0 ? '#232327' : '#1a1a1d',
+       opacity: step < loopSteps ? 1 : 0.25 /* beyond the track's loop length: kept, not played */ }} />;
     })}
    </div>
   </div>)}

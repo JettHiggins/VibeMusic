@@ -2,6 +2,7 @@ async page=>{
  const base=page.url().startsWith('http://127.0.0.1:')?page.url().split('/').slice(0,3).join('/'):'http://127.0.0.1:5173';
  await page.goto(base);
  await page.getByRole('button',{name:'Enable audio',exact:true}).click();
+ await page.getByRole('button',{name:'Not now',exact:true}).click();
  await page.waitForFunction(()=>globalThis.__voicesynth.engine.metadata!==null);
  await page.evaluate(async()=>{
   const {engine,voice}=globalThis.__voicesynth,context=engine.getAudioContext();
@@ -19,7 +20,7 @@ async page=>{
   await voice.enableTestSignal(context.createBuffer(1,context.sampleRate*45,context.sampleRate),context.currentTime+.05);voice.setLatencyFrames(0);
  });
  await page.getByRole('button',{name:'Play',exact:true}).click();
- await page.getByRole('button',{name:'● Rec Synth 1',exact:true}).click();
+ await page.getByRole('button',{name:'Record Synth 1',exact:true}).click();
  await page.waitForFunction(()=>globalThis.__eraseTransport?.recording===true);
  const before=await page.evaluate(()=>({transport:structuredClone(globalThis.__eraseTransport),session:structuredClone(globalThis.__voicesynth.engine.getSession())}));
  const preset=before.session.tracks[0].patch.preset===1?2:1;

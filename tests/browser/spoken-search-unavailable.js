@@ -12,12 +12,11 @@ async page=>{
  });
  const base=page.url().split('/').slice(0,3).join('/');
  await page.goto(base);await page.getByRole('button',{name:'Enable audio',exact:true}).click();
+ await page.getByRole('button',{name:'Not now',exact:true}).click();
  await page.waitForFunction(()=>globalThis.__voicesynth.engine.metadata!==null);
  await page.getByRole('button',{name:/^Synth 1 /}).click();
  await page.waitForFunction(()=>globalThis.__voicesynth.engine.getSession().revision>=1);
- await page.locator('summary').filter({hasText:/^Agent$/}).click();
- await page.getByRole('button',{name:'Connect agent',exact:true}).click();
- await page.getByText('Agent connected',{exact:true}).waitFor();
+ await page.evaluate(()=>globalThis.__voicesynth.coordinator.agent.connect());
  const before=await page.evaluate(()=>globalThis.__voicesynth.engine.getSession());
  await page.evaluate(()=>globalThis.__voicesynth.coordinator.submitTranscript('I want an 80s electric piano'));
  await page.waitForFunction(()=>globalThis.__searchUnavailable.received.some(m=>m.type==='error'||m.type==='research'&&m.status==='failed'));

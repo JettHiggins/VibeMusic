@@ -92,3 +92,18 @@ test('a take keeps its starting rhythm grid and commits chords that the engine a
  const committed=e.core.getSession().tracks[0].notes.find(n=>n.id===event.id)!;
  assert.deepEqual([committed.step%4,committed.duration,committed.midi,committed.chord],[0,4,60,[64,67]]);
 });
+
+test('a 1-bar track loops its own length and recording wraps into it',()=>{
+ const session=createSession();session.tracks[3].bars=1;
+ const meta=existsSync('apps/web/public/engine/metadata.json')?JSON.parse(readFileSync('apps/web/public/engine/metadata.json','utf8')):null;
+ if(meta)assert.equal(firmwareSnapshot(session,meta).tracks[3].p[29],16);
+ const window={...base,target:{trackId:'synth-1' as const},trackCells:16};
+ const result=commitPerformance(createSession(),op([note('late',37,2)]),window,'clock',1100000); // bar 3 -> wraps to step 5
+ assert.deepEqual(result.tracks[0].notes.map(n=>[n.step,n.duration]),[[5,2]]);
+});
+
+test('track length is immediate, undoable and keeps events beyond it',{skip:!ready},async()=>{
+ const e=await engine();e.send({type:'set-track-length',trackId:'drums',bars:1});
+ assert.equal(e.core.getSession().tracks[3].bars,1);
+ e.send({type:'undo'});assert.equal(e.core.getSession().tracks[3].bars,undefined);
+});

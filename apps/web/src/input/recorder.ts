@@ -289,7 +289,9 @@ export class PerformanceRecorder {
 
  private pump() {
   if (!this.session || !this.window || this.window.clockId !== this.transport?.clockId) { this.changed(); return; }
-  if (this.mode === 'speech' && !this.speechAvailable) { this.changed(); return; }
+  // Speech lost: already-verified notes still commit (the watermark no longer advances, so nothing
+  // unclassified can slip in). Playtest: verified melody notes vanished after a capture gap.
+  if (this.mode === 'speech' && !this.speechAvailable && this.speechVerifiedThrough < 0) { this.changed(); return; }
   if (this.session.revision < this.minRevision) { this.changed(); return; }
   if (!this.nearBoundary()) { this.changed(); return; }
   const mark = this.watermark();
@@ -371,9 +373,12 @@ export class PerformanceRecorder {
 
  private discardUnverified(reason: string) {
   this.live = null;
-  const pending = this.events.filter(e => e.status === 'provisional');
-  if (pending.length) { this.dropped += pending.length; this.lastError = reason; }
-  this.events = this.events.filter(e => e.status === 'submitted');
+  // Keep events speech had already classified (they cannot contain a command); drop only the rest.
+  const verified = (e: ProvisionalEvent) => e.status === 'submitted' || (this.mode === 'speech' && endOf(e.event) <= this.speechVerifiedThrough);
+  const dropped = this.events.filter(e => !verified(e));
+  if (dropped.length) { this.dropped += dropped.length; this.lastError = reason; }
+  this.events = this.events.filter(verified);
+  this.pump();
  }
 
  private changed() { this.onChange(this.status()); }

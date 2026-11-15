@@ -8,6 +8,7 @@ async page=>{
  });
  const base=page.url().startsWith('http://127.0.0.1:')?page.url().split('/').slice(0,3).join('/'):'http://127.0.0.1:5173';
  await page.goto(base);await page.getByRole('button',{name:'Enable audio',exact:true}).click();
+ await page.getByRole('button',{name:'Not now',exact:true}).click();
  await page.waitForFunction(()=>globalThis.__voicesynth.engine.metadata!==null);
  await page.evaluate(async()=>{
   const {engine,voice}=globalThis.__voicesynth,c=engine.getAudioContext();
@@ -17,9 +18,7 @@ async page=>{
   navigator.mediaDevices.getUserMedia=async()=>{const s=c.createBufferSource(),out=c.createMediaStreamDestination();s.buffer=buffer;s.loop=true;s.connect(out);s.start();globalThis.__serviceSources.push(s);return out.stream;};
   await voice.enableMicrophone();
  });
- await page.locator('summary').filter({hasText:/^Agent$/}).click();
- await page.getByRole('button',{name:'Connect agent',exact:true}).click();
- await page.getByText('Agent connected',{exact:true}).waitFor();
+ await page.evaluate(()=>globalThis.__voicesynth.coordinator.agent.connect());
  const say=text=>page.evaluate(t=>globalThis.__voicesynth.coordinator.submitTranscript(t),text);
  try{
   await say('key D minor');await page.waitForFunction(()=>globalThis.__voicesynth.engine.getSession().pitchSnap?.root===2);

@@ -75,7 +75,10 @@ test('live Python WebSocket proposals apply to real WASM and return authoritativ
   await transcript('Groove metronome off',m=>m.type==='ack'&&m.status==='applied'&&m.revision===beforeClick);
   assert.equal(core.transport().metronomeEnabled,false);assert.equal(core.getSession().revision,beforeClick);
   assert.equal(core.transport().recording,true);assert.equal(core.transport().playing,true);
-  await transcript('Groove select synth three',m=>m.type==='session'&&m.session.selected.trackId==='synth-3');
+  // Change the selection from the UI (a spoken switch to another instrument now stops the take first,
+  // by design); erase must still default to the active take, not the new selection.
+  core.dispatch({id:'ui-select-synth-3',expectedRevision:core.getSession().revision,boundary:'immediate',operation:{type:'select',target:{trackId:'synth-3'}}});
+  render(1024);assert.equal(core.getSession().selected.trackId,'synth-3');
   const hit=core.getSession().tracks[3].hits.find(h=>h.id==='snare-from-capture')!;
   const eraseEpoch=core.transport().recordingEpoch;
   const bar=Math.floor(hit.step/16)+1,beat=Math.floor(hit.step%16/4)+1,sixteenth=hit.step%4+1;

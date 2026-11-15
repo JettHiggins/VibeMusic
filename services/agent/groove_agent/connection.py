@@ -16,11 +16,14 @@ import secrets
 from collections import OrderedDict, deque
 from copy import deepcopy
 import json
+import os
+import time
 from dataclasses import dataclass, replace
 from typing import Any, Callable, Deque, Mapping, Optional, Protocol, Sequence, Union
 
 from .intents import (BOUNDARY, MELODIC_TRACKS, WAKE_WORDS, AcceptCandidate, AuditionCandidate, CancelSearch, Command, Ignored, Interpretation,
-                      NotUnderstood, SoundSearch, interpret, tokenize, validate_operation)
+                      MusicTool, NotUnderstood, Plan, SoundSearch, interpret, tokenize, validate_operation)
+from .music_tools import ToolRefusal, apply_operations, merge_operations, run_tool
 from .control_phrases import InputAction
 from .speech import ChunkError, StreamTracker, decode_chunk
 from .speech_pipeline import EnergySegmenter, SpeechJob, SpeechWorker
@@ -127,6 +130,11 @@ class _Search:
     description: str
     status: str = "running"
     candidates: Sequence[dict] = ()
+    # Spoken searches load their best match ("find a disco synth and load it"); the other candidates
+    # stay listed to swap. loaded_patch is what Groove last applied, so a later user choice is kept.
+    auto_load: bool = False
+    loaded_patch: Optional[str] = None
+    load_stage: str = ""  # "" -> "retrieval" (first complete candidate list) -> "final" (job complete)
 
 
 _WAKE_SPLIT = re.compile(r"(?<=\S)\s+(?=(?:%s)\b)" % "|".join(sorted(WAKE_WORDS)), re.IGNORECASE)
@@ -136,6 +144,25 @@ def split_commands(text: str) -> list[str]:
     """One segment can hold several commands when the pause between them is short:
     "Groove, record kick. Groove, stop." -> ["Groove, record kick.", "Groove, stop."]"""
     return [piece.strip() for piece in _WAKE_SPLIT.split(text) if piece.strip()]
+
+
+# Auto-load keeps a real factory preset unless an evolved variant scores clearly better (playtest:
+# evolved mutations were often crushed/noisy while scoring well).
+AUTO_LOAD_MARGIN = 0.3
+
+
+def _preferred_candidate(candidates: Sequence[dict]) -> dict:
+    best = candidates[0]
+    preset = next((c for c in candidates if str(c.get("provenance", "")).startswith("retrieved")), None)
+    if preset is not None and best is not preset and best["score"] < preset["score"] + AUTO_LOAD_MARGIN:
+        return preset
+    return best
+
+
+def _addressed(text: str) -> bool:
+    """The transcript starts with the wake word (after politeness words): "Groove, ..." / "Hey Grove ..."."""
+    tokens = [t for t in tokenize(text) if t not in ("hey", "ok", "okay", "please", "so", "um", "uh")]
+    return bool(tokens) and tokens[0] in WAKE_WORDS
 
 
 def _bare_wake(text: str) -> bool:
@@ -166,6 +193,14 @@ class Connection:
                  research: Optional[ResearchPort] = None, speech: Optional[SpeechWorker] = None, language=None,
                  voice_research: bool = False) -> None:
         self._voice_research = voice_research
+        # Spoken sound searches load their best match (GROOVE_AUTO_LOAD=0 lists candidates only).
+        self.auto_load_sounds = os.environ.get("GROOVE_AUTO_LOAD", "1").strip() != "0"
+        # Microphone speech must start with the wake word even outside a take (hands-free is on by default,
+        # so conversation must not act). GROOVE_SPEECH_WAKE=take restores "only during takes".
+        self.speech_requires_wake = os.environ.get("GROOVE_SPEECH_WAKE", "always").strip() != "take"
+        # Structured requests (music tools, sound descriptions, counted/positional edits) go to the agent first
+        # when a model is configured; the quick parse is the fallback. GROOVE_AGENT_FIRST=0 disables.
+        self.defer_structured = os.environ.get("GROOVE_AGENT_FIRST", "1").strip() != "0"
         self._closed = False
         self._previews = PreviewRequests()
         self._research_epoch = 0
@@ -334,7 +369,8 @@ class Connection:
                           and not (tokens and all(token in SUNG_SYLLABLES for token in tokens)))
             if continuing:
                 state.refused_through = job.segment.last_frame
-                out.extend(self._refused_span(job))
+                # Never acted on alone. During a take it is not cut out either: it may be singing, and a
+                # lost melody is worse than a few words of a refused request left in the take.
                 out.append(self._transcript(job, text, [], outcome="refused", detail="part of a request that was too long"))
                 return out + self._advance_speech(job.stream_id, job.clock_id, now)
             state.refused_through = None
@@ -350,6 +386,10 @@ class Connection:
                 text = joined
             else:
                 out.extend(self._speech_utterance(held_job, held_text, now))
+        if text and state.held_wake is None and self.speech_requires_wake and not _addressed(text):
+            # Always-on microphone: only speech that starts with "Groove" can act (typed text is exempt).
+            out.append(self._transcript(job, text, [], outcome="ignored", detail="not addressed to Groove"))
+            text = ""
         if text:
             if self._unfinished(job, text):
                 state.held_wake = (job, text)
@@ -464,6 +504,8 @@ class Connection:
         # _advance_speech then refuses it if the sentence is open or transcribing, or acts on it if
         # the sentence has ended (WS1 late-result review).
         result = self._parses(job, text)
+        if isinstance(result, Ignored):
+            return False  # singing/performance (not addressed to Groove) is never held, refused or cut
         if isinstance(result, Command) and result.operation["type"] in ("stop-recording", "play"):
             return False
         return job.segment.cut or isinstance(result, (NotUnderstood, SoundSearch))
@@ -610,8 +652,38 @@ class Connection:
             search.status = message["status"]
             if self._voice_research or message["candidates"] or message["status"] != "cancelled":
                 search.candidates = message["candidates"]
-            return self._previews.prune(search.job_id, list(search.candidates))
+            return self._previews.prune(search.job_id, list(search.candidates)) + self._auto_load(search, message)
         return None
+
+    def _auto_load(self, search: "_Search", message: Mapping[str, Any]) -> list[dict]:
+        """Load the best candidate of a spoken search: once retrieval is complete (fast, about a second),
+        and again with the final best when optimization finishes, unless the track's patch was changed
+        by something else in between (a manual pick wins)."""
+        if not self.auto_load_sounds or not search.auto_load or not message["candidates"] or self.session is None or search is not self._latest_search():
+            return []
+        # Exactly two loads with distinct command ids (a repeated id is a duplicate to the browser):
+        # the best retrieved match as soon as the list is complete, then the final best on completion.
+        if message["status"] == "complete" and search.load_stage != "final":
+            stage = "final"
+        elif message["status"] == "running" and not search.load_stage and len(message["candidates"]) >= CANDIDATES:
+            stage = "retrieval"
+        else:
+            return []
+        search.load_stage = stage
+        best = _preferred_candidate(message["candidates"])
+        best_patch = json.dumps(best["patch"], sort_keys=True)
+        if best_patch == search.loaded_patch:
+            return []
+        track = next(t for t in self.session["tracks"] if t["id"] == search.track_id)
+        current = json.dumps(track["patch"], sort_keys=True)
+        if search.loaded_patch is not None and current != search.loaded_patch:
+            return []  # the user (or another request) chose a different sound meanwhile
+        if self._patch_acceptance_pending():
+            return []
+        search.loaded_patch = best_patch
+        proposal = _Proposal(f"{search.job_id}:load-{stage}",
+                             {"type": "apply-patch", "trackId": search.track_id, "patch": best["patch"]}, BOUNDARY["apply-patch"])
+        return [self._issue(proposal, time.monotonic())]
 
     def _latest_search(self, with_candidates: bool = False) -> Optional[_Search]:
         """Newest search; with_candidates skips ones that ended (or were cancelled) before producing any."""
@@ -659,7 +731,7 @@ class Connection:
             out.extend(self._previews.cancel("preview research job was superseded"))
         if voice_request_id is None:
             self._mark_ui_research_intent()
-        self._searches[job_id] = _Search(job_id, track_id, description)
+        self._searches[job_id] = _Search(job_id, track_id, description, auto_load=voice_request_id is not None)
         accepted = True
         self._language_epoch += 1
         while len(self._searches) > 16:
@@ -778,28 +850,122 @@ class Connection:
             # Familiar commands and explicit parser refusals never wait on a provider. Only
             # unknown addressed speech takes the optional bounded async interpretation path.
             if self._language is not None and result.reason == "command not recognized":
-                unavailable = getattr(self._language, "unavailable", None)
-                blocked = unavailable() if unavailable is not None else None
-                if blocked is not None:
-                    return out + [_error(utterance_id, blocked)]  # cooldown: no provider call at all
-                normalized = " ".join(tokenize(message["text"]))
-                if any(" ".join(tokenize(job.text)) == normalized for job, _ in self._language_pending.values()):
-                    return out + [_error(utterance_id, "the same request is already being interpreted")]
-                if len(self._language_pending) >= 5:
-                    return out + [_error(utterance_id, "language queue is full; try again shortly")]
-                latest = self._latest_search(with_candidates=not self._voice_research)
-                research = ({"jobId": latest.job_id, "trackId": latest.track_id, "description": latest.description,
-                             "status": latest.status, "candidates": [
-                                 {"index": i + 1, "id": item["id"], "provenance": item.get("provenance", "")}
-                                 for i, item in enumerate(latest.candidates[:CANDIDATES])]} if latest else {})
-                job = LanguageJob(utterance_id, message["text"], deepcopy(self.session), during_recording, armed, research)
-                self._language_pending[utterance_id] = (job, self._language_token())
-                if not self._language.submit(job):
-                    del self._language_pending[utterance_id]
-                    return out + [_error(utterance_id, "language queue is full; try again shortly")]
-                return out  # wake span is already excluded; coverage need not wait for inference
+                return out + self._submit_language(utterance_id, message["text"], during_recording, armed)
             return out + [_error(utterance_id, result.reason)]
+        if self._defer_to_model(message["text"], result):
+            # Structured requests go to the agent, which sees the whole song; the quick parse is kept as
+            # the fallback if the model is unavailable, fails or refuses, except a destructive clear: a
+            # counted request ("delete every third snare") must never fall back to clearing the lane.
+            destructive = isinstance(result, Command) and result.operation["type"] == "clear"
+            return out + self._submit_language(utterance_id, message["text"], during_recording, armed,
+                                               fallback=None if destructive else result)
         return out + self._apply_interpretation(utterance_id, result, now)
+
+    # Words that make a request structured (counts, positions, exceptions): the quick parser handles exact
+    # commands, but these need the agent's view of the whole song ("delete every third snare").
+    _STRUCTURE = frozenset({"every", "other", "each", "third", "fourth", "second", "except", "only", "half",
+                            "bar", "bars", "beat", "beats", "odd", "even", "first", "last", "twice", "double"})
+
+    def _defer_to_model(self, text: str, result: Interpretation) -> bool:
+        if self._language is None or not self.defer_structured:
+            return False
+        unavailable = getattr(self._language, "unavailable", None)
+        if unavailable is not None and unavailable() is not None:
+            return False  # cooldown: use the quick parse now
+        if isinstance(result, MusicTool) and result.name == "set_volume":
+            return False  # simple loudness changes are exact and must be instant, also mid-take
+        if isinstance(result, (MusicTool, SoundSearch)):
+            return True  # whole-song edits and sound descriptions benefit from the model's view/rewording
+        if isinstance(result, Command) and result.operation["type"] in ("clear", "mute", "edit-pattern"):
+            return bool(self._STRUCTURE & set(tokenize(text)))
+        return False
+
+    def _submit_language(self, utterance_id: str, text: str, during_recording: bool, armed: bool,
+                         fallback: Optional[Interpretation] = None) -> list[dict]:
+        unavailable = getattr(self._language, "unavailable", None)
+        blocked = unavailable() if unavailable is not None else None
+        if blocked is not None:
+            return [_error(utterance_id, blocked)]  # cooldown: no provider call at all
+        normalized = " ".join(tokenize(text))
+        if any(" ".join(tokenize(item[0].text)) == normalized for item in self._language_pending.values()):
+            return [_error(utterance_id, "the same request is already being interpreted")]
+        if len(self._language_pending) >= 5:
+            return [_error(utterance_id, "language queue is full; try again shortly")]
+        latest = self._latest_search(with_candidates=not self._voice_research)
+        research = ({"jobId": latest.job_id, "trackId": latest.track_id, "description": latest.description,
+                     "status": latest.status, "candidates": [
+                         {"index": i + 1, "id": item["id"], "provenance": item.get("provenance", "")}
+                         for i, item in enumerate(latest.candidates[:CANDIDATES])]} if latest else {})
+        job = LanguageJob(utterance_id, text, deepcopy(self.session), during_recording, armed, research)
+        self._language_pending[utterance_id] = (job, self._language_token(), fallback)
+        if not self._language.submit(job):
+            del self._language_pending[utterance_id]
+            if fallback is not None:
+                return self._apply_interpretation(utterance_id, fallback, 0.0)
+            return [_error(utterance_id, "language queue is full; try again shortly")]
+        return []  # wake span is already excluded; coverage need not wait for inference
+
+    def _switching_mid_take(self, operation: Mapping[str, Any]) -> bool:
+        """A select/record of a different track while a take is recording or counting in."""
+        if operation["type"] not in ("select", "record"):
+            return False
+        transport = self.transport or {}
+        state = transport.get("recordingState") or ("recording" if transport.get("recording") else "idle")
+        if state not in ("recording", "armed"):
+            return False
+        current = transport.get("recordingTarget") or transport.get("armedTarget")
+        return current != operation["target"]
+
+    def _apply_plan(self, utterance_id: str, plan: Plan, now: float) -> list[dict]:
+        """Several actions from one request, in order. Music tools build on each other through a working
+        copy of the song, then go out as one merged set of edits (one edit per track)."""
+        working = self.session
+        operations: list[dict] = []
+        out: list[dict] = []
+        for index, step in enumerate(plan.steps):
+            step_id = utterance_id if index == 0 else f"{utterance_id}:p{index}"
+            if isinstance(step, MusicTool):
+                try:
+                    produced, _label = run_tool(step.name, step.args, working)
+                except (ToolRefusal, ValueError, KeyError, TypeError, StopIteration) as error:
+                    out.append(_error(step_id, str(error) if isinstance(error, ToolRefusal) else "could not apply that edit"))
+                    continue
+                working = apply_operations(working, produced)
+                operations.extend(produced)
+            else:
+                out.extend(self._apply_interpretation(step_id, step, now))
+        if operations:
+            out.extend(self._issue_operations(f"{utterance_id}:edits", merge_operations(operations), now))
+        return out
+
+    def _run_music_tool(self, utterance_id: str, tool: MusicTool, now: float) -> list[dict]:
+        """Compute a whole-song edit from the current session and issue it as ordinary commands, in order
+        (key setting immediately, pattern edits at the next loop, one at a time)."""
+        if self.session is None:
+            return [_error(utterance_id, "no session snapshot received yet")]
+        try:
+            operations, _label = run_tool(tool.name, tool.args, self.session)
+        except (ToolRefusal, ValueError, KeyError, TypeError, StopIteration) as error:
+            return [_error(utterance_id, str(error) if isinstance(error, ToolRefusal) else "could not apply that edit; nothing changed")]
+        return self._issue_operations(utterance_id, operations, now)
+
+    def _issue_operations(self, utterance_id: str, operations: Sequence[dict], now: float) -> list[dict]:
+        out: list[dict] = []
+        for index, operation in enumerate(operations):
+            command_id = utterance_id if index == 0 else f"{utterance_id}:{index}"
+            try:
+                validate("SessionCommand", {"id": command_id, "expectedRevision": self.revision or 0,
+                                             "boundary": BOUNDARY[operation["type"]], "operation": operation})
+            except ContractError:
+                return out + [_error(utterance_id, "that edit did not fit the song format; nothing changed")]
+            proposal = _Proposal(command_id, operation, BOUNDARY[operation["type"]])
+            if self._must_wait(proposal) or (index and operation["type"] == "edit-pattern"):
+                if len(self._backlog) >= MAX_BACKLOG:
+                    return out + [_error(utterance_id, "too many edits are waiting; try again after the next loop")]
+                self._backlog.append(proposal)
+            else:
+                out.append(self._issue(proposal, now))
+        return out + self._drain(now)
 
     def _capture_signature(self) -> tuple:
         transport = self.transport or {}
@@ -825,12 +991,19 @@ class Connection:
             return []
         if pending[1] != self._language_token():
             return [_error(job.request_id, "session or take changed while interpreting; no change applied")]
-        if error is not None:
-            return [_error(job.request_id, error)]
-        if result is None or isinstance(result, (Ignored, NotUnderstood)):
+        fallback = pending[2] if len(pending) > 2 else None
+        if error is not None or result is None or isinstance(result, (Ignored, NotUnderstood)):
+            if fallback is not None:
+                return self._apply_interpretation(job.request_id, fallback, now)  # the quick parse still works
+            if error is not None:
+                return [_error(job.request_id, error)]
             return [_error(job.request_id, "language agent could not resolve the request; no change applied")]
-        if not isinstance(result, (Command, SoundSearch, AcceptCandidate, AuditionCandidate, CancelSearch)):
+        steps = result.steps if isinstance(result, Plan) else (result,)
+        allowed = (Command, SoundSearch, AcceptCandidate, AuditionCandidate, CancelSearch, MusicTool, InputAction)
+        if not steps or not all(isinstance(step, allowed) for step in steps):
             return [_error(job.request_id, "invalid language proposal; no change applied")]
+        if isinstance(result, Plan):
+            return self._apply_plan(job.request_id, result, now)
         if isinstance(result, (AcceptCandidate, AuditionCandidate)) and (type(result.index) is not int or not 1 <= result.index <= CANDIDATES):
             return [_error(job.request_id, "invalid candidate index; no change applied")]
         if isinstance(result, SoundSearch) and (not isinstance(result.description, str)
@@ -838,10 +1011,19 @@ class Connection:
             return [_error(job.request_id, "invalid sound request; no change applied")]
         return self._apply_interpretation(job.request_id, result, now)
 
-    def _apply_interpretation(self, utterance_id: str, result: Interpretation, now: float) -> list[dict]:
+    def _apply_interpretation(self, utterance_id: str, result: Interpretation, now: float,
+                              take_stopped: bool = False) -> list[dict]:
         out: list[dict] = []
         if isinstance(result, InputAction):
             return self._request_browser_action(utterance_id, dict(result.operation), now)
+        if isinstance(result, MusicTool):
+            return self._run_music_tool(utterance_id, result, now)
+        if isinstance(result, Plan):
+            return self._apply_plan(utterance_id, result, now)
+        if isinstance(result, Command) and not take_stopped and self._switching_mid_take(result.operation):
+            # Playtest: switching instrument during a take should stop the take and switch at once.
+            stop = self._issue(_Proposal(f"{utterance_id}:stop", {"type": "stop-recording"}, BOUNDARY["stop-recording"]), now)
+            return [stop] + self._apply_interpretation(f"{utterance_id}:switch", result, now, take_stopped=True)
         if isinstance(result, Command):
             try:
                 validate("SessionCommand", {"id": utterance_id, "expectedRevision": self.revision,

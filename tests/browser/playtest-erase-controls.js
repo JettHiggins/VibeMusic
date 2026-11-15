@@ -2,6 +2,7 @@ async page=>{
  const base=page.url().startsWith('http://127.0.0.1:')?page.url().split('/').slice(0,3).join('/'):'http://127.0.0.1:5173';
  await page.goto(base);
  await page.getByRole('button',{name:'Enable audio',exact:true}).click();
+ await page.getByRole('button',{name:'Not now',exact:true}).click();
  await page.waitForFunction(()=>globalThis.__voicesynth.engine.metadata!==null);
  await page.evaluate(async()=>{
   const {engine,voice}=globalThis.__voicesynth,context=engine.getAudioContext();
@@ -18,17 +19,17 @@ async page=>{
   });
   await voice.enableTestSignal(context.createBuffer(1,context.sampleRate*45,context.sampleRate),context.currentTime+.05);voice.setLatencyFrames(0);
  });
- await page.getByRole('button',{name:'● Rec Kick',exact:true}).click();
+ await page.getByRole('button',{name:'Record Kick',exact:true}).click();
  await page.waitForFunction(()=>globalThis.__eraseTransport?.recording===true);
  const epoch=await page.evaluate(()=>globalThis.__eraseTransport.recordingEpoch);
  await page.getByRole('gridcell',{name:'Erase Kick step 5',exact:true}).click();
  await page.waitForFunction(()=>!globalThis.__voicesynth.engine.getSession().tracks[3].hits.some(h=>h.id==='remove'));
  const drums=await page.evaluate(()=>({hits:globalThis.__voicesynth.engine.getSession().tracks[3].hits,transport:globalThis.__eraseTransport}));
  if(drums.hits.length!==2||!drums.hits.some(h=>h.id==='snare')||!drums.hits.some(h=>h.id==='keep')||!drums.transport.recording||drums.transport.recordingEpoch!==epoch)throw new Error('Drum mouse erase disturbed unrelated input or capture');
- await page.getByRole('button',{name:'■ Stop rec',exact:true}).click();
+ await page.getByRole('button',{name:'Stop recording',exact:true}).click();
  await page.waitForFunction(()=>!globalThis.__eraseTransport?.recording);
  await page.getByRole('button',{name:/^Synth 1 /}).click();
- await page.getByRole('button',{name:'● Rec Synth 1',exact:true}).click();
+ await page.getByRole('button',{name:'Record Synth 1',exact:true}).click();
  await page.waitForFunction(()=>globalThis.__eraseTransport?.recording===true);
  const melody=page.getByRole('gridcell',{name:'C4 step 5 length 4',exact:true});
  await melody.click();await page.keyboard.press('Delete');

@@ -140,3 +140,12 @@ test('a receipt observer failure cannot reject a command already submitted to th
   s.ack('submitted','applied');assert.equal(s.sent.find(m=>m.type==='ack')?.status,'applied');
  }finally{coordinator.dispose();s.controller.dispose();}
 });
+
+test('a spoken search skipped while another search is pending says so instead of vanishing',()=>{
+ const s=setup();s.controller.setAudioEnabled(true);
+ s.controller.request('synth-1','typed pad'); // UI search still waiting for its first result
+ s.emit(s.context('voice-b'));
+ const state=s.controller.getSnapshot();
+ assert.match(state.error??'',/Skipped the spoken search for "Sound voice-b"/);
+ assert.ok(s.sent.some(m=>m.type==='cancel-job'&&m.jobId==='voice-b'));
+});

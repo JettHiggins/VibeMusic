@@ -1,6 +1,6 @@
 import type { PitchSnap, SessionState } from '@voicesynth/contracts';
 import { C } from './theme.ts';
-import { KEY_NAMES, keyLabel, snapBlockedReason, withRoot, withScale } from './pitch-snap-ui.ts';
+import { KEY_NAMES, snapBlockedReason, withRoot, withScale } from './pitch-snap-ui.ts';
 
 type TrackId = SessionState['tracks'][number]['id'];
 
@@ -31,9 +31,7 @@ export function PitchSnapControls({ settings, trackId, noteCount, enabled, onCha
    </select>
   </label>
   <button type="button" disabled={blocked !== null} title={blocked ?? 'Snaps this track\'s notes to the key at the next loop. Undo reverts it.'} onClick={onSnap}>Snap existing notes</button>
-  <small style={{ color: C.muted }}>{settings
-   ? `New sung notes snap to ${keyLabel(settings)}. Existing notes change only when you snap them (undoable).`
-   : 'Off: sung notes keep their detected pitch.'}</small>
+
  </div>;
 }
 

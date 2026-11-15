@@ -140,10 +140,10 @@ export function PianoRoll({ notes, provisional, playhead, disabled, eraseEnabled
    <button onClick={() => navigate(centerPitch(notes.length ? notes : provisional))}>Center</button>
    <span style={{ color: C.muted, fontFamily: MONO }} aria-label="Visible range">{noteName(rows[rows.length - 1])}–{noteName(rows[0])}</span>
    <label>Length <select value={length} onChange={e => setLength(Number(e.target.value))}>{[1, 2, 4, 8, 16].map(l => <option key={l} value={l}>{l === 1 ? '1/16' : l === 2 ? '1/8' : l === 4 ? '1/4' : l === 8 ? '1/2' : '1 bar'}</option>)}</select></label>
-   <span style={{ color: C.muted }}>Click to add · drag to move · drag the right edge to resize · Delete or double-click to remove</span>
+   <span className="vs-sr">Click to add. Drag to move or resize. Delete or double-click to remove.</span>
    {offscreen > 0 && <span role="status" style={{ color: liveOff ? C.text : C.muted }}>{offscreen} note{offscreen === 1 ? '' : 's'} outside view ({offDetail})</span>}
   </div>
-  <div style={{ display: 'flex', border: `1px solid ${C.line}`, borderRadius: 4, overflow: 'hidden' }}>
+  <div style={{ display: 'flex', border: `1px solid ${C.line}`, borderRadius: 0, overflow: 'hidden' }}>
    <div aria-label="Keyboard" style={{ width: KEYS_W, flex: 'none', borderRight: `1px solid ${C.line}` }}>
     {rows.map(m => <div key={m} onPointerDown={() => onAudition?.(m, true)} onPointerUp={() => onAudition?.(m, false)} onPointerLeave={() => onAudition?.(m, false)}
      style={{ height: ROW_H, boxSizing: 'border-box', fontSize: 9, fontFamily: MONO, paddingLeft: 4, lineHeight: `${ROW_H}px`, cursor: onAudition ? 'pointer' : 'default',

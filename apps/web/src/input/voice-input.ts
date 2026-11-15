@@ -185,7 +185,9 @@ export class VoiceInput implements BrowserActionAdapter {
  private failSpeech(reason:string) {
   // A paused stream has already ended; the action that paused it restarts or reports speech afterwards.
   if(this.speechPaused||!this.state.speech.enabled||this.state.speech.status==='unavailable')return;
-  this.recorder.setSpeechAvailable(false);this.recorder.resetPendingCapture();this.mic?.stopSpeech?.();this.speechSession=null;
+  // Keep notes speech had already verified (playtest: melodies vanished after a capture gap); only
+  // unverified capture is discarded, by setSpeechAvailable(false).
+  this.recorder.setSpeechAvailable(false);this.mic?.stopSpeech?.();this.speechSession=null;
   this.update({speech:{enabled:true,status:'unavailable',message:reason}});
   this.endSpeechTake();this.resetSpeechConnection();
  }

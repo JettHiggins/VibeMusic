@@ -128,6 +128,8 @@ def test_essential_commands_work_while_the_provider_is_cooling_down(text, operat
     replies = connection.handle({"type": "utterance", "id": "u", "text": text, "clockId": "ctx", "startFrame": 352900,
                                  "endFrame": 353900, "duringRecording": True}, 0)
     assert replies[0]["type"] == "command-span" and replies[-1]["command"]["operation"] == operation
+    if operation["type"] == "select":  # switching instrument mid-take stops the take first (playtest)
+        assert [r["command"]["operation"]["type"] for r in replies if r["type"] == "command"] == ["stop-recording", "select"]
     assert language.jobs == []
 
 
@@ -168,3 +170,54 @@ def test_actual_websocket_service_degrades_to_exact_commands_after_a_429(monkeyp
         validate("ServerMessage", reply)
         assert reply["command"]["operation"] == {"type": "tempo", "bpm": 100}
     assert language.calls == ["make the chorus wider"]  # exactly one provider request in total
+
+
+def test_a_short_429_burst_is_retried_once_then_succeeds():
+    import groove_agent.language as module
+    module_quick = module.QUICK_RETRY_S
+    module.QUICK_RETRY_S = 0.01
+    calls, delivered = [], []
+
+    class Bursty:
+        gate = ProviderGate()
+        async def infer(self, job):
+            calls.append(job)
+            if len(calls) == 1:
+                raise ProviderError(429)  # no Retry-After: shared-capacity burst
+            return Command({"type": "undo"}, "immediate")
+
+    async def scenario():
+        worker = LanguageWorker(Bursty(), lambda job, result, error: delivered.append((result, error)))
+        worker.submit(type("Job", (), {"text": "undo that"})())
+        for _ in range(100):
+            await asyncio.sleep(0.01)
+            if delivered:
+                break
+        await worker.close()
+    try:
+        asyncio.run(scenario())
+    finally:
+        module.QUICK_RETRY_S = module_quick
+    assert len(calls) == 2 and delivered == [(Command({"type": "undo"}, "immediate"), None)]
+    assert Bursty.gate.blocked() is None  # success: no cooldown
+
+
+def test_a_429_with_a_long_retry_after_is_not_retried():
+    calls, delivered = [], []
+
+    class Limited:
+        gate = ProviderGate()
+        async def infer(self, job):
+            calls.append(job)
+            raise ProviderError(429, retry_after=60)
+
+    async def scenario():
+        worker = LanguageWorker(Limited(), lambda job, result, error: delivered.append(error))
+        worker.submit(type("Job", (), {"text": "x"})())
+        for _ in range(100):
+            await asyncio.sleep(0.01)
+            if delivered:
+                break
+        await worker.close()
+    asyncio.run(scenario())
+    assert len(calls) == 1 and Limited.gate.blocked() is not None
