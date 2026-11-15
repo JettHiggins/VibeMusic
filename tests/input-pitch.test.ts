@@ -6,7 +6,7 @@ import { NoteSegmenter, YinTracker, hzToMidi, type PitchFrame, type SungNote } f
 const SR = 44100;
 function rng(seed: number) { return () => { seed |= 0; seed = seed + 0x6d2b79f5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
 const midiHz = (m: number) => 440 * 2 ** ((m - 69) / 12);
-interface Sung { midi: number; start: number; end: number; vibrato?: number; db?: number }
+interface Sung { midi: number; start: number; end: number; vibrato?: number; vibratoHz?: number; vibratoPhase?: number; db?: number }
 /** Voice-like tone: harmonics with falling amplitude, soft attack/release, optional vibrato, breath noise. */
 function sing(notes: Sung[], seconds: number, noiseDb = -60, seed = 1) {
  const random = rng(seed), out = new Float32Array(Math.round(seconds * SR)), noise = 10 ** (noiseDb / 20);
@@ -15,7 +15,7 @@ function sing(notes: Sung[], seconds: number, noiseDb = -60, seed = 1) {
   let phase = 0; const a0 = Math.round(n.start * SR), a1 = Math.round(n.end * SR), amp = 10 ** ((n.db ?? -14) / 20);
   for (let i = a0; i < a1 && i < out.length; i++) {
    const t = (i - a0) / SR, env = Math.min(1, t / 0.02, (a1 - i) / SR / 0.02);
-   phase += 2 * Math.PI * midiHz(n.midi + (n.vibrato ?? 0) * Math.sin(2 * Math.PI * 5.5 * t)) / SR;
+   phase += 2 * Math.PI * midiHz(n.midi + (n.vibrato ?? 0) * Math.sin(2 * Math.PI * (n.vibratoHz ?? 5.5) * t + (n.vibratoPhase ?? 0))) / SR;
    let s = 0; for (let h = 1; h <= 6; h++) s += Math.sin(h * phase) / (h * h);
    out[i] += s * amp * env * 0.8;
   }
@@ -149,4 +149,21 @@ test('uncertain quiet periodic input still needs the original acquisition margin
  const seg=new NoteSegmenter({sampleRate:SR,hop:256,noiseFloorDb:-60});
  const frames:PitchFrame[]=Array.from({length:120},(_,i)=>({frame:i*256,f0:midiHz(60),clarity:.85,rmsDb:-47}));
  assert.deepEqual([...seg.push(frames),...seg.flush(120*256)],[]);
+});
+
+test('quiet adjacent semitones are stable across capture alignments and noise realizations', () => {
+ for(let seed=1;seed<=8;seed++){
+  const start=.15+seed*256/SR/8;
+  const phrase:Sung[]=[60,62,64,65].map((midi,i)=>({midi,start:start+i*.125,end:start+(i+1)*.125,db:-42}));
+  const {notes}=analyse(sing(phrase,.9,-60,seed));
+  assert.deepEqual(notes.map(n=>n.midi),phrase.map(n=>n.midi),`capture alignment/noise seed ${seed}`);
+ }
+});
+
+
+test('wide vibrato stays one note across entry phases and normal vibrato rates', () => {
+ for(const vibratoHz of [4.5,5.5,7])for(const vibratoPhase of [0,Math.PI/2,Math.PI,Math.PI*1.5]){
+  const {notes}=analyse(sing([{midi:60,start:.1,end:1.3,vibrato:.6,vibratoHz,vibratoPhase}],1.5));
+  assert.deepEqual(notes.map(n=>n.midi),[60],`${vibratoHz} Hz phase ${vibratoPhase}: ${JSON.stringify(notes)}`);
+ }
 });

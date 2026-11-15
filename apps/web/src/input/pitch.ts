@@ -223,9 +223,11 @@ export class NoteSegmenter {
    this.deviating = [];
    return;
   }
-  // Hysteresis: a new pitch must persist ≥ 12 hops (~70 ms) before it ends the note. A sung step
-  // holds; a wide vibrato excursion (±0.6 semitone at 5–6 Hz) stays beyond 0.9 for well under that.
-  if (Math.abs(m - centre) > 0.9) {
+  // A semitone change must be observable before reaching its exact centre: quiet/noisy YIN
+  // frames can stay just shy of a full semitone. Keep the 12-hop (~70 ms) persistence test
+  // so brief excursions from wide vibrato still cannot become a new note. Anchor this
+  // comparison to the held MIDI note, not a momentarily biased raw vibrato median.
+  if (Math.abs(m - Math.round(centre)) > 0.65) {
    this.deviating.push({ ...f, f0: 440 * 2 ** ((m - 69) / 12) });
    if (this.deviating.length >= 12 && this.deviating.every(x => Math.abs(hzToMidi(x.f0!) - hzToMidi(this.deviating[0].f0!)) <= 1)) {
     const d = this.deviating; this.deviating = [];
