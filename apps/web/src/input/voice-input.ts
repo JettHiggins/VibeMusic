@@ -269,12 +269,13 @@ export class VoiceInput implements BrowserActionAdapter {
   if (this.collector) { this.collector.push(...frame.onsets.map(o => o.frame)); }
   else if (this.transport && this.state.calibration) {
    const latencyFrames = effectiveLatencyFrames(this.state.calibration), clock = this.transport.clockId;
+   this.recorder.setLiveNote(frame.liveNote ?? null, latencyFrames, clock);
    const heldStart = Math.floor(frame.analysedThrough - latencyFrames);
    this.heldCaptureStart = this.transport.recording && this.transport.recordingTarget?.trackId !== 'drums'
     && frame.pitch?.holding && heldStart >= (this.transport.captureStartFrame ?? this.transport.recordingStartFrame ?? Infinity) ? heldStart : null;
    if (frame.notes.length) this.recorder.addNotes(frame.notes, latencyFrames, clock, frame.analysedThrough);
    this.recorder.addOnsets(frame.onsets, latencyFrames, clock, frame.analysedThrough);
-  }
+  } else this.recorder.setLiveNote(null, 0, this.transport?.clockId ?? '');
   this.check?.add(frame);
   // Analysis frames arrive ~43 times a second; the UI only needs ~10 updates a second.
   const now = performance.now();

@@ -9,6 +9,8 @@ import { captureConstraints, type ProcessingProfile } from './processing-profile
 
 export interface AnalysisFrame {
  onsets: Onset[]; notes: SungNote[];
+ /** Current held note for immediate visualization, never a finalized event. */
+ liveNote?: SungNote | null;
  /** Verification coverage: held at the start of a note still being sung. */
  analysedThrough: number;
  /** Raw capture frame actually processed (real elapsed time, for diagnostics). */

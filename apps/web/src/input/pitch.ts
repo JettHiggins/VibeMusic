@@ -20,6 +20,7 @@ export interface PitchOptions {
  noiseFloorDb?: number;
  gateDb?: number;
  minClarity?: number;
+ /** Override both minima; defaults:50 ms for released articulations,70 ms for continuous pitch changes. */
  minNoteMs?: number;
 }
 
@@ -131,7 +132,11 @@ export class YinTracker {
    }
   }
   let tau = firstBelow;
-  if (tau > 0) while (tau + 1 <= maxLag && cmnd[tau + 1] < cmnd[tau]) tau++;
+  if (tau > 0) {
+   // Noise makes tiny local dips inside one broad period trough. Refine to the lowest
+   // value in this first below-threshold region rather than stopping at its first uptick.
+   for (let j = tau + 1; j <= maxLag && cmnd[j] < this.threshold; j++) if (cmnd[j] < cmnd[tau]) tau = j;
+  }
   else tau = best;
   const frame = this.first! + start + Math.floor(w / 2);
   const rmsDb = toDb(Math.sqrt(energy / w));
@@ -154,13 +159,18 @@ export class NoteSegmenter {
  private deviating: PitchFrame[] = [];
  private readonly hopFrames: number;
  private readonly minFrames: number;
+ private readonly transitionMinFrames: number;
  private readonly gate: number;
  private readonly minClarity: number;
  private noiseFloorDb: number;
 
  constructor(private options: PitchOptions & { hop: number }) {
   this.hopFrames = options.hop;
-  this.minFrames = Math.round((options.minNoteMs ?? 70) * options.sampleRate / 1000);
+  // Segment boundaries have hop resolution. Round the minimum to that same grid: a
+  // short, clearly voiced articulation must not disappear on sub-hop rounding.
+  const minimum = (ms: number) => Math.round(ms * options.sampleRate / (1000 * this.hopFrames)) * this.hopFrames;
+  this.minFrames = minimum(options.minNoteMs ?? 50);
+  this.transitionMinFrames = minimum(options.minNoteMs ?? 70);
   this.noiseFloorDb = options.noiseFloorDb ?? -60;
   this.gate = options.gateDb ?? PITCH_GATE_DB;
   this.minClarity = options.minClarity ?? MIN_PITCH_CLARITY;
@@ -170,6 +180,11 @@ export class NoteSegmenter {
 
  /** Frame at which an open note began, if any (its frames are not final yet). */
  get openStart() { return this.open?.start ?? this.candidate[0]?.frame ?? null; }
+
+ /** View-only estimate: it must never enter the finalized-note queue. */
+ get liveNote(): SungNote | null {
+  return this.open ? this.noteAt(this.open.lastVoiced + this.hopFrames / 2) : null;
+ }
 
  push(frames: PitchFrame[]): SungNote[] {
   const notes: SungNote[] = [];
@@ -233,7 +248,7 @@ export class NoteSegmenter {
    if (this.deviating.length > 12) this.deviating.shift();
    if (this.deviating.length >= 12 && this.deviating.every(x => Math.abs(hzToMidi(x.f0!) - hzToMidi(this.deviating[0].f0!)) <= 1)) {
     const d = this.deviating; this.deviating = [];
-    this.close(d[0].frame - half, notes);
+    this.close(d[0].frame - half, notes, this.transitionMinFrames);
     this.open = { start: d[0].frame - half, pitches: d.map(x => hzToMidi(x.f0!)), clarity: d.map(x => x.clarity), peakDb: Math.max(...d.map(x => x.rmsDb)), minSincePeak: Infinity, minFrame: 0, lastVoiced: f.frame, lastUnvoiced: null };
    }
    return;
@@ -242,13 +257,18 @@ export class NoteSegmenter {
   o.pitches.push(m); o.clarity.push(f.clarity); o.lastVoiced = f.frame;
  }
 
- private close(end: number, notes: SungNote[]) {
-  const o = this.open!; this.open = null; this.unvoiced = 0;
-  if (end - o.start < this.minFrames) return;
+ private close(end: number, notes: SungNote[], minimum = this.minFrames) {
+  const note = end - this.open!.start >= minimum ? this.noteAt(end) : null;
+  this.open = null; this.unvoiced = 0;
+  if (note) notes.push(note);
+ }
+
+ private noteAt(end: number): SungNote | null {
+  const o = this.open!;
   const midi = Math.round(this.median(o.pitches));
-  if (midi < 0 || midi > 127) return;
+  if (midi < 0 || midi > 127) return null;
   const clarity = o.clarity.reduce((a, b) => a + b, 0) / o.clarity.length;
   const velocity = Math.min(1, Math.max(0.1, (o.peakDb - (this.noiseFloorDb + this.gate)) / Math.max(6, -6 - (this.noiseFloorDb + this.gate)) * 0.9 + 0.1));
-  notes.push({ startFrame: Math.round(o.start), endFrame: Math.round(end), midi, velocity, confidence: Math.min(1, Math.max(0, (clarity - 0.5) * 2)) });
+  return { startFrame: Math.round(o.start), endFrame: Math.round(end), midi, velocity, confidence: Math.min(1, Math.max(0, (clarity - 0.5) * 2)) };
  }
 }

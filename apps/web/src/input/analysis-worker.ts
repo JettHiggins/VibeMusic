@@ -12,7 +12,7 @@ export type AnalysisRequest =
  /** Drop held notes and pre-edit queued audio; never flush it back into the track. */
  | { type: 'reset'; frame: number };
 export type AnalysisResult =
- | { type: 'onsets'; onsets: Onset[]; notes: SungNote[]; analysedThrough: number; levelDb: number; analysisMs: number; pitch?: PitchReading | null; processedThrough?: number }
+ | { type: 'onsets'; onsets: Onset[]; notes: SungNote[]; analysedThrough: number; levelDb: number; analysisMs: number; pitch?: PitchReading | null; processedThrough?: number; liveNote?: SungNote | null }
  | { type: 'noise-floor'; db: number }
  | { type: 'noise-floor-unavailable'; message: string }
  | { type: 'error'; message: string };
@@ -79,7 +79,7 @@ function onAudio(startFrame: number, samples: Float32Array) {
   }
  }
  // analysedThrough is held at an open note's start (verification coverage); processedThrough is real elapsed capture.
- post({ type: 'onsets', onsets, notes, analysedThrough: analysedThrough(), processedThrough: lastFrame, levelDb: toDb(peak), analysisMs: performance.now() - started, pitch });
+ post({ type: 'onsets', onsets, notes, liveNote: segmenter.liveNote, analysedThrough: analysedThrough(), processedThrough: lastFrame, levelDb: toDb(peak), analysisMs: performance.now() - started, pitch });
 }
 
 scope.onmessage = ({ data }: MessageEvent<AnalysisRequest>) => {
@@ -88,7 +88,7 @@ scope.onmessage = ({ data }: MessageEvent<AnalysisRequest>) => {
   data.port.onmessage = ({ data: audio }) => {
    if (audio.type === 'gap') {
     const notes = gap();
-    if (notes.length) post({ type: 'onsets', onsets: [], notes, analysedThrough: 0, levelDb: -120, analysisMs: 0 });
+    post({ type: 'onsets', onsets: [], notes, liveNote: null, analysedThrough: 0, levelDb: -120, analysisMs: 0 });
    } else if (audio.type === 'audio') onAudio(audio.startFrame, audio.samples);
   };
  } else if (data.type === 'configure') {
@@ -99,7 +99,7 @@ scope.onmessage = ({ data }: MessageEvent<AnalysisRequest>) => {
   start(); // Fresh segmenter deliberately drops the old held note.
  } else if (data.type === 'flush') {
   const notes = segmenter?.flush(data.frame) ?? [];
-  post({ type: 'onsets', onsets: [], notes, analysedThrough: lastFrame, levelDb: -120, analysisMs: 0 });
+  post({ type: 'onsets', onsets: [], notes, liveNote: null, analysedThrough: lastFrame, levelDb: -120, analysisMs: 0 });
  } else if (data.type === 'measure-noise') {
   measuring = { frames: data.frames, maxFrames: data.frames * 4, processed: 0, chunks: [], collected: 0 };
  }
