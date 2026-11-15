@@ -19,10 +19,15 @@ async page=>{
   const quiet=c.createConstantSource();quiet.offset.value=0;quiet.connect(out);quiet.start();
   navigator.mediaDevices.getUserMedia=async()=>out.stream;
   globalThis.__acoustic.source=out;globalThis.__acoustic.quiet=quiet;
+  // Prepare fixtures before enabling capture: decoding during a take can stall a loaded browser.
+  const decoded=new Map();
+  for(const file of ['instrument-request','cancel','audition','accept','undo']){
+   const response=await fetch('/__synthetic-'+file+'.wav');if(!response.ok)throw new Error('Generate synthetic speech clip first: '+file);
+   decoded.set('/__synthetic-'+file+'.wav',await c.decodeAudioData(await response.arrayBuffer()));
+  }
   globalThis.__acoustic.speak=async file=>{
-   const response=await fetch(file);if(!response.ok)throw new Error('Generate synthetic speech clip first: '+file);
-   const buffer=await c.decodeAudioData(await response.arrayBuffer()),s=c.createBufferSource();
-   s.buffer=buffer;s.connect(out);s.start(c.currentTime+.2);
+   const buffer=decoded.get(file);if(!buffer)throw new Error('Speech fixture not prepared: '+file);
+   const s=c.createBufferSource();s.buffer=buffer;s.connect(out);s.start(c.currentTime+.2);
    return buffer.duration;
   };
   await voice.enableMicrophone();await voice.enableHandsFree();
