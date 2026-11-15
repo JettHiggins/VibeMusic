@@ -1,0 +1,155 @@
+[
+ {
+  "type": "session",
+  "session": {
+   "version": 1,
+   "revision": 0,
+   "tempo": 120,
+   "bars": 4,
+   "beatsPerBar": 4,
+   "stepsPerBeat": 4,
+   "selected": {
+    "trackId": "drums",
+    "lane": "kick"
+   },
+   "tracks": [
+    {
+     "id": "synth-1",
+     "name": "synth-1",
+     "muted": false,
+     "volume": 0.7,
+     "patch": {
+      "engine": 0,
+      "preset": 0,
+      "parameters": {},
+      "engineRevision": "bac9c05ea7627449405aa10e48da21d75b6c8c56"
+     },
+     "notes": [
+      {
+       "id": "chord-1",
+       "step": 0,
+       "duration": 4,
+       "midi": 60,
+       "velocity": 0.8,
+       "chord": [
+        64,
+        67
+       ]
+      },
+      {
+       "id": "single-1",
+       "step": 8,
+       "duration": 4,
+       "midi": 62,
+       "velocity": 0.8
+      }
+     ],
+     "hits": []
+    },
+    {
+     "id": "synth-2",
+     "name": "synth-2",
+     "muted": false,
+     "volume": 0.7,
+     "patch": {
+      "engine": 0,
+      "preset": 0,
+      "parameters": {},
+      "engineRevision": "bac9c05ea7627449405aa10e48da21d75b6c8c56"
+     },
+     "notes": [],
+     "hits": []
+    },
+    {
+     "id": "synth-3",
+     "name": "synth-3",
+     "muted": false,
+     "volume": 0.7,
+     "patch": {
+      "engine": 0,
+      "preset": 0,
+      "parameters": {},
+      "engineRevision": "bac9c05ea7627449405aa10e48da21d75b6c8c56"
+     },
+     "notes": [],
+     "hits": []
+    },
+    {
+     "id": "drums",
+     "name": "drums",
+     "muted": false,
+     "volume": 0.7,
+     "patch": {
+      "engine": 0,
+      "preset": 0,
+      "parameters": {},
+      "engineRevision": "bac9c05ea7627449405aa10e48da21d75b6c8c56"
+     },
+     "notes": [],
+     "hits": []
+    }
+   ],
+   "rhythmSnap": "quarter",
+   "chordMode": "triad",
+   "pitchSnap": {
+    "root": 0,
+    "scale": "major"
+   }
+  }
+ },
+ {
+  "type": "command",
+  "command": {
+   "id": "rhythm-quarter",
+   "expectedRevision": 0,
+   "boundary": "immediate",
+   "operation": {
+    "type": "set-rhythm-snap",
+    "grid": "quarter"
+   }
+  }
+ },
+ {
+  "type": "command",
+  "command": {
+   "id": "chords-on",
+   "expectedRevision": 0,
+   "boundary": "immediate",
+   "operation": {
+    "type": "set-chord-mode",
+    "mode": "triad"
+   }
+  }
+ },
+ {
+  "type": "speech-transcript",
+  "utteranceId": "s1:speech-3",
+  "streamId": "s1",
+  "clockId": "clock-1",
+  "startFrame": 44100,
+  "endFrame": 88200,
+  "text": "Groove, set the tempo to one forty",
+  "outcome": "command",
+  "detail": "tempo 140 BPM"
+ },
+ {
+  "type": "speech-transcript",
+  "utteranceId": "s1:speech-4",
+  "streamId": "s1",
+  "clockId": "clock-1",
+  "startFrame": 97020,
+  "endFrame": 132300,
+  "text": "Groove, make it sound like a warm electric piano",
+  "outcome": "research",
+  "detail": "searching: warm electric piano"
+ },
+ {
+  "type": "speech-transcript",
+  "utteranceId": "s1:speech-5",
+  "clockId": "clock-1",
+  "startFrame": 141120,
+  "endFrame": 150000,
+  "text": "la la la",
+  "outcome": "ignored"
+ }
+]

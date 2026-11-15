@@ -193,6 +193,49 @@
                   "properties": {
                     "type": {
                       "type": "string",
+                      "const": "set-rhythm-snap"
+                    },
+                    "grid": {
+                      "type": "string",
+                      "enum": [
+                        "sixteenth",
+                        "eighth",
+                        "quarter"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "grid"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "set-chord-mode"
+                    },
+                    "mode": {
+                      "type": "string",
+                      "enum": [
+                        "off",
+                        "triad"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "mode"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
                       "const": "snap-notes"
                     },
                     "trackId": {
@@ -530,6 +573,15 @@
                             "type": "number",
                             "minimum": 0,
                             "maximum": 1
+                          },
+                          "chord": {
+                            "maxItems": 3,
+                            "type": "array",
+                            "items": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 127
+                            }
                           }
                         },
                         "required": [
@@ -772,6 +824,15 @@
                                       "type": "number",
                                       "minimum": 0,
                                       "maximum": 1
+                                    },
+                                    "chord": {
+                                      "maxItems": 3,
+                                      "type": "array",
+                                      "items": {
+                                        "type": "integer",
+                                        "minimum": 0,
+                                        "maximum": 127
+                                      }
                                     }
                                   },
                                   "required": [
@@ -862,6 +923,21 @@
                             {
                               "type": "null"
                             }
+                          ]
+                        },
+                        "rhythmSnap": {
+                          "type": "string",
+                          "enum": [
+                            "sixteenth",
+                            "eighth",
+                            "quarter"
+                          ]
+                        },
+                        "chordMode": {
+                          "type": "string",
+                          "enum": [
+                            "off",
+                            "triad"
                           ]
                         }
                       },
@@ -1405,6 +1481,66 @@
         "trackId",
         "description",
         "origin"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "speech-transcript"
+        },
+        "utteranceId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "streamId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "clockId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "startFrame": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "endFrame": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 1000
+        },
+        "outcome": {
+          "type": "string",
+          "enum": [
+            "command",
+            "refused",
+            "ignored",
+            "held",
+            "interpreting",
+            "research"
+          ]
+        },
+        "detail": {
+          "type": "string",
+          "maxLength": 300
+        }
+      },
+      "required": [
+        "type",
+        "utteranceId",
+        "clockId",
+        "startFrame",
+        "endFrame",
+        "text",
+        "outcome"
       ],
       "additionalProperties": false
     },

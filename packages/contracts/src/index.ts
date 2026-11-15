@@ -6,11 +6,17 @@ export const TrackId = z.enum(['synth-1', 'synth-2', 'synth-3', 'drums']);
 export const Lane = z.enum(['kick', 'snare', 'closed-hat']);
 export const Target = z.strictObject({ trackId: TrackId, lane: Lane.optional() });
 export const Patch = z.strictObject({ engine: z.number().int().nonnegative(), preset: z.number().int().nonnegative(), parameters: z.record(z.string(), z.number().finite()), engineRevision: id });
-export const Note = z.strictObject({ id, step: z.number().int().min(0).max(63), duration: z.number().int().min(1).max(64), midi: z.number().int().min(0).max(127), velocity: unit });
+// Playtest round: `chord` holds up to 3 extra pitches sounding with `midi` (firmware steps carry
+// up to 4 notes). Missing or empty means a single note, so old saves are unchanged.
+export const Note = z.strictObject({ id, step: z.number().int().min(0).max(63), duration: z.number().int().min(1).max(64), midi: z.number().int().min(0).max(127), velocity: unit, chord: z.array(z.number().int().min(0).max(127)).max(3).optional() });
 export const Hit = z.strictObject({ id, step: z.number().int().min(0).max(63), lane: Lane, velocity: unit });
 export const Track = z.strictObject({ id: TrackId, name: id, muted: z.boolean(), volume: unit, patch: Patch, notes: z.array(Note).max(64), hits: z.array(Hit).max(192) });
 export const PitchSnap = z.strictObject({ root: z.number().int().min(0).max(11), scale: z.enum(['major','minor']) });
-export const SessionState = z.strictObject({ version: z.literal(1), revision: frame, tempo: z.number().min(40).max(240), bars: z.literal(4), beatsPerBar: z.literal(4), stepsPerBeat: z.literal(4), selected: Target, tracks: z.array(Track).length(4), pitchSnap: PitchSnap.nullable().optional() });
+// Recording rhythm grid for newly committed performance: sixteenth (default/legacy), eighth or quarter.
+export const RhythmSnap = z.enum(['sixteenth','eighth','quarter']);
+// Chord mode for newly committed sung notes: off (default) or triad (root, third, fifth in the chosen key).
+export const ChordMode = z.enum(['off','triad']);
+export const SessionState = z.strictObject({ version: z.literal(1), revision: frame, tempo: z.number().min(40).max(240), bars: z.literal(4), beatsPerBar: z.literal(4), stepsPerBeat: z.literal(4), selected: Target, tracks: z.array(Track).length(4), pitchSnap: PitchSnap.nullable().optional(), rhythmSnap: RhythmSnap.optional(), chordMode: ChordMode.optional() });
 export const PerformanceEvent = z.discriminatedUnion('kind', [
  z.strictObject({ kind: z.literal('onset'), id, target: Target, captureFrame: frame, clockId: id, confidence: unit, velocity: unit }),
  z.strictObject({ kind: z.literal('note'), id, target: Target, captureFrame: frame, endFrame: frame, clockId: id, confidence: unit, velocity: unit, midi: z.number().int().min(0).max(127) })
@@ -18,6 +24,8 @@ export const PerformanceEvent = z.discriminatedUnion('kind', [
 export const SpeechSpan = z.strictObject({startFrame: frame, endFrame: frame});
 const Operation = z.discriminatedUnion('type', [
  z.strictObject({ type: z.literal('set-pitch-snap'), settings: PitchSnap.nullable() }),
+ z.strictObject({ type: z.literal('set-rhythm-snap'), grid: RhythmSnap }),
+ z.strictObject({ type: z.literal('set-chord-mode'), mode: ChordMode }),
  z.strictObject({ type: z.literal('snap-notes'), trackId: z.enum(['synth-1','synth-2','synth-3']) }),
  z.strictObject({ type: z.literal('metronome'), enabled: z.boolean() }),
  z.strictObject({ type: z.literal('erase-event'), target: Target, step: z.number().int().min(0).max(63) }),
@@ -45,6 +53,9 @@ export const Transport = z.strictObject({ metronomeEnabled:z.boolean().optional(
 // (the payload rate; frames stay on the context clock). At most 1 s of 48 kHz audio per chunk.
 const base64 = z.string().min(4).max(128000).regex(/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/);
 export const SpeechAudio = z.strictObject({ type: z.literal('speech-audio'), streamId: id, seq: frame, clockId: id, startFrame: frame, endFrame: frame, sampleRate: z.number().int().min(8000).max(48000), encoding: z.literal('pcm-s16le'), data: base64 });
+// What the service heard for one recognized segment and what it did with it, for on-screen display.
+// Display only: never a command, never coverage. `utteranceId` matches error.requestId/command ids.
+export const SpeechTranscript = z.strictObject({ type: z.literal('speech-transcript'), utteranceId: id, streamId: id.optional(), clockId: id, startFrame: frame, endFrame: frame, text: z.string().max(1000), outcome: z.enum(['command','refused','ignored','held','interpreting','research']), detail: z.string().max(300).optional() });
 export const SpeechStatus = z.strictObject({ type: z.literal('speech-status'), streamId: id, available: z.boolean(), provider: id, reason: z.string().optional() });
 // Voice research/preview v1 extension. These are UI orchestration, never musical edits.
 export const ResearchContext = z.strictObject({ type: z.literal('research-context'), requestId: id, jobId: id, trackId: z.enum(['synth-1','synth-2','synth-3']), description: id, origin: z.literal('voice') });
@@ -88,11 +99,15 @@ export const ServerMessage = z.discriminatedUnion('type', [
  z.strictObject({ type: z.literal('research'), jobId: id, status: z.enum(['running','complete','cancelled','failed']), progress: unit, candidates: z.array(PatchCandidate), error: z.string().optional() }),
  z.strictObject({ type: z.literal('error'), requestId: id, message: id }),
  ResearchContext,
+ SpeechTranscript,
  CandidatePreview,
  SpeechStatus
 ]);
 export type SessionState = z.infer<typeof SessionState>;
 export type PitchSnap = z.infer<typeof PitchSnap>;
+export type RhythmSnap = z.infer<typeof RhythmSnap>;
+export type ChordMode = z.infer<typeof ChordMode>;
+export type SpeechTranscript = z.infer<typeof SpeechTranscript>;
 export type BrowserOperation = z.infer<typeof BrowserOperation>;
 export type BrowserAction = z.infer<typeof BrowserAction>;
 export type BrowserActionAck = z.infer<typeof BrowserActionAck>;
@@ -136,4 +151,4 @@ export interface BrowserActionAdapter {
  cancelBrowserActions(reason:string):void;
 }
 export { MockEngine, MockAgent, createSession } from './mocks.ts';
-export {snapMidiToScale} from './pitch-snap.ts';
+export {snapMidiToScale,triadFor,RHYTHM_CELLS} from './pitch-snap.ts';
