@@ -2,6 +2,7 @@ async page=>{
  const base=page.url().split('/').slice(0,3).join('/');
  await page.goto(base);
  await page.getByRole('button',{name:'Enable audio',exact:true}).click();
+ await page.getByRole('button',{name:'Not now',exact:true}).click();
  await page.waitForFunction(()=>globalThis.__voicesynth.engine.metadata!==null);
  await page.getByRole('button',{name:/^Synth 1 /}).click();
  await page.waitForFunction(()=>globalThis.__voicesynth.engine.getSession().revision>=1);

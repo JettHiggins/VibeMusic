@@ -2,6 +2,7 @@ async page => {
  const errors=[];page.on('pageerror',e=>errors.push(String(e)));
  const bar=page.getByRole('banner',{name:'Transport'});
  await bar.getByRole('button',{name:'Enable audio'}).click();
+ await page.getByRole('button',{name:'Not now',exact:true}).click();
  await page.waitForFunction(()=>globalThis.__voicesynth.engine.metadata!==null);
  await page.evaluate(async()=>{
   const {engine,voice}=globalThis.__voicesynth,context=engine.getAudioContext();
@@ -12,7 +13,7 @@ async page => {
  });
  await page.waitForFunction(()=>globalThis.__testTransport!==null);
  const stoppedBefore=await page.evaluate(()=>globalThis.__testTransport.currentFrame);
- await bar.getByRole('button',{name:'● Rec Kick',exact:true}).click();
+ await bar.getByRole('button',{name:'Record Kick',exact:true}).click();
  await page.waitForFunction(()=>globalThis.__testTransport?.recording,{timeout:4000});
  const start=await page.evaluate(()=>globalThis.__testTransport.recordingStartFrame);
  if(start-stoppedBefore<44100*1.9||start-stoppedBefore>44100*2.3)throw new Error('Unexpected stopped count-in '+start);
@@ -30,17 +31,17 @@ async page => {
  if(clear!==0)throw new Error('Clear failed');
  await page.evaluate(()=>window.scrollTo(0,document.body.scrollHeight));
  const bounds=await bar.boundingBox();if(!bounds||bounds.y<0)throw new Error('Transport left viewport');
- await bar.getByRole('button',{name:'Session ▾'}).click();
+ await bar.getByRole('button',{name:'Session'}).click();
  await page.getByRole('dialog',{name:'Session',exact:true}).waitFor({state:'visible'});
  await page.keyboard.press('Escape');
- await bar.getByRole('button',{name:'■ Stop rec',exact:true}).click();
+ await bar.getByRole('button',{name:'Stop recording',exact:true}).click();
  await page.waitForFunction(()=>!globalThis.__testTransport.recording);
  const before=await page.evaluate(()=>globalThis.__testTransport.currentFrame);
- await bar.getByRole('button',{name:'● Rec Kick',exact:true}).click();
+ await bar.getByRole('button',{name:'Record Kick',exact:true}).click();
  await page.waitForFunction(()=>globalThis.__testTransport.recording);
  const playingStart=await page.evaluate(()=>globalThis.__testTransport.recordingStartFrame);
  if(playingStart-before>44100*.7)throw new Error('Playback Record waited too long');
- await bar.getByRole('button',{name:'■ Stop rec',exact:true}).click();
+ await bar.getByRole('button',{name:'Stop recording',exact:true}).click();
  if(errors.length)throw new Error(errors.join('\n'));
  return {stoppedCountInFrame:start,undo,clearHits:clear,transportTop:bounds.y,nextBeatWaitFrames:playingStart-before,evidence:'real browser UI and WASM; injected provisional event, synthetic silent input; no human microphone acceptance'};
 }

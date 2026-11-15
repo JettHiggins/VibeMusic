@@ -17,7 +17,7 @@ export function TrackList({ session, metadata, selected, enabled, locked, onSele
    const engine = metadata?.engines[track.patch.engine];
    const sound = track.id === 'drums' ? 'Drum kit' : engine ? `${engine.name} · ${engine.presets[track.patch.preset]?.name ?? ''}` : '—';
    const isSel = track.id === selected;
-   return <div key={track.id} style={{ background: isSel ? C.raised : 'transparent', border: `1px solid ${isSel ? C.accent : C.line}`, borderRadius: 6, padding: 8, display: 'grid', gap: 6 }}>
+   return <div key={track.id} style={{ background: isSel ? C.panel : 'transparent', borderLeft: `2px solid ${isSel ? C.accent : 'transparent'}`, padding: '12px 10px', display: 'grid', gap: 6 }}>
     <button aria-pressed={isSel} disabled={!enabled || locked} onClick={() => onSelect(track.id)} style={{ all: 'unset', cursor: enabled && !locked ? 'pointer' : 'default', display: 'grid', gap: 2 }}>
      <span style={{ fontWeight: 600 }}>{TRACK_LABEL[track.id]}</span>
      <span style={{ fontSize: 11, fontFamily: MONO, color: C.muted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{sound}</span>

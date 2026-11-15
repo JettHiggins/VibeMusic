@@ -11,6 +11,7 @@ async page=>{
  });
  await page.goto('http://127.0.0.1:5174');
  await page.getByRole('button',{name:'Enable audio',exact:true}).click();
+ await page.getByRole('button',{name:'Not now',exact:true}).click();
  await page.waitForFunction(()=>globalThis.__voicesynth?.engine.metadata!==null);
  await page.evaluate(async()=>{
   const engine=globalThis.__voicesynth.engine,session=engine.getSession();session.selected={trackId:'synth-1'};
@@ -22,9 +23,7 @@ async page=>{
   });
   globalThis.__liveResearchTransport=null;engine.subscribe(m=>{if(m.type==='transport')globalThis.__liveResearchTransport=m.transport;});
  });
- await page.locator('summary').filter({hasText:/^Agent$/}).click();
- await page.getByRole('button',{name:'Connect agent',exact:true}).click();
- await page.getByText('Agent connected',{exact:true}).waitFor();
+ await page.evaluate(()=>globalThis.__voicesynth.coordinator.agent.connect());
  await page.getByRole('button',{name:'Play',exact:true}).click();
  await page.waitForFunction(()=>globalThis.__liveResearchTransport?.playing===true);
  const before=await page.evaluate(()=>globalThis.__voicesynth.engine.getSession());

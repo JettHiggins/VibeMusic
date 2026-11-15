@@ -1,6 +1,7 @@
 async page=>{
  await page.goto('http://127.0.0.1:5174');
  await page.getByRole('button',{name:'Enable audio',exact:true}).click();
+ await page.getByRole('button',{name:'Not now',exact:true}).click();
  return await page.evaluate(async()=>{
   const {BrowserEngine}=await import('/src/engine/browser.ts');
   const initial=structuredClone(globalThis.__voicesynth.engine.getSession());

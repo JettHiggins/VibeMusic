@@ -17,8 +17,8 @@ export function RecordingPhaseStrip({ phase, children }: { phase: RecordingPhase
  const armed = phase.state === 'armed', recording = phase.state === 'recording';
  const countdown = armed && phase.beatsToStart !== null ? Math.min(4, phase.beatsToStart) : null;
  const announce = armed ? phase.headline : recording ? 'Recording' : phase.state === 'playing' ? 'Playing' : 'Stopped';
- return <div className="vs-phase" data-phase={phase.state} style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', margin: '0 0 8px', padding: '5px 8px', borderRadius: 4,
-  border: `1px solid ${armed || recording ? C.accent : C.line}`, background: armed ? '#f4f4f514' : 'transparent' }}>
+ return <div className="vs-phase" data-phase={phase.state} style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', margin: '0 0 8px', padding: '5px 0 10px',
+  borderBottom: `1px solid ${armed || recording ? C.accent : C.line}` }}>
   <span style={{ fontFamily: MONO, fontSize: 13, minWidth: 150, color: armed || recording ? C.accent : C.muted, fontWeight: armed ? 700 : 400 }}>
    {recording ? '● ' : ''}{phase.headline}
   </span>
@@ -29,7 +29,7 @@ export function RecordingPhaseStrip({ phase, children }: { phase: RecordingPhase
   <span aria-hidden style={{ display: 'flex', gap: 3, alignItems: 'center' }} title="Bars in the loop">
    {[1, 2, 3, 4].map(b => <span key={b} data-bar={b} style={{ ...cell(!armed && phase.bar === b, false, armed && phase.start?.bar === b), width: 22, height: 8 }} />)}
   </span>
-  <span style={{ color: C.muted, flex: '1 1 180px', minWidth: 0 }}>{phase.detail}</span>
+  <span className="vs-sr">{phase.detail}</span>
   {children}
   <span role="status" aria-live="polite" className="vs-sr">{announce}</span>
  </div>;
