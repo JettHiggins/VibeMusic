@@ -172,5 +172,10 @@
     "pullRequest": 44,
     "headSha": "466d669575c5dadab5fb45ef342a47b27f3181b6",
     "body": "WS1 reviewed and integrated runtime4715bf7 plus this docs-only head. Combined Node274 passed/1 optional skip; shared checks and build pass. Actual browser capture/YIN/recorder/SLOOP low G2/high C6 test passed following, manual Oct navigation and Show edge-marker recovery (C3\u2013C5 -> C2\u2013C4 -> C5\u2013C7; manual view held). Existing growing-preview/full-bar check also passes (95ms first-visible in this run, final16-step note); actual long-error mic workspace/keyboard checks at1280x720,1366x768,1440x900 show no horizontal overflow. These use synthetic input, not physical microphone/fun acceptance. Runtime source is identical between4715bf7 and466d669. No capture/DSP/contracts change. Physical follow-ups and the previously noted meter aria-range clamp remain; the WS3 delayed-recognition issue is separate and does not block this integration."
+  },
+  {
+    "pullRequest": 43,
+    "headSha": "edb758fca851de21a42a4107a89cb9c8bf422112",
+    "body": "WS1 reviewed and integrated this exact head with current WS2 live range/UI and WS1 melody. The delayed-result fixeda96f2 resolves the final published merge-blocking case. Root30 focused speech checks pass (external late-first-result + prior follow-ups included); full backend445 pass/6 optional skips, combined Node274 pass/1 skip, shared checks and actual provider-disabled Python WebSocket/real-WASM integration pass onb1097f6. Actual frontend runtime is unchanged from the just-tested Leo integration. Details: docs/reviews/PR43-INTEGRATED.md. Prior failing exact-head reviews are historical, not current blockers. Preserved limits: valid non-cut prefix before a long pause can still act, early stop needs a dip, long requests refuse; no fake coverage or guard relaxation. Peer Windows synthesized acoustic4/5 successful runs are reported separately from root verification/human acceptance. Intermittent capture/connection failure, physical mic/fun, Deep Agents/tool quality and full-product gates remain open. Restart the actual service after pulling."
   }
 ]
