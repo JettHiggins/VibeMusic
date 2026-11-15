@@ -168,7 +168,7 @@ def test_watermark_waits_for_a_slow_transcription_then_follows_its_span(take):
     early = marks(flat(log))
     assert worker.jobs and max(m["throughFrame"] for m in early) < frame_at(2.0)  # held at the pending segment
     late = worker.finish(connection)
-    assert [r["type"] for r in late] == ["command-span", "command", "speech-verified"]
+    assert [r["type"] for r in late if r["type"] != "speech-transcript"] == ["command-span", "command", "speech-verified"]
     assert late[-1]["throughFrame"] > frame_at(2.7)
 
 
@@ -448,15 +448,15 @@ def test_joined_commands_from_ended_take_are_all_refused_before_coverage(take):
     connection = connect(worker)
     stream(connection, worker, chunks_from_wav(take), transcribe_each_chunk=False)
     replies = deliver_after(connection, worker, transport_message("idle", frame_at(4)))
-    assert [r["type"] for r in replies] == ["command-span", "error", "error", "speech-verified"]
+    assert [r["type"] for r in replies if r["type"] != "speech-transcript"] == ["command-span", "error", "error", "speech-verified"]
     assert all("ended" in r["message"] for r in replies if r["type"] == "error")
 
 
 def test_unknown_first_command_does_not_swallow_later_stop(take):
     worker = ScriptedWorker(["Groove, frobnicate. Grove, stop."])
     replies = flat(stream(connect(worker), worker, chunks_from_wav(take)))
-    actions = [r for r in replies if r["type"] != "speech-verified" and r["type"] != "speech-status"]
-    assert [r["type"] for r in actions] == ["command-span", "error", "command"]
+    actions = [r for r in replies if r["type"] not in ("speech-verified", "speech-status", "speech-transcript")]
+    assert [r["type"] for r in actions if r["type"] != "speech-transcript"] == ["command-span", "error", "command"]
     assert actions[-1]["command"]["operation"] == {"type": "stop-recording"}
 
 

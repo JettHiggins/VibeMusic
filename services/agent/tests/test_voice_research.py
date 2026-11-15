@@ -227,8 +227,8 @@ def test_closed_speech_job_cannot_supersede_a_newer_ui_request(tmp_path):
     ui_search(conn, "newer-ui")
     replies = worker.finish(conn)
     assert "research-context" not in [r["type"] for r in replies]
-    assert [r["type"] for r in replies][:2] == ["command-span", "error"]
-    assert "newer UI" in replies[1]["message"]
+    assert [r["type"] for r in replies if r["type"] != "speech-transcript"][:2] == ["command-span", "error"]
+    assert "newer UI" in [r for r in replies if r["type"] != "speech-transcript"][1]["message"]
     assert [job[0] for job in port.jobs] == ["newer-ui"]
     assert any(r["type"] == "speech-verified" for r in replies)
 

@@ -15,8 +15,8 @@ import re
 from dataclasses import dataclass
 from typing import Any, Mapping, Optional, Sequence, Union
 
-from .spoken_numbers import find_number
-from .control_phrases import InputAction, input_phrase, key_phrase
+from .spoken_numbers import NUMBER_WORDS, find_number
+from .control_phrases import InputAction, input_phrase, key_phrase, rhythm_chord_phrase
 
 WAKE_WORDS = frozenset({"groove", "grove"})  # "grove" is a common recognizer spelling
 TEMPO_MIN, TEMPO_MAX, TEMPO_NUDGE = 40, 240, 10
@@ -42,6 +42,9 @@ BOUNDARY = {
     # track's existing notes is explicit and next-loop.
     "set-pitch-snap": "immediate",
     "snap-notes": "next-loop",
+    # Playtest controls (PLAYTEST-CONTROLS-CONTRACT.md): recording settings are immediate.
+    "set-rhythm-snap": "immediate",
+    "set-chord-mode": "immediate",
 }
 
 _LANE_PHRASES = (
@@ -355,6 +358,8 @@ def interpret(text: str, session: Mapping[str, Any], during_recording: bool, tak
     # Exact key and browser-input phrases (deterministic, so they survive provider rate limits).
     control = input_phrase(verb, rest)
     if control is None:
+        control = rhythm_chord_phrase(verb, rest)
+    if control is None:
         control = key_phrase(verb, rest, session, lambda words: resolve_target(words, session).target)
     if control is not None:
         value, refusal = control
@@ -410,6 +415,9 @@ def interpret(text: str, session: Mapping[str, Any], during_recording: bool, tak
             return NotUnderstood("single drums cannot be muted; say mute drums")
         return _command({"type": "mute", "trackId": target["trackId"], "muted": verb != "unmute"})
 
+    lead = sound_lead(tokens) if rest[:2] in (["to", "a"], ["to", "an"], ["the", "sound"], ["sound", "to"]) else None
+    if lead is not None:
+        return lead
     if verb in ("select", "choose", "pick") or (verb in ("switch", "go", "change") and rest[:1] == ["to"]):
         resolution = resolve_target(rest, session)
         target = resolution.target
@@ -421,10 +429,29 @@ def interpret(text: str, session: Mapping[str, Any], during_recording: bool, tak
     return _sound_intent(verb, rest) or NotUnderstood("command not recognized")
 
 
-_CANDIDATE_ORDINALS = {"first": 1, "second": 2, "third": 3, "fourth": 4, "fifth": 5}
+_CANDIDATE_ORDINALS = {"first": 1, "second": 2, "third": 3, "fourth": 4, "fifth": 5, "sixth": 6, "seventh": 7,
+                       "eighth": 8, "ninth": 9, "tenth": 10}
 _DESCRIPTION_LEADS = (("make", "it", "sound", "like"), ("make", "this", "sound", "like"), ("sound", "like"),
-                      ("sounds", "like"), ("i", "want"), ("i", "need"), ("id", "like"), ("give", "me"),
-                      ("find", "me"), ("find",), ("search", "for"), ("look", "for"))
+                      ("sounds", "like"), ("i", "want"), ("i", "need"), ("id", "like"), ("i", "would", "like"),
+                      ("give", "me"), ("find", "me"), ("find",), ("search", "for"), ("look", "for"),
+                      # Playtest: common ways people asked for a sound that previously needed the model.
+                      ("change", "the", "sound", "to"), ("change", "sound", "to"), ("change", "it", "to"),
+                      # "can"/"let" are stripped as politeness first: "can I get a" -> "i get a".
+                      ("i", "get"), ("could", "i", "get"), ("i", "have", "a"), ("me", "hear"),
+                      ("turn", "it", "into"), ("turn", "this", "into"), ("make", "it", "a"), ("make", "it", "an"),
+                      ("switch", "to", "a"), ("switch", "to", "an"), ("try", "a"), ("try", "an"),
+                      ("load", "a"), ("load", "an"), ("use", "a"), ("use", "an"))
+# Words that make "use/take/keep ..." refer to a listed candidate rather than describe a new sound.
+_CANDIDATE_WORDS = frozenset({"it", "this", "that", "one", "candidate", "number", "option", "sound", "the"})
+
+
+def sound_lead(tokens: Sequence[str]) -> Optional[Interpretation]:
+    """A new sound search by an explicit lead phrase ("change the sound to a warm piano"), or None."""
+    for lead in _DESCRIPTION_LEADS:
+        if tuple(tokens[:len(lead)]) == lead:
+            description = _describe(tokens[len(lead):])
+            return SoundSearch(description) if description else NotUnderstood("describe the sound you want")
+    return None
 
 
 def _describe(tokens: Sequence[str]) -> str:
@@ -444,25 +471,27 @@ def _sound_intent(verb: str, rest: Sequence[str]) -> Optional[Interpretation]:
                 return AuditionCandidate(_CANDIDATE_ORDINALS[token])
         number = find_number(rest)
         if number is not None:
-            return (AuditionCandidate(int(number)) if float(number).is_integer() and 1 <= number <= 5
-                    else NotUnderstood("say candidate one through five to audition"))
+            return (AuditionCandidate(int(number)) if float(number).is_integer() and 1 <= number <= 10
+                    else NotUnderstood("say candidate one through ten to audition"))
         if not rest or all(word in {"to", "it", "this", "that", "one", "candidate", "sound"} for word in rest):
             return AuditionCandidate(1)
         return NotUnderstood("say audition candidate two, for example")
     if verb == "cancel":
         return CancelSearch()
-    if verb in ("accept", "keep", "use", "take", "apply"):
+    if verb in ("accept", "keep", "use", "take", "apply") and rest[:1] not in (["a"], ["an"]):
         for token in rest:
             if token in _CANDIDATE_ORDINALS:
                 return AcceptCandidate(_CANDIDATE_ORDINALS[token])
         number = find_number(rest)
         if number is not None and (number < 1 or not float(number).is_integer()):
             return NotUnderstood("say which candidate, for example: use number two")
+        if any(word not in _CANDIDATE_WORDS and word not in _CANDIDATE_ORDINALS and word not in NUMBER_WORDS
+               and not word.isdigit() for word in rest):
+            return NotUnderstood("say which candidate to use, for example: use number two")  # never guess an accept
         return AcceptCandidate(int(number) if number is not None else 1)
-    for lead in _DESCRIPTION_LEADS:
-        if tuple(tokens[:len(lead)]) == lead:
-            description = _describe(tokens[len(lead):])
-            return SoundSearch(description) if description else NotUnderstood("describe the sound you want")
+    lead = sound_lead(tokens)
+    if lead is not None:
+        return lead
     if verb == "refine" or (verb == "make" and list(rest[:1]) in (["it"], ["this"], ["that"])):
         description = _describe(rest if verb == "refine" else rest[1:])
         return SoundSearch(description, refine=True) if description else NotUnderstood("say how to change the sound")
