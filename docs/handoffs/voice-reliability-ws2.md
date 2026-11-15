@@ -1,6 +1,6 @@
 # Voice reliability round: WS2 handoff (compact mic workspace)
 
-Branch `ws2/mic-workspace-cleanup` from `origin/engine-integration` at `4b9cbdc`. The pull request and exact head are listed in its description. This change touches only presentation: `apps/web/src/ui/**`, plus a focused unit test and a browser script. It does not edit `voice-input.ts`, DSP, calibration, the recorder, contracts or services. It uses only existing `VoiceInputState` fields and methods.
+Branch `ws2/mic-workspace-cleanup` from `origin/engine-integration` at `4b9cbdc`. Pull request: JettHiggins/VoiceSynthesizer#42. Implementation commit: `3d3951e`. This change touches only presentation: `apps/web/src/ui/**`, plus a focused unit test and a browser script. It does not edit `voice-input.ts`, DSP, calibration, the recorder, contracts or services. It uses only existing `VoiceInputState` fields and methods.
 
 ## Before
 
