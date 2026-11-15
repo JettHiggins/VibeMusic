@@ -30,7 +30,11 @@ Reviewed #29 5278e62d and peer-inspected #31 7ec9b9d1 were combined at 95f7c4c a
 
 Cold matching corpus: first candidates 143.546 s/full optimization 235.649 s; repeated warm in-process prompt 120 ms, not general p95. Prewarm before another fun test. Deployment requires GROOVE_VOICE_RESEARCH=1 plus configured SLOOP/CLAP and matching corpus; default-off/unconfigured service is not working voice search. No user .env/key changed. Existing local faster-whisper and backend-local OpenRouter/free-model decisions persist; no new credentials needed.
 
-## Next human gate
+## Requested interim test before WS3 completion
+
+Jett now requests a usability test of the integrated changes before Lenny finishes the remaining speech work. Use **playtest-musical-controls-1**, application source 4566dd8, with docs/INTERIM-PLAYTEST.md. Exact source CI is fully green on Linux/Windows/macOS. The new test tag includes documentation corrections only. SETUP.md and WORKSTREAM files now supersede the stale playtest-repair-1 pointers. This is a deliberately partial speech baseline, not the final hands-free gate; capture new UI/key/preset/calibration feedback and exact speech failures for WS3.
+
+## Full hands-free gate after speech integration
 
 After reviewed software integration and remaining WS2/WS3 implementations, publish a new immutable test build. Require whole-sentence voice sound requests, timeline edits, calibration/tuning, stop while playback continues, optional key snapping, prompt preset swaps and a fun creation session. Retain real Windows/macOS microphone and sound-quality evidence as separate gates. PLAN.md preserves the full roadmap; HANDOFF.md and earlier issue comments are history.
 

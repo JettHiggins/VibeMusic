@@ -1,4 +1,6 @@
-# Playtest repair 1 — frozen test build
+# Playtest repair 1 — historical frozen test build
+
+**Historical comparison only. Current requested interim test: playtest-musical-controls-1; follow INTERIM-PLAYTEST.md and current STATUS.md.**
 
 Use tag **`playtest-repair-1`**. WS1 publishes its exact commit in coordination issue #9 and the test handoff. Keep this checkout fixed during the session; teammates continue on their own branches. Human acceptance is pending, not passed.
 

@@ -1,5 +1,7 @@
 # Workstream 3 — musical control and hands-free completion
 
+**Current human test request:** Jett wants an interim test before WS3 finishes. Use playtest-musical-controls-1 and INTERIM-PLAYTEST.md; older frozen repair instructions below are historical. Preserve development work in its own branch/worktree.
+
 Current scope: HANDSFREE-COMPLETION.md; assignments/dependencies: STATUS.md and issue #9. This supersedes the prior freeze instructions.
 
 ```text
