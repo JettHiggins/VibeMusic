@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {createSession,type PerformanceEvent} from '../packages/contracts/src/index.ts';
 import {commitPerformance,performanceCells,trimOverlaps,type RecordingWindow,type PerformanceOperation} from '../apps/web/src/engine/performance.ts';
 import {firmwareSnapshot} from '../apps/web/src/engine/snapshot.ts';
-import {readFileSync} from 'node:fs';
+import {existsSync,readFileSync} from 'node:fs';
 
 const target={trackId:'synth-1' as const};
 const base:RecordingWindow={startFrame:352800,endFrame:null,loopStartFrame:352800,tempo:120,target};
@@ -44,7 +44,8 @@ test('chord mode adds the in-key triad to newly committed notes only',()=>{
  session.chordMode='off';assert.equal(commit(session,[note('e',12,2)]).tracks[0].notes.at(-1)!.chord,undefined);
 });
 
-test('firmware snapshot sounds chord pitches on the same step',()=>{
+// Needs built engine metadata (absent in the contracts-and-web CI job), like the other engine tests.
+test('firmware snapshot sounds chord pitches on the same step',{skip:!existsSync('apps/web/public/engine/metadata.json')},()=>{
  const metadata=JSON.parse(readFileSync('apps/web/public/engine/metadata.json','utf8'));
  const session=createSession();session.tracks[0].notes=[{id:'c',step:0,duration:2,midi:60,velocity:1,chord:[64,67]}];
  const step=firmwareSnapshot(session,metadata).tracks[0].step;
@@ -52,7 +53,6 @@ test('firmware snapshot sounds chord pitches on the same step',()=>{
 });
 
 // -- through the real engine core and WASM ------------------------------------------------------
-import {existsSync} from 'node:fs';
 import {resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import type {ClientMessage,SessionCommand} from '../packages/contracts/src/index.ts';
