@@ -39,7 +39,15 @@ function App(){
   if(m.type==='transport')setTransport(m.transport);
   if(m.type==='ack'){setMessage(`${m.status}${m.reason?': '+m.reason:''}`);if(m.status!=='queued')setBusy(false);}
  });},[]);
- async function enable(){setBusy(true);try{await engine.initialize();setEnabled(true);research.setAudioEnabled(true);setMessage('SLOOP audio ready.');}catch(e){setMessage(String(e));}finally{setBusy(false);}}
+ async function enable(){setBusy(true);try{await engine.initialize();setEnabled(true);research.setAudioEnabled(true);setMessage('SLOOP audio ready.');}catch(e){setMessage(String(e));setBusy(false);return;}finally{setBusy(false);}
+  // Full voice control by default (2026-11-15 plan): this one click is the browser's required gesture,
+  // so it also turns on the microphone and hands-free listening (which connects the local service).
+  // Automated browser checks (navigator.webdriver) keep the manual flow so they can inject test audio.
+  if(navigator.webdriver)return;
+  try{await voice.enableMicrophone();}catch(e){setMessage(`Microphone: ${String(e)}`);return;}
+  await voice.enableHandsFree();
+  setMessage('Listening — say "Groove, …" to control the song.');
+ }
  function command(operation:SessionCommand['operation'],boundary:SessionCommand['boundary']='immediate'){
   setBusy(true);try{const receipt=engine.dispatch({id:crypto.randomUUID(),expectedRevision:session.revision,boundary,operation});if(receipt.type==='ack'&&receipt.status==='rejected'){setBusy(false);setMessage(receipt.reason??'Rejected');}}catch(e){setBusy(false);setMessage(String(e));}
  }
