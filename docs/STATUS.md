@@ -6,13 +6,15 @@ Read PLAN.md, AGENTS.md, VOICE-RELIABILITY-ROUND.md, your WORKSTREAM file and co
 
 The musical-controls interim test is complete. Jett reports intermittent hands-free success, provider quota/rate-limit errors, unsupported browser-status, unreliable humming/fast-note capture, short held notes in both piano roll and sound, and overflowing/cluttered mic-enabled UI. Clarification: key snapping's chosen pitches were reasonable; fast notes were missed. Suspected over-high silence floor is a hypothesis. Full hands-free/fun acceptance remains open.
 
+Jett added a top product priority: spoken instrument requests have never fetched a sound or visibly launched research. WS3 must trace and fix the real speech-to-search path now; typed research success from prior integration does not close this failure. Supported descriptions should route to real local research without needing LLM quota. WS1 will verify integrated patch/preview behavior and WS2 keeps real progress/failures visible.
+
 ## Current assignments — start all three independently
 
 | Stream | Owns this round | Next deliverable |
 | --- | --- | --- |
 | WS1 / Jett | Melody DSP/calibration/segmentation/recording internals, duration/render tracing, Vochlea behavior study, integration/contracts. Temporary input-file ownership is in AGENTS.md / VOICE-RELIABILITY-ROUND.md. | Focused hum/fast-note/held-duration fix and measured regression evidence; integrate peer work. |
 | WS2 / Leo | UI/layout/theme/presentation only this round, using existing input methods/state. | No mic-enabled page overflow; simpler essential controls and optional advanced details, tested at laptop sizes. |
-| WS3 / Lenny | Backend protocol, provider resilience, whole-sentence speech/stop and bounded tools. | Accept real browser-status/acks; exact commands survive provider rate limits; speech regressions and actual service evidence. |
+| WS3 / Lenny | Backend protocol, provider resilience, whole-sentence speech/stop and bounded tools. | Spoken instrument requests launch real research/progress/results and preview/accept/Undo; fix protocol/provider failures along that path, then speech regressions. |
 
 Branches: ws1/melody-reliability, ws2/mic-workspace-cleanup, ws3/speech-resilience. Start from current origin/engine-integration, never the immutable test tags or documentation-only main. Preserve uncommitted work and existing feature branches. Existing contracts/engine/browser executor are integrated; no new contract, key or provider choice is required to begin. For the first round, keep wire/public input interfaces compatible. Each stream has independent follow-ups; a shared optional extension is not a reason to stop useful work. Runtime goal limits still apply.
 
