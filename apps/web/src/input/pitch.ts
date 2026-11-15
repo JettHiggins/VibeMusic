@@ -29,6 +29,10 @@ export const PITCH_GATE_DB = 15;
 /** A held, periodic note can soften without becoming a fresh note or opening on room noise. */
 export const PITCH_HOLD_MARGIN_DB = 6;
 export const MIN_PITCH_CLARITY = 0.8;
+/** Clear periodic humming needs slightly less excess level than uncertain voiced input. */
+export function pitchGateDb(noiseFloorDb: number, clarity: number, holding: boolean, gateDb = PITCH_GATE_DB) {
+ return noiseFloorDb + gateDb - (holding ? PITCH_HOLD_MARGIN_DB : clarity >= 0.9 ? 3 : 0);
+}
 
 /**
  * Live pitch diagnosis for one analysis block, so a singer can see why no notes appear:
@@ -40,7 +44,7 @@ export function readPitch(frames: PitchFrame[], noiseFloorDb: number, holding: b
  if (!frames.length) return null;
  // The loudest frame represents the block; its pitch is the one a singer would expect to see.
  const f = frames.reduce((a, b) => (b.rmsDb > a.rmsDb ? b : a));
- const gate = noiseFloorDb + gateDb - (holding ? PITCH_HOLD_MARGIN_DB : 0);
+ const gate = pitchGateDb(noiseFloorDb, f.clarity, holding, gateDb);
  const midi = f.f0 ? Math.round(hzToMidi(f.f0)) : null;
  const state: PitchState = f.rmsDb < noiseFloorDb + 6 ? 'silent' : f.rmsDb < gate ? 'quiet' : !f.f0 || f.clarity < minClarity ? 'unclear' : 'pitch';
  return { state, midi, clarity: f.clarity, levelDb: f.rmsDb, gateDb: gate, holding };
@@ -181,7 +185,7 @@ export class NoteSegmenter {
   return notes;
  }
 
- private voiced(f: PitchFrame) { return f.f0 !== null && f.clarity >= this.minClarity && f.rmsDb >= this.noiseFloorDb + this.gate - (this.open ? PITCH_HOLD_MARGIN_DB : 0); }
+ private voiced(f: PitchFrame) { return f.f0 !== null && f.clarity >= this.minClarity && f.rmsDb >= pitchGateDb(this.noiseFloorDb, f.clarity, this.open !== null, this.gate); }
  private median(values: number[]) { const s = [...values].sort((a, b) => a - b); return s[s.length >> 1]; }
 
  private step(f: PitchFrame, notes: SungNote[]) {
