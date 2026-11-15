@@ -76,6 +76,7 @@ class _SpeechStream:
     failed: bool = False
     held_wake: Optional[tuple] = None  # (job, text): a bare wake word or unfinished sentence waiting for the rest
     input_key: Optional[tuple] = None  # browser (clockId, inputRevision) when the stream began
+    probing: Optional[SpeechJob] = None  # latest early-stop probe of the open segment
 
 
 @dataclass
@@ -259,7 +260,19 @@ class Connection:
                 self._speech_state.popitem(last=False)
         if state.failed:
             return out
-        for segment in state.segmenter.feed(chunk):
+        segments = state.segmenter.feed(chunk)
+        probes, state.segmenter.probes = state.segmenter.probes, []
+        if segments:
+            state.probing = None  # the closed segment's own transcript decides
+        elif (probes and getattr(self._speech, "supports_probe", False) and state.held_wake is None
+              and state.probing is None):  # at most one probe in flight: no recognizer backlog
+            window = self._window_at(probes[-1].start_frame)
+            if window is not None and window.end is None and window.kind in ("recording", "armed"):
+                self._segment_count += 1
+                state.probing = SpeechJob(f"{stream_id}:probe-{self._segment_count}", stream_id, chunk.clock_id,
+                                          probes[-1], research_epoch=self._research_epoch, probe=True)
+                self._speech.submit(state.probing)
+        for segment in segments:
             self._segment_count += 1
             job = SpeechJob(f"{stream_id}:speech-{self._segment_count}", stream_id, chunk.clock_id, segment,
                             research_epoch=self._research_epoch)
@@ -277,6 +290,8 @@ class Connection:
         if self._closed:
             return []
         state = self._speech_state.get(job.stream_id)
+        if job.probe:
+            return self._probe_result(state, job, text, error, now)
         if state is None or state.failed or job not in state.pending:
             return []
         state.pending.remove(job)
@@ -327,6 +342,23 @@ class Connection:
                 research_obsolete=(job.research_epoch < self._research_epoch or self._older_research_intent(job.clock_id, context_start)),
                 emit_span=not any(m["type"] == "command-span" for m in out)))
         return out
+
+    def _probe_result(self, state: Optional[_SpeechStream], job: SpeechJob, text, error: Optional[str],
+                      now: float) -> list[dict]:
+        """Act on a probe only when it is exactly a stop of the current take; then split the open
+        segment there so the stop is not repeated and following singing stays in the take."""
+        if state is None or state.failed or state.probing is not job or error is not None or state.pending:
+            return []
+        state.probing = None
+        located, words = locate_command(job, text or "")
+        if not words or len(split_commands(words)) != 1:
+            return []
+        result = self._parses(located, words)
+        if not isinstance(result, Command) or result.operation != {"type": "stop-recording"}:
+            return []
+        if not state.segmenter.split_after(job.segment.start_frame, located.segment.last_frame):
+            return []
+        return self._speech_utterance(located, words, now) + self._advance_speech(job.stream_id, job.clock_id, now)
 
     def _speech_context(self, job: SpeechJob) -> tuple[bool, bool, Optional[dict]]:
         start = job.context_start_frame if job.context_start_frame is not None else job.segment.start_frame

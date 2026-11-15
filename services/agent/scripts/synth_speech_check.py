@@ -30,11 +30,22 @@ def load(name):
         return np.frombuffer(w.readframes(w.getnframes()), "<i2").astype(np.float32) / 32768
 
 
+def sung(seconds, hz=220.0):
+    """A held sung-like vowel (harmonics with gentle vibrato), standing in for singing."""
+    t = np.arange(int(seconds * RATE)) / RATE
+    f = hz * (1 + 0.01 * np.sin(2 * np.pi * 5 * t))
+    phase = 2 * np.pi * np.cumsum(f) / RATE
+    return (0.15 * sum(np.sin(k * phase) / k for k in range(1, 6))).astype(np.float32)
+
+
 def take(parts):
     rng = np.random.default_rng(1)
     out = []
     for part in parts:
-        out.append(np.zeros(int(part * RATE), np.float32) if isinstance(part, float) else load(part))
+        if isinstance(part, tuple):
+            out.append(sung(*part))
+        else:
+            out.append(np.zeros(int(part * RATE), np.float32) if isinstance(part, float) else load(part))
     audio = np.concatenate(out)
     audio = audio + 0.0005 * rng.standard_normal(len(audio)).astype(np.float32)
     return (np.clip(audio, -1, 1) * 32767).astype("<i2")
@@ -42,6 +53,7 @@ def take(parts):
 
 class SyncWorker:
     name = "faster-whisper (synchronous check)"
+    supports_probe = True
 
     def __init__(self):
         self.jobs = []
@@ -73,14 +85,19 @@ def run(label, parts, recording):
             job = worker.jobs.pop(0)
             transcribe = getattr(transcriber, "transcribe_timed", transcriber.transcribe)
             text = transcribe(job.segment.recognition_samples, RATE)
-            transcripts.append(getattr(text, "text", text))
+            transcripts.append(("probe: " if job.probe else "") + getattr(text, "text", text))
             replies += connection.speech_result(job, text, None, 0)
     result = [(r["type"], r.get("command", {}).get("operation") or r.get("operation") or r.get("message"))
               for r in replies if r["type"] in ("command", "error", "browser-action")]
+    first = next((r for r in replies if r["type"] == "command"), None)
+    span = next((r for r in replies if r["type"] == "command-span"), None)
+    if first is not None and span is not None:
+        result.append(("span seconds", round((span["startFrame"] - start) / CTX, 2), round((span["endFrame"] - start) / CTX, 2)))
     print(f"{label}\n  segments: {transcripts}\n  result:   {result}")
 
 
 run("Groove stop during a take", [1.0, "stop", 2.5], True)
+run("Groove stop, singing resumes 0.35 s later (take)", [1.0, "stop", 0.35, (2.0,), 1.5], True)
 run("Tempo sentence with a 0.9 s pause", [1.0, "tempo_a", 0.9, "tempo_b", 2.5], False)
 run("Erase during a take", [1.0, "erase", 2.5], True)
 run("Key phrase", [1.0, "key", 2.5], False)

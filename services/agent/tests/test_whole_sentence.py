@@ -114,3 +114,75 @@ def test_spoken_stop_variants_parse_as_stop_recording_during_a_take():
     for text in ("Groove, stop.", "Groove stop recording", "Grove, stop!", "Groove, stopped", "Groove... stop"):
         assert interpret(text, session, True) == Command({"type": "stop-recording"}, "immediate"), text
     assert interpret("Groove stop playback", session, True) == Command({"type": "play", "playing": False}, "immediate")
+
+
+class ProbingWorker(ScriptedWorker):
+    """SCRIPTED transcriber that also answers early-stop probes (like ThreadedSpeechWorker)."""
+    supports_probe = True
+
+    def __init__(self, probe_text, texts=()):
+        super().__init__(texts)
+        self.probe_text, self.probed = probe_text, []
+
+    def finish(self, connection):
+        replies = []
+        while self.jobs:
+            job = self.jobs.pop(0)
+            if job.probe:
+                # Only the first probe hears the scripted words; later dips are inside the singing.
+                text = "" if self.probed else self.probe_text
+                self.probed.append(job)
+                replies += connection.speech_result(job, text, None, 0.0)
+            else:
+                self.transcribed.append(job)
+                replies += connection.speech_result(job, self.texts.pop(0) if self.texts else "", None, 0.0)
+        return replies
+
+
+def test_groove_stop_followed_quickly_by_singing_stops_at_the_dip_and_keeps_the_singing(tmp_path):
+    # Singing resumes 0.4 s after "Groove, stop": inside the 0.6 s hangover, so energy alone would
+    # keep one open segment until the singing pauses. The 0.25 s dip probe acts on the stop at once.
+    worker = ProbingWorker("Groove, stop.", texts=["la la la"])
+    connection = connect(worker, recording=True)
+    take = synth_take(tmp_path / "quick.wav", hits=(), speech=(2.0, 2.6), more_speech=((3.0, 3.6),), seconds=4.6)
+    log = stream(connection, worker, chunks_from_wav(take))
+    replies = flat(log)
+    issued = next(chunk for chunk, rs in log if any(r["type"] == "command" for r in rs))
+    assert issued["endFrame"] <= frame_at(2.6 + 0.25 + 0.05)
+    assert commands(replies) == [{"type": "stop-recording"}]
+    spans = [r for r in replies if r["type"] == "command-span"]
+    assert len(spans) == 1 and spans[0]["endFrame"] < frame_at(3.0)  # the singing stays in the take
+    assert len(worker.transcribed) == 1 and worker.transcribed[0].segment.start_frame >= frame_at(2.9)
+    order = [r["type"] for r in replies]
+    assert order.index("command-span") < order.index("command")
+
+
+def test_a_probe_that_is_not_exactly_a_stop_never_acts_and_the_full_segment_decides(tmp_path):
+    worker = ProbingWorker("Groove, set the tempo", texts=["Groove, set the tempo to ninety"])
+    connection = connect(worker, recording=True)
+    take = synth_take(tmp_path / "noprobe.wav", hits=(), speech=(2.0, 2.6), more_speech=((3.0, 3.6),), seconds=4.8)
+    replies = flat(stream(connection, worker, chunks_from_wav(take)))
+    assert worker.probed and len(worker.transcribed) == 1
+    assert commands(replies) == [{"type": "tempo", "bpm": 90}]
+
+
+def test_probes_are_off_outside_a_take_and_for_workers_without_probe_support(tmp_path):
+    take = synth_take(tmp_path / "idle.wav", hits=(), speech=(2.0, 2.6), more_speech=((3.0, 3.6),), seconds=4.6)
+    idle = ProbingWorker("Groove, stop.", texts=["Groove stop la la"])
+    flat(stream(connect(idle, recording=False), idle, chunks_from_wav(take)))
+    assert idle.probed == []
+    plain = ScriptedWorker(["Groove, stop."])
+    replies = flat(stream(connect(plain, recording=True), plain, chunks_from_wav(take)))
+    assert commands(replies) == [{"type": "stop-recording"}] and all(not job.probe for job in plain.transcribed)
+
+
+def test_at_most_one_probe_is_in_flight_per_stream(tmp_path):
+    class SlowProbes(ProbingWorker):
+        def finish(self, connection):  # probes are never answered: they stay in flight
+            self.jobs = [job for job in self.jobs if not job.probe or self.probed.append(job)]
+            return super().finish(connection)
+    worker = SlowProbes("Groove, stop.", texts=["la la la"])
+    take = synth_take(tmp_path / "dips.wav", hits=(), speech=(1.0, 1.4), more_speech=((1.7, 2.1), (2.4, 2.8), (3.1, 3.5)),
+                      seconds=3.6)
+    flat(stream(connect(worker, recording=True), worker, chunks_from_wav(take)))
+    assert len(worker.probed) == 1

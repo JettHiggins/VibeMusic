@@ -67,15 +67,19 @@ Only `services/agent/**` and this file changed. There are no contract, frontend,
   - Complete commands (`Groove stop`) run at once.
   - A new addressed command is never merged into a held fragment.
 - **During a take:** a refused fragment joins the next segment only when the result is a real command, so singing that follows stays in the take. A held sentence is capped at 12 s.
+- **Early stop:** previously, singing that resumed within the 0.6 s hangover after `Groove stop` merged into the same segment, so the stop waited for a pause or the 4 s cap.
+  - Now, during a take or count-in, a 0.25 s dip inside a still-open speech segment sends the speech so far as a probe to the recognizer (`SpeechJob.probe`, `EnergySegmenter.probes`).
+  - Only an exact single `stop-recording` result acts. The open segment is then split at the stop (`split_after`), so the stop isn't repeated and the singing stays in the take. Any other probe result is ignored, and the full segment decides as before.
+  - At most one probe is in flight per stream. Probes only run with workers that declare `supports_probe` (the real `ThreadedSpeechWorker`), never outside a take.
 - **Stop:** `stops` and `stopped` now parse as stop. `Groove stop` during a take remains `stop-recording`, so playback continues. Capture-clock window classification is unchanged.
 
 ## Checks (Windows, Python 3.13)
 
-- **Backend suite:** `pytest -q --deselect tests/test_sloop.py` → **421 passed, 6 skipped**. The 4 `test_sloop` errors were already present: this laptop has no native SLOOP module built.
+- **Backend suite:** `pytest -q --deselect tests/test_sloop.py` → **425 passed, 6 skipped**. The 4 `test_sloop` errors were already present: this laptop has no native SLOOP module built.
 - **New test files:**
   - `test_browser_protocol.py` (15 tests, including a real FastAPI WebSocket session)
   - `test_provider_resilience.py` (13 tests: scripted 402/429/Retry-After/timeouts, a worker storm test, and a real WebSocket degrade test)
-  - `test_whole_sentence.py` (8 tests: real segmenter and Connection with a scripted transcriber)
+  - `test_whole_sentence.py` (12 tests: real segmenter and Connection with a scripted transcriber, including early-stop probes)
 - **Updated tests:**
   - Two speech tests now stream 1.5 s longer, because refused sentences wait for the join window.
   - One language-backlog test now uses distinct sentences, because identical pending requests are deduplicated.
@@ -84,6 +88,7 @@ Only `services/agent/**` and this file changed. There are no contract, frontend,
   | Phrase | Before (playtest-musical-controls-1) | After (this branch) |
   | --- | --- | --- |
   | Groove, stop (take) | stop-recording | stop-recording |
+  | Groove, stop ⟨0.35 s⟩ then a sung tone (take) | stop waits until the singing pauses | stop-recording at the dip; span ends 2.34 s, before the singing (~2.7 s) |
   | Groove, set the tempo to ⟨0.9 s⟩ one forty | 2 errors ("say a tempo", "not recognized") | tempo 140 |
   | Groove, erase the kick on bar two, beat three (take) | erase step 24 | erase step 24 |
   | Groove, key D minor | not recognized | set-pitch-snap D minor |
@@ -93,7 +98,7 @@ Only `services/agent/**` and this file changed. There are no contract, frontend,
 
 ## Limits and next steps
 
-- **Singing merged with stop:** singing or humming that resumes within the 0.6 s hangover after `Groove stop` merges into the same energy segment. The stop then waits for a vocal pause or the 4 s cap. Beatboxing bursts don't cause this. A real VAD or an early partial transcription is the next step; this needs human microphone reproduction.
+- **Early stop needs a dip:** it relies on a 0.25 s dip after "stop". Singing that starts with no dip at all still waits for a pause or the 4 s cap. Each probe costs an extra local Whisper call during takes (at most one in flight). This still needs human microphone confirmation.
 - **Prefix commands still run at once:** a valid prefix such as `Groove record` executes immediately (recording the selected track) even if `synth two` follows after a pause.
 - **Delayed refusals:** a refused or unknown sentence now reports up to 2 s later, while it waits for a continuation.
 - **Speech that ends the stream:** a sentence held when a stream ends (mic off) is dropped with that stream, as bare wake words already were.
