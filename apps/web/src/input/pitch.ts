@@ -171,6 +171,11 @@ export class NoteSegmenter {
  /** Frame at which an open note began, if any (its frames are not final yet). */
  get openStart() { return this.open?.start ?? this.candidate[0]?.frame ?? null; }
 
+ /** View-only estimate: it must never enter the finalized-note queue. */
+ get liveNote(): SungNote | null {
+  return this.open ? this.noteAt(this.open.lastVoiced + this.hopFrames / 2) : null;
+ }
+
  push(frames: PitchFrame[]): SungNote[] {
   const notes: SungNote[] = [];
   for (const f of frames) this.step(f, notes);
@@ -243,12 +248,17 @@ export class NoteSegmenter {
  }
 
  private close(end: number, notes: SungNote[]) {
-  const o = this.open!; this.open = null; this.unvoiced = 0;
-  if (end - o.start < this.minFrames) return;
+  const note = end - this.open!.start >= this.minFrames ? this.noteAt(end) : null;
+  this.open = null; this.unvoiced = 0;
+  if (note) notes.push(note);
+ }
+
+ private noteAt(end: number): SungNote | null {
+  const o = this.open!;
   const midi = Math.round(this.median(o.pitches));
-  if (midi < 0 || midi > 127) return;
+  if (midi < 0 || midi > 127) return null;
   const clarity = o.clarity.reduce((a, b) => a + b, 0) / o.clarity.length;
   const velocity = Math.min(1, Math.max(0.1, (o.peakDb - (this.noiseFloorDb + this.gate)) / Math.max(6, -6 - (this.noiseFloorDb + this.gate)) * 0.9 + 0.1));
-  notes.push({ startFrame: Math.round(o.start), endFrame: Math.round(end), midi, velocity, confidence: Math.min(1, Math.max(0, (clarity - 0.5) * 2)) });
+  return { startFrame: Math.round(o.start), endFrame: Math.round(end), midi, velocity, confidence: Math.min(1, Math.max(0, (clarity - 0.5) * 2)) };
  }
 }

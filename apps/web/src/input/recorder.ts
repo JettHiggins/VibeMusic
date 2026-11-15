@@ -37,6 +37,8 @@ export interface RecorderStatus {
  mode: VerificationMode;
  capturing: boolean;
  provisional: ProvisionalEvent[];
+ /** Growing open note, view-only; not verified, queued or submitted. */
+ live?: ProvisionalEvent | null;
  /** Recent accepted events with their grid placement (diagnostic only; placement is unchanged). */
  timing: GridTimingEntry[];
  committed: number;
@@ -57,6 +59,7 @@ export class PerformanceRecorder {
  private transport: Transport | null = null;
  private window: Window | null = null;
  private events: ProvisionalEvent[] = [];
+ private live: ProvisionalEvent | null = null;
  private timing: GridTimingEntry[] = [];
  private spans: (Span & { clockId: string })[] = [];
  private analysedThrough = 0;
@@ -140,6 +143,24 @@ export class PerformanceRecorder {
   this.analysed(analysedThrough, latencyFrames);
  }
 
+ /** Update before addNotes/addOnsets publishes this analysis block. No dispatch or watermark change. */
+ setLiveNote(note: SungNote | null, latencyFrames: number, clockId: string) {
+  this.live = null;
+  const w = this.window;
+  if (!note || !w || !w.open || w.target.trackId === 'drums' || w.target.lane || clockId !== w.clockId) return;
+  const start = Math.round(note.startFrame - latencyFrames), end = Math.round(note.endFrame - latencyFrames);
+  if (start < w.captureStart || end <= start || note.confidence < MIN_CONFIDENCE || note.velocity <= 0) return;
+  this.live = { event: { kind: 'note', id: `live:${clockId}:${w.epoch ?? w.startFrame}:${start}`, target: { ...w.target }, captureFrame: start, endFrame: end, clockId, midi: note.midi, velocity: note.velocity, confidence: note.confidence },
+   step: this.stepOf(start), duration: Math.max(1, Math.min(64, this.stepOf(end, false) - this.stepOf(start, false))), status: 'provisional' };
+ }
+
+ private liveView(): ProvisionalEvent | null {
+  const p = this.live;
+  if (!p || !this.capturing || !this.window || p.event.clockId !== this.window.clockId || p.event.captureFrame < this.window.captureStart
+   || this.spans.some(s => s.clockId === p.event.clockId && overlaps(p.event.captureFrame, endOf(p.event), s)) || this.erased(p)) return null;
+  return { ...p, event: { ...p.event, target: { ...p.event.target } } };
+ }
+
  private analysed(analysedThrough: number, latencyFrames: number) {
   // Contract frames are integers: round events, floor watermarks (never claim a partial frame).
   this.analysedThrough = Math.max(this.analysedThrough, Math.floor(analysedThrough - latencyFrames));
@@ -167,7 +188,7 @@ export class PerformanceRecorder {
 
  /** Includes submitted input: Undo must discard capture before consuming musical history. */
  resetPendingCapture() {
-  this.events=[];this.inFlight=null;this.replaced.clear();this.retries=0;
+  this.live=null;this.events=[];this.inFlight=null;this.replaced.clear();this.retries=0;
   this.analysedThrough=-1;this.speechVerifiedThrough=-1;this.lastError=null;this.changed();
  }
  beginSpeechCoverage(clockId:string,firstFrame:number) {
@@ -181,7 +202,7 @@ export class PerformanceRecorder {
  }
 
  status(): RecorderStatus {
-  return { mode: this.mode, capturing: this.capturing, provisional: this.events.map(e => ({ ...e })), timing: this.timing.slice(), committed: this.committed, dropped: this.dropped, lastError: this.lastError, inFlight: this.inFlight?.id ?? null };
+  return { mode: this.mode, capturing: this.capturing, provisional: this.events.map(e => ({ ...e })), live: this.liveView(), timing: this.timing.slice(), committed: this.committed, dropped: this.dropped, lastError: this.lastError, inFlight: this.inFlight?.id ?? null };
  }
 
  private stepOf(frame: number, wrap = true) {
@@ -199,6 +220,7 @@ export class PerformanceRecorder {
   // later terminal acks intentionally have nothing to match and cannot resurrect old audio.
   const epochReset = t.recordingEpoch !== undefined && this.window && this.window.epoch !== t.recordingEpoch;
   if (epochReset) {
+   this.live = null;
    this.erasures.clear(); this.seenErasureCommands.clear();
    this.events = []; this.inFlight = null; this.replaced.clear(); this.retries = 0;
    this.lastError = null; this.analysedThrough = -1; this.speechVerifiedThrough = -1;
@@ -208,6 +230,7 @@ export class PerformanceRecorder {
   const active = t.recordingState === 'recording' || t.recording;
   if (active && t.recordingTarget && t.recordingStartFrame !== undefined) {
    if (!this.window || this.window.startFrame !== t.recordingStartFrame || this.window.clockId !== t.clockId) {
+    this.live = null;
     // A new take replaces the engine's window; unsent events from the old take can no longer apply.
     if (this.window) this.discardUnverified('A new take started before earlier hits were verified');
     // A batch the engine no longer lists as pending, with no acknowledgment yet, belongs to the old
@@ -223,6 +246,7 @@ export class PerformanceRecorder {
    }
    this.window.open = true; this.window.cutoff = t.currentFrame;
   } else if (this.window?.open) {
+   this.live = null;
    // The engine ended the window somewhere after the last frame we saw recording; stay conservative.
    this.window.open = false;
    const cutoff = this.window.cutoff, before = this.events.length;
@@ -346,6 +370,7 @@ export class PerformanceRecorder {
  }
 
  private discardUnverified(reason: string) {
+  this.live = null;
   const pending = this.events.filter(e => e.status === 'provisional');
   if (pending.length) { this.dropped += pending.length; this.lastError = reason; }
   this.events = this.events.filter(e => e.status === 'submitted');
