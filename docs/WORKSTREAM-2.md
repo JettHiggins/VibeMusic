@@ -1,5 +1,13 @@
 # Workstream 2 — Compact microphone workspace
 
+## Latest playtest assignment
+
+Read docs/MELODY-RETENTION-ROUND.md and the top of STATUS.md first. This supersedes the older copyable goal below.
+
+```text
+/goal Fetch origin; read AGENTS.md, PLAN.md, docs/STATUS.md, docs/MELODY-RETENTION-ROUND.md and issue9; preserve local work. Own concise bar/beat/count-in preparation and truthful live/pending/committed recording feedback from MELODY-RETENTION-ROUND.md. Use current transport/recorder data now; keep live range/manual navigation and compact monochrome layout. Consume new snap/start fields only after the WS1 contract lands. Do not edit DSP/controller/service files or invent exclusion reasons. Publish a tested owner branch/PR and exact handoff; distinguish proposed, synthetic and human evidence.
+```
+
 Current scope: VOICE-RELIABILITY-ROUND.md. Read STATUS.md and issue #9 now; this replaces the older frozen-test and workstream instructions. All three work packages start independently against published interfaces. Preserve work and use current origin/engine-integration.
 
 ## Live preview visibility follow-up

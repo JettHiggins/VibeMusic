@@ -1,5 +1,13 @@
 # Workstream 1 — Melody reliability, Vochlea study and integration
 
+## Latest playtest assignment
+
+Read docs/MELODY-RETENTION-ROUND.md and the top of STATUS.md first. This supersedes the older copyable goal below.
+
+```text
+/goal Fetch origin; read AGENTS.md, PLAN.md, docs/STATUS.md, docs/MELODY-RETENTION-ROUND.md and issue9; preserve local work. Own event-retention tracing and musical timing/contract proposals from MELODY-RETENTION-ROUND.md. Reproduce preview-to-loss in manual versus speech mode, preserving verified timing and committed music. Publish compatible examples/tests for explicit rhythm snap and next-bar preparation before consumers use them; keep legacy sixteenth behavior and raw capture/key/erase semantics. Integrate owner fixes and validate against the new physical test. Publish a tested owner branch/PR and exact handoff; distinguish proposed, synthetic and human evidence.
+```
+
 Current scope: VOICE-RELIABILITY-ROUND.md. Read STATUS.md and issue #9 now; this replaces the older frozen-test and workstream instructions. All three work packages start independently against published interfaces. Preserve work and use current origin/engine-integration.
 
 ## Live preview priority

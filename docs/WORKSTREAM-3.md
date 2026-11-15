@@ -1,5 +1,13 @@
 # Workstream 3 — Protocol and resilient speech control
 
+## Latest playtest assignment
+
+Read docs/MELODY-RETENTION-ROUND.md and the top of STATUS.md first. This supersedes the older copyable goal below.
+
+```text
+/goal Fetch origin; read AGENTS.md, PLAN.md, docs/STATUS.md, docs/MELODY-RETENTION-ROUND.md and issue9; preserve local work. Own performance-safe speech classification and Gemini provider migration from MELODY-RETENTION-ROUND.md. Close the published musical-syllable/false-wake guard reproduction without swallowing real commands or bypassing verified coverage. Add Gemini behind existing bounded Deep Agents validated tools, keep deterministic/local audio paths working, test provider configuration/429/timeouts offline, and wait only for the actual billing-backed endpoint/key before live calls. Keep OpenRouter compatibility; no paid fallback or key in chat/Git. Publish a tested owner branch/PR and exact handoff; distinguish proposed, synthetic and human evidence.
+```
+
 Current scope: VOICE-RELIABILITY-ROUND.md. Read STATUS.md and issue #9 now; this replaces the older frozen-test and workstream instructions. All three work packages start independently against published interfaces. Preserve work and use current origin/engine-integration.
 
 ## Copyable goal

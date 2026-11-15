@@ -2,6 +2,10 @@
 
 Read PLAN.md, AGENTS.md, VOICE-RELIABILITY-ROUND.md, your WORKSTREAM file and coordination issue #9. Fetch current origin/engine-integration at startup/capability/PR checkpoints and preserve work. Independent laptops do not receive live conversation instructions automatically. This ledger describes current assignments; handoffs/review files retain detailed historical evidence.
 
+## Latest physical-test steering — read first
+
+Jett's new test reports continued heavy rate limits, useful deterministic commands, and earlier `duh duh — duh duh` melody notes disappearing after looking captured. Speech exclusion is a hypothesis; a scripted false-wake/musical-syllable path is now reproduced (3 failing proposed guards/2 passing controls). Timing already snaps to sixteenths; proposed selectable rhythm snap and clearer next-bar/count-in are distinct from pitch snapping. Jett selected Gemini using a friend's $10 API credits; billing service/project remains to be confirmed before live calls. Current next assignments are in MELODY-RETENTION-ROUND.md: WS1 retention trace/timing contracts, WS2 phase/commit feedback, WS3 performance-safe classification plus Gemini adapter. This supersedes the older next-evidence/assignment paragraphs below; integrated features remain integrated.
+
 ## Current product and branch
 
 Use **engine-integration** for the runnable shared app. main is still the older documentation-only branch; old playtest tags remain immutable comparisons. Development is unfrozen. Jett's priority is immediate Vochlea-like piano-roll appearance/growth while humming; **live visual preview first**, no live synth-monitoring change yet.
