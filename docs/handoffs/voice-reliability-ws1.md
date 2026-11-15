@@ -89,3 +89,7 @@ Validation:66 combinations of adjacent/repeated low-to-high synthetic phrases, n
 
 
 Final CI for source **853a1ea**, run **43668662721**: Linux web/contracts, firmware parity, macOS integration and Windows integration all completed successfully. The current melody capability is ready for the focused physical check described in STATUS. This closes the platform software gate for this source, not physical singer/noise/fun acceptance or the unfinished WS2/WS3 items. All owned diagnostic browsers/model/dev processes were stopped and worktrees are clean.
+
+## Continuous acoustic input isolation
+
+The remaining independent fixture check is published in reviews/SPOKEN-SEARCH-AVAILABILITY.md with three reproducible diagnostics. A static room-tone/spoken timeline held a healthy speech stream for41s, correctly launched80s-electric-piano research, but its fixed11s cancellation preceded candidates (therefore audition/accept correctly refused). An adaptive continuous worklet-fed input in a fresh browser failed at socket startup before speech readiness. A direct real-service3s quiet-PCM/transport probe passed availability22ms, all30 verified frames through132299, zero errors, without model-output mocks. These distinguish fixture timing, browser startup and direct quiet transport; they do not prove the exact cause of the intermittent resource/capture failure or full acoustic acceptance. No production threshold, clock, backlog or verification guard was changed. Physical device evidence and the published WS2/WS3 corrections remain the next dependencies.
