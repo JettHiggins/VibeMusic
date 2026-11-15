@@ -1,5 +1,7 @@
 # Musical controls 1 — interim usability test
 
+**Current steering:** the interim test is complete. Follow VOICE-RELIABILITY-ROUND.md and STATUS.md for the new independent work packages; this document retains roadmap/test history.
+
 Current test tag: **playtest-musical-controls-1**. This supersedes playtest-repair-1 as the requested current test. The old tag and FROZEN-PLAYTEST.md are historical comparison material. Jett explicitly wants this interim test before WS3 finishes the remaining speech work; this is not the full hands-free acceptance gate.
 
 Application source matches engine-integration 4566dd8ee5f48480f37fab4c13564fde557bd23e, whose Linux contracts/web, firmware/real-renderer integration and Windows/macOS jobs all passed: https://github.com/JettHiggins/VoiceSynthesizer/actions/runs/43655308001. The tagged follow-up changes documentation only.

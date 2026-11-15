@@ -1,31 +1,13 @@
-# Workstream 1 — musical control and hands-free completion
+# Workstream 1 — Melody reliability, Vochlea study and integration
 
-**Current human test request:** Jett wants an interim test before WS3 finishes. Use playtest-musical-controls-1 and INTERIM-PLAYTEST.md; older frozen repair instructions below are historical. Preserve development work in its own branch/worktree.
-
-Current scope: HANDSFREE-COMPLETION.md; assignments/dependencies: STATUS.md and issue #9. This supersedes the prior freeze instructions.
-
-```text
-/goal Own WS1 for musical control and hands-free completion. Read AGENTS.md, PLAN.md, docs/STATUS.md and docs/HANDSFREE-COMPLETION.md. Publish new shared contracts/examples before consumers; implement authoritative optional key snapping and immediate smoothed patches, review/adopt #29/#31, coordinate small PRs and verify the complete microphone-to-command/research/browser path. Preserve the previous frozen tag and all work. Publish the next test build and require real whole-sentence/hands-free/fun evidence before completion.
-```
-
-## Historical handoff — superseded
-
-# Workstream 1 — playtest repair
-
-Owner: Jett — this computer. Ownership: Engine, shared contracts, root build/CI, startup and integration.
-
-Current scope and acceptance: [PLAYTEST-REPAIR.md](PLAYTEST-REPAIR.md). Read [STATUS.md](STATUS.md) for the latest contract publication/dependencies. Supersedes older feature assignments. No producer/consumer may invent shared interfaces; WS1 publishes them first. Finish independent reproduction while a contract is pending.
+Current scope: VOICE-RELIABILITY-ROUND.md. Read STATUS.md and issue #9 now; this replaces the older frozen-test and workstream instructions. All three work packages start independently against published interfaces. Preserve work and use current origin/engine-integration.
 
 ## Copyable goal
 
 ```text
-/goal Own WS1 for the playtest repair milestone. Read AGENTS.md, PLAN.md, docs/STATUS.md and docs/WORKSTREAM-1.md; preserve current work and supersede the previous feature priority. First publish the plan/three assignments/coordination handoff, then metronome/erasure/countdown contracts before consumers depend on them. Reproduce and fix infinite stopped-record count-in using fixed audio-clock deadlines. Implement default-on playback/recording metronome with mute, empty startup and immediate targeted erasure that preserves unrelated committed/provisional music without stale resurrection. Coordinate Leo/Lenny through small reviewed PRs; preserve/defer sound-search work. Run checks, integrate repairs and publish a frozen playtest commit. Require the real microphone/fun test before completing this milestone; preserve the full roadmap.
+/goal Own WS1 for the voice-reliability round. Fetch origin; read AGENTS.md, PLAN.md, docs/STATUS.md, docs/VOICE-RELIABILITY-ROUND.md, docs/VOCHLEA-REFERENCE.md and issue #9. Preserve work; branch ws1/melody-reliability from current engine-integration. Own the temporarily assigned input DSP/calibration/segmentation/recorder files and engine integration. Reproduce quiet/normal humming, over-high calibration, missed fast adjacent notes and short full-bar holds; trace raw capture, extracted/committed duration and rendered envelope separately. Study Vochlea's documented sensitivity, stability and pitch feedback; record observations versus inference and implement measured fixes. Jett says key mapping was reasonable, so preserve existing scale semantics. Keep public input/wire interfaces compatible so WS2/WS3 work independently. Add focused and real-browser pipeline regressions, preserve drum/speech/timing/Undo behavior, publish small PRs and integrate peer work. Push a concrete handoff before the approximately one-hour check-in; continue independent follow-ups instead of waiting on another stream or a model provider. Physical-mic/fun acceptance remains required.
 ```
 
-## Handoff requirements
+## Delivery
 
-Use a fresh owner-specific repair branch from reviewed engine-integration; preserve existing work, .env and assets. Small PRs to engine-integration, merged by WS1. Include exact commit/PR, reproduction, behavior, checks, limitations and next integration step. Never commit secrets/raw microphone audio/models. Do not count synthetic evidence as human acceptance.
-
-## Current checkpoints
-
-Peer-reviewed #38/#39 and consumer repairs are integrated. Frozen test tag: `playtest-repair-1`. Follow FROZEN-PLAYTEST.md and STATUS.md; pause for Jett's microphone/fun test as requested. Preserve all current work and deferred research. Resume with the filled result sheet before changing the frozen session or claiming completion.
+Follow the exact ownership, P0 acceptance and independent follow-ups in VOICE-RELIABILITY-ROUND.md. Submit small PRs targeting engine-integration while continuing the goal. Publish docs/handoffs/voice-reliability-ws1.md with commit/PR, behavior, checks, limits and next step before the return check-in. WS1 integrates and maintains STATUS.md. Do not edit other streams' files or invent interfaces to bypass a wait. Models/secrets/raw audio stay out of Git. Old test tags remain immutable.

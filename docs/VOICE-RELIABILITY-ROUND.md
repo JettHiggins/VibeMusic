@@ -1,0 +1,67 @@
+# Voice reliability and UI cleanup — parallel work round
+
+This is the current priority after Jett's musical-controls playtest. It supersedes the test freeze and previous WORKSTREAM assignments, while preserving the full product roadmap in PLAN.md. Keep playtest-musical-controls-1 and playtest-repair-1 immutable. Develop from current origin/engine-integration, not a detached test checkout or documentation-only main.
+
+## Human evidence
+
+Hands-free requests sometimes work, but the UI reports language-provider quota/rate limits and unsupported browser-status. Melody capture is inconsistent; remeasuring silence helps temporarily. Quick adjacent notes are missed. A full-bar hum becomes short both in the piano roll and audibly. Jett clarified that key snapping chose reasonable pitches: the problem was missed fast notes, not a request to replace the scale mapping. Enabling the mic causes text overflow and too many visible buttons. Exact laptop backend commit/settings were not verified during this report; distinguish stale-service mismatch from current-source defects.
+
+## Three independent deliverables
+
+| Stream | Owner / feature branch | Result for the next check-in |
+| --- | --- | --- |
+| WS1 | Jett / ws1/melody-reliability | Hums and fast sung notes become stable, correctly timed notes; calibration does not make ordinary humming unusable. Vochlea comparison and integrated duration evidence. |
+| WS2 | Leo / ws2/mic-workspace-cleanup | Clean monochrome workspace when the mic is enabled: no page overflow, stable controls, compact input summary and optional advanced diagnostics. |
+| WS3 | Lenny / ws3/speech-resilience | Current browser messages are accepted and tracked; essential commands survive LLM rate limits; whole-sentence speech and stop are tested against the actual service. |
+
+This round temporarily splits WS2's usual input ownership: **WS1 owns melodic analysis/calibration/recording internals; WS2 owns presentation only.** This is the coordinated redistribution Jett requested, not permission to edit each other's files opportunistically. See AGENTS.md and the exact boundaries below. Existing shared contracts are sufficient for all P0 tasks; start all three now without waiting for another stream's implementation.
+
+### WS1 — melody and sustained notes
+
+Own apps/web/src/input/{pitch.ts,analysis-worker.ts,calibration.ts,recorder.ts,mic-check.ts,voice-input.ts,processing-profile.ts}, engine integration, contracts and root tests. Touch microphone.ts/capture-worklet.ts only if the measured capture path needs it; preserve speech tap interfaces for WS3. WS2 will not edit these internals this round.
+
+1. Read VOCHLEA-REFERENCE.md and the official reference pages. Write a short observable-behavior comparison and implementation choices in docs/handoffs/voice-reliability-ws1.md. If a licensed running Dubler is already available, optional black-box comparisons can strengthen evidence; installing/purchasing it is not a dependency. Do not claim access to its proprietary algorithm.
+2. Reproduce low/normal hums before/after silence measurement, contaminated/over-high floor, ordinary amplitude dips, quiet-room and conversational-background conditions. Trace capture level -> floor/gate -> YIN confidence -> segmentation -> verification/commit -> engine duration -> patch envelope. Treat the suspected high silence threshold as a hypothesis, not an established cause.
+3. Fix the measured gating/segmentation problem without accepting background speech as melody, blindly lowering all thresholds, discarding clock safeguards or forcing repeated recalibration. Keep note attack and release behavior explicit; preserve a held note across brief confidence/level dips while still releasing real silence. Evaluate input level and pitch stability behavior against the Vochlea reference. Prefer robust defaults before adding controls.
+4. Test fast adjacent and repeated notes (125 ms / 250 ms phrases at 120 BPM), vibrato, gentle level variation, a full-bar 2 s hum, and a held note crossing a loop boundary. Compare Off and enabled key snap. Preserve capture timestamps, raw submitted MIDI, intentional re-articulation, other tracks, Undo and current scale semantics. Do not silently change nearest-scale mapping or add automatic key detection to solve missed-note capture.
+5. Verify raw extracted duration, committed piano-roll duration and rendered note gate separately, using a known sustained patch as well as a naturally decaying patch. A short pluck envelope is not proof that MIDI was cut short. Add focused reproductions and an actual capture/analysis/recorder/WASM browser test; report physical-mic limits honestly.
+
+Independent follow-ups if waiting on speech: onset regression protection, every synth track, key preview/commit consistency, long-note/loop handling and integration review. No backend inference enters the audio callback. Keep existing VoiceInputState and public methods compatible so WS2 can finish presentation without waiting.
+
+### WS2 — compact input and workspace
+
+Own apps/web/src/ui/**, layout/theme and UI persistence only. Keep current VoiceInput public methods/state and existing shared contracts. Do not edit voice-input.ts, pitch/worker/calibration/recorder logic or service files this round. Raise optional state needs as a small proposal, but implement the base UI with existing readings immediately.
+
+1. Reproduce the mic-enabled page with long guidance, provider errors, calibration countdown/results, active recording and agent/research progress. Fix layout causes: bounded containers, wrapping/ellipsis where appropriate, min-width handling and stable panel sizing. Do not hide overflow globally to mask lost controls/text.
+2. Preserve the monochrome DAW workspace, track selection and piano roll. Keep transport/Record/Stop/Undo/Clear easy to find. Collapse device/profile/calibration details, diagnostic reports, connection controls and research details into deliberate secondary sections. Keep important warnings and active-action cancel accessible. Do not build another tab maze or add a wall of tuning buttons.
+3. Use Vochlea's clarity of input/pitch/output feedback as a reference: concise mic status, current detected note/confidence/gate state where already available, and active key. Explain when input is too quiet or uncertain using existing data; do not invent measurements. Existing raw pitch and snapped output are different concepts.
+4. Browser-check at 1280x720, 1366x768 and 1440x900 with mic enabled, long errors and calibration/recording states. Acceptance: no unintended page-wide horizontal scrolling, essential controls stay reachable, texts do not overlap, stable transport and readable piano roll. Show before/after evidence and keyboard/focus behavior for collapsed controls.
+
+Independent follow-ups: empty/disabled states, stop/cancel discoverability, long provider errors and optional diagnostics access. Work with current data rather than waiting for new DSP or backend fields. Tests that exercise visible behavior are preferred over style-string assertions.
+
+### WS3 — protocol, provider resilience and speech
+
+Own services/agent/** and its backend tests/handoff. Current ClientMessage schemas already publish browser-status and browser-action-ack. apps/web protocol routing/executor is merged; do not wait on #40/#41 or a new provider decision.
+
+1. P0: handle browser-status and browser-action-ack in Connection and actual WebSocket service. Current connection.py falls through to unsupported message type for these valid messages. Track current clock/inputRevision/capability, active action and guarded terminal results; invalidate old speech/model decisions after input changes. Preserve validation of truly unknown/malformed messages. Add a real WebSocket regression, not just a parsed schema fixture. Check running service/checkouts/schemas to distinguish stale processes as well.
+2. P0: make core deterministic commands independent of LLM availability. A 402/429 must not break stop/select/tempo/clear/undo or supported exact key/calibration requests. Add bounded request submission, shared provider cooldown/backoff using available retry information, no retry storms or automatic replay of mutations, safe errors and clear degraded availability. Do not send status packets, repeated background fragments or known commands to the LLM unnecessarily. Test scripted rate-limit/quota/timeout responses without burning live quota. External free-provider quota cannot be guaranteed away by code; keep unsupported semantic requests truthful rather than marking them successful.
+3. Finish the previously assigned whole-sentence/stop work: pauses and >4 s requests must not execute forced fragments prematurely; Groove stop must end capture while playback continues. Preserve capture-clock command exclusion and actual classified coverage. Bind model jobs to current input/take context. Keep the wake rule unless Jett changes it.
+4. Implement bounded exact phrases/Deep Agents tools for existing key/timeline/browser operations against real advertised capability and terminal acknowledgments. Use current local faster-whisper and existing backend-local OpenRouter free-model decision. No new accounts/keys, paid-provider switches or credential printing. Deterministic fallback is resilience, not a claim that the full Deep Agents quality requirement is complete.
+
+Independent follow-ups: fixed command corpus, actual service/browser adapter tests, configured research availability/prewarm guidance and stale-service diagnostics. Do not enlarge corpora/train models while basic input/control is unreliable. If live quota is exhausted, continue offline provider-error tests and local STT/parser/protocol work rather than ending the goal on quota.
+
+## Interfaces and collision prevention
+
+- First-hour work uses existing contracts, messages, VoiceInputState and methods. WS1 alone changes packages/contracts, engine, root CI or vendored code. No competing new wire messages.
+- WS1 owns input/voice-input.ts for this round; WS2 calls it from UI and WS3 emits published messages from the service. WS2 uses existing calibration/readiness/micCheck/speech/recorder data; optional new fields must be compatible and are not a prerequisite for cleanup.
+- Each stream owns its focused tests and docs/handoffs/voice-reliability-wsN.md. WS1 owns STATUS.md/PLAN.md. Leave HANDOFF.md history alone. Small PRs target engine-integration; WS1 integrates reviewed work, preserving original author commits.
+- A proposed optional extension must not hold up independent fixes. Publish a proposal with examples/tests, continue existing-interface work, and make limitations explicit. Never fake completion. Runtime goal/blocked policies take precedence over local waiting preferences.
+- GitHub issue #9, PRs and handoff files are shared memory. Laptop agent conversations do not update automatically. Each person pastes the new goal and asks their agent to fetch/read this plan now.
+
+## Approximately one-hour checkpoint
+
+This is a work/check-in window, not a guarantee of full completion or permission to stop at mock-only output. First ~15 minutes: reproduce and post the first narrow result/commit; next ~30 minutes: implement/test the owned fix and open a small PR while continuing other independent tasks; by ~50 minutes push a handoff with exact head/PR, behavior, checks, failures and physical-test limits. WS1 reviews/integrates available work for the return check-in. Do not wait for the other streams to finish before publishing useful work or invent progress to meet a clock.
+
+If an external dependency remains, record it and continue the independent follow-ups above. Do not dependency-poll or burn model calls waiting. No stream requires another stream's new implementation to start. Human microphone/fun acceptance is required after the combined software checks; keep old test tags immutable and publish a new test snapshot only when warranted.
+
+At the next test: low/normal humming and fast phrase on all synths, 2 s held note and loop crossing, Off versus chosen key, no repeated recalibration to stay usable, mic-enabled layout at laptop sizes, existing exact commands while the provider is unavailable, actual browser-status/acks without unsupported errors, and whole-sentence spoken stop with playback continuing. Record exact source/service configuration and transcripts; raw recordings remain opt-in and out of Git.

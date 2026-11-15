@@ -1,6 +1,6 @@
 # Development setup
 
-Current development scope: [HANDSFREE-COMPLETION.md](HANDSFREE-COMPLETION.md) and [STATUS.md](STATUS.md). Jett requested an interim test before the remaining WS3 work: use **playtest-musical-controls-1** and [INTERIM-PLAYTEST.md](INTERIM-PLAYTEST.md). The old playtest-repair-1 / FROZEN-PLAYTEST.md instructions are historical, not the current test. Full hands-free human acceptance remains pending.
+Current development scope: [VOICE-RELIABILITY-ROUND.md](VOICE-RELIABILITY-ROUND.md), [STATUS.md](STATUS.md) and your current WORKSTREAM goal. The interim test is complete; resume development from current origin/engine-integration. playtest-musical-controls-1 and INTERIM-PLAYTEST.md are immutable comparison/test history, not the development checkout. Full human hands-free acceptance remains open.
 
 Use Node 22.12+ and Python 3.11+. Windows developers run these commands inside WSL2, with the repository in the Linux filesystem; open the Vite URL in Windows Chrome. macOS developers use a terminal and Chrome. Commands below have been checked in this Linux workspace; macOS and Windows verification remains part of integration acceptance.
 

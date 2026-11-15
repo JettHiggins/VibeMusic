@@ -9,6 +9,11 @@ When blocked, state the exact dependency, the agent/workstream responsible, and 
 - Workstream 1 owns engine, integration, root build configuration, CI, vendored upstream, and shared contracts.
 - Workstream 2 owns UI, persistence, microphone capture, and performance analysis.
 - Workstream 3 owns backend, speech/agent orchestration, and sound research.
+
+## Current round ownership override
+
+Jett requested three balanced, independent work packages after the musical-controls test. For **docs/VOICE-RELIABILITY-ROUND.md only**, WS1 owns melodic input/calibration/segmentation/recording internals: apps/web/src/input/{pitch.ts,analysis-worker.ts,calibration.ts,recorder.ts,mic-check.ts,voice-input.ts,processing-profile.ts}, with microphone.ts/capture-worklet.ts only as needed for measured capture fixes. WS2 owns apps/web/src/ui/**, layout/theme and presentation/persistence and calls existing input methods/state; it does not edit these DSP/controller internals this round. WS3 owns services/agent/** and tests. WS1 retains contracts/engine/root CI/integration. Keep public input interfaces/wire contracts compatible so no stream waits for another implementation. This explicit temporary split supersedes the normal WS2 input ownership above for this round; general ownership otherwise persists.
+
 - Work in an owner-specific feature branch and submit small PRs. The integrator merges; do not push implementation directly to main.
 - Milestone 0 must publish contracts and mocks before independent implementation. If absent, name the blocking owner/dependency and follow the waiting policy above; do not invent competing interfaces.
 - Propose shared contract changes before using them. Include compatible examples and tests.

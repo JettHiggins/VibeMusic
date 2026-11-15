@@ -1,5 +1,7 @@
 # Next milestone: musical control and hands-free completion
 
+**Current steering:** the interim test is complete. Follow VOICE-RELIABILITY-ROUND.md and STATUS.md for the new independent work packages; this document retains roadmap/test history.
+
 Jett completed the `playtest-repair-1` test and reported that the actual creation process went much better. This is positive qualitative evidence, not a filled pass for every previous test. Keep the immutable tag and preserve any saved projects/local work. The following requests now supersede the freeze and the earlier research deferral.
 
 ## Product changes
