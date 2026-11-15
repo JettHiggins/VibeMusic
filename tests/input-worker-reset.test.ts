@@ -61,3 +61,21 @@ test('analysis worker honors reset cutoffs and keeps quiet singing out of the me
  assert.ok(results.some(m=>m.type==='noise-floor-unavailable'&&/Not enough quiet audio/.test(m.message)), 'continuous foreground voice gets a distinct insufficient-quiet result');
  assert.ok(!results.some(m=>m.type==='error'&&/No microphone audio arrived/.test(m.message)), 'active capture must not be described as a missing microphone');
 });
+
+test('unstable room measurements report calibration unavailable, not a dead microphone or a new high floor',async()=>{
+ const results:AnalysisResult[]=[];
+ const scope={postMessage:(m:AnalysisResult)=>results.push(m),onmessage:null as ((e:{data:AnalysisRequest})=>void)|null};
+ Object.assign(globalThis,{self:scope});
+ await import('../apps/web/src/input/analysis-worker.ts'+'?unstable-room');
+ const port={onmessage:null as ((e:{data:{type:'audio';startFrame:number;samples:Float32Array}})=>void)|null};
+ scope.onmessage!({data:{type:'connect',sampleRate:44100,port:port as unknown as MessagePort}});
+ scope.onmessage!({data:{type:'measure-noise',frames:Math.round(1.5*44100)}});
+ let seed=92;
+ for(let frame=0;frame<2*44100;frame+=1024){
+  const samples=Float32Array.from({length:1024},(_,i)=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;const t=(frame+i)/44100;return (seed/4294967296*2-1)*Math.sqrt(3)*10**((t>.4&&t<1?-20:-60)/20);});
+  port.onmessage!({data:{type:'audio',startFrame:frame,samples}});
+ }
+ assert.ok(results.some(m=>m.type==='noise-floor-unavailable'&&/steady room noise/.test(m.message)));
+ assert.ok(!results.some(m=>m.type==='noise-floor'),'unstable audio must not create a new calibration');
+ assert.ok(!results.some(m=>m.type==='error'),'capture is working; this is a measurement refusal');
+});
