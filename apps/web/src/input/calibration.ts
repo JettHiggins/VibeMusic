@@ -27,7 +27,8 @@ export interface InputCalibration {
  deviceId: string | null;
 }
 
-/** Measure the noise floor as a high percentile of short-window RMS, so a cough does not dominate. */
+/** Estimate steady room noise, excluding brief level bursts rather than raising every detector's gate.
+ * A sufficiently steady majority is required: otherwise keep the prior calibration and retry. */
 export function measureNoiseFloor(samples: Float32Array, windowFrames = 1024): number {
  if (samples.length < windowFrames) throw new Error('Not enough audio to measure the noise floor');
  const levels: number[] = [];
@@ -37,7 +38,13 @@ export function measureNoiseFloor(samples: Float32Array, windowFrames = 1024): n
   levels.push(toDb(Math.sqrt(sum / windowFrames)));
  }
  levels.sort((a, b) => a - b);
- return levels[Math.min(levels.length - 1, Math.floor(levels.length * 0.9))];
+ const centre = levels[Math.floor((levels.length - 1) * 0.5)];
+ // Six dB allows ordinary short-window room variation but rejects a cough/handling burst.
+ const steady = levels.filter(db => Math.abs(db - centre) <= 6);
+ if (steady.length < Math.ceil(levels.length * 0.75)) {
+  throw new Error('Room noise changed too much during measurement; wait for steady room noise and try again');
+ }
+ return steady[Math.min(steady.length - 1, Math.floor(steady.length * 0.9))];
 }
 
 /** Keep recognized/open sung notes out of room-noise calibration. */

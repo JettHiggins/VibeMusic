@@ -354,7 +354,11 @@ export class VoiceInput implements BrowserActionAdapter {
    const cancelled = !measuring.active; measuring.cancel();
    // A result that arrives after cancellation, or once Play/Record invalidated the run, is discarded.
    if (cancelled || outcome === null || this.calibrationInvalidReason()) { this.runCancelReason ??= this.calibrationInvalidReason(); return keep(cancelledText()); }
-   if ('error' in outcome) return keep(`${outcome.error instanceof Error ? outcome.error.message : String(outcome.error)}. The previous noise floor was kept.`, 'rejected');
+   if ('error' in outcome) {
+    const detail = (outcome.error instanceof Error ? outcome.error.message : String(outcome.error)).trim().replace(/[.!?]+$/, '');
+    const kept = /previous(?: noise)? floor was kept$/i.test(detail);
+    return keep(`${detail}.${kept ? '' : ' The previous noise floor was kept.'}`, 'rejected');
+   }
    const calibration: InputCalibration = { ...(this.state.calibration ?? previous), noiseFloorDb: outcome.db, noiseSource: 'measured' };
    mic.configure(outcome.db); saveCalibration(calibration, undefined, this.state.processingProfile);
    this.check?.reset();

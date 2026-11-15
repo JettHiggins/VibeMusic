@@ -72,7 +72,7 @@ function onAudio(startFrame: number, samples: Float32Array) {
    const all = new Float32Array(measuring.collected); let offset = 0;
    for (const c of measuring.chunks) { all.set(c, offset); offset += c.length; }
    measuring = null;
-   try { post({ type: 'noise-floor', db: measureNoiseFloor(all) }); } catch (e) { post({ type: 'error', message: String(e) }); }
+   try { post({ type: 'noise-floor', db: measureNoiseFloor(all) }); } catch (e) { post({ type: 'noise-floor-unavailable', message: e instanceof Error ? e.message : String(e) }); }
   } else if (measuring.processed >= measuring.maxFrames) {
    measuring = null;
    post({ type: 'noise-floor-unavailable', message: 'Not enough quiet audio to measure room noise. Wait for a quieter moment, then try again; the previous floor was kept.' });

@@ -6,7 +6,7 @@ import { NoteSegmenter, YinTracker, hzToMidi, type PitchFrame, type SungNote } f
 const SR = 44100;
 function rng(seed: number) { return () => { seed |= 0; seed = seed + 0x6d2b79f5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
 const midiHz = (m: number) => 440 * 2 ** ((m - 69) / 12);
-interface Sung { midi: number; start: number; end: number; vibrato?: number; db?: number }
+interface Sung { midi: number; start: number; end: number; vibrato?: number; vibratoHz?: number; vibratoPhase?: number; db?: number }
 /** Voice-like tone: harmonics with falling amplitude, soft attack/release, optional vibrato, breath noise. */
 function sing(notes: Sung[], seconds: number, noiseDb = -60, seed = 1) {
  const random = rng(seed), out = new Float32Array(Math.round(seconds * SR)), noise = 10 ** (noiseDb / 20);
@@ -15,7 +15,7 @@ function sing(notes: Sung[], seconds: number, noiseDb = -60, seed = 1) {
   let phase = 0; const a0 = Math.round(n.start * SR), a1 = Math.round(n.end * SR), amp = 10 ** ((n.db ?? -14) / 20);
   for (let i = a0; i < a1 && i < out.length; i++) {
    const t = (i - a0) / SR, env = Math.min(1, t / 0.02, (a1 - i) / SR / 0.02);
-   phase += 2 * Math.PI * midiHz(n.midi + (n.vibrato ?? 0) * Math.sin(2 * Math.PI * 5.5 * t)) / SR;
+   phase += 2 * Math.PI * midiHz(n.midi + (n.vibrato ?? 0) * Math.sin(2 * Math.PI * (n.vibratoHz ?? 5.5) * t + (n.vibratoPhase ?? 0))) / SR;
    let s = 0; for (let h = 1; h <= 6; h++) s += Math.sin(h * phase) / (h * h);
    out[i] += s * amp * env * 0.8;
   }
@@ -103,4 +103,77 @@ test('p95 pitch analysis per 1024-frame block stays below the 50 ms target', () 
  for (let i = 0; i < audio.length; i += 1024) { const t = performance.now(); seg.push(yin.process(audio.subarray(i, i + 1024), i)); times.push(performance.now() - t); }
  times.sort((a, b) => a - b);
  assert.ok(times[Math.floor(times.length * 0.95)] < 50, `p95 ${times[Math.floor(times.length * 0.95)]}`);
+});
+
+test('125 ms adjacent sung notes remain distinct with accurate short-note durations', () => {
+ const phrase: Sung[] = [60,62,64,65,67,65,64,62].map((midi,i)=>({midi,start:.2+i*.125,end:.2+(i+1)*.125}));
+ const {notes}=analyse(sing(phrase,1.5));
+ assert.deepEqual(notes.map(n=>n.midi),phrase.map(n=>n.midi));
+ notes.forEach((n,i)=>assert.ok(Math.abs(ms(n.endFrame-n.startFrame)-125)<35,`note ${i}: ${ms(n.endFrame-n.startFrame)} ms`));
+});
+
+test('a confident full-bar hum survives gentle level dips without fragmenting or shortening', () => {
+ const hop=256,seg=new NoteSegmenter({sampleRate:SR,hop,noiseFloorDb:-60});
+ const frames:PitchFrame[]=Array.from({length:Math.round(2*SR/hop)},(_,i)=>({frame:i*hop,f0:midiHz(60),clarity:.98,rmsDb:i<8?-32:-40+8*Math.cos(2*Math.PI*i*hop/SR*1.5)}));
+ const notes=[...seg.push(frames),...seg.flush(2*SR)];
+ assert.equal(notes.length,1,`continuous periodic hum fragmented: ${JSON.stringify(notes.map(n=>[ms(n.startFrame),ms(n.endFrame)]))}`);
+ assert.ok(ms(notes[0].endFrame-notes[0].startFrame)>1940,'held hum should occupy the full bar');
+});
+
+test('real pitch extraction retains a softening two-second hum and releases at real silence', () => {
+ const audio=sing([{midi:60,start:.1,end:2.1,db:-30}],2.4,-80);
+ for(let i=Math.round(.1*SR);i<Math.round(2.1*SR);i++)audio[i]*=10**((-6+6*Math.cos(2*Math.PI*(i/SR-.1)*1.5))/20);
+ const {notes}=analyse(audio);
+ assert.equal(notes.length,1,JSON.stringify(notes));
+ assert.equal(notes[0].midi,60);
+ assert.ok(Math.abs(ms(notes[0].startFrame)-100)<25);
+ assert.ok(Math.abs(ms(notes[0].endFrame)-2100)<35,'real silence should end the note without a stuck tail');
+});
+
+test('the lower held-note threshold never opens a new note from quiet periodic room input', () => {
+ const seg=new NoteSegmenter({sampleRate:SR,hop:256,noiseFloorDb:-60});
+ const frames:PitchFrame[]=Array.from({length:120},(_,i)=>({frame:i*256,f0:midiHz(60),clarity:.99,rmsDb:-49}));
+ assert.deepEqual([...seg.push(frames),...seg.flush(120*256)],[]);
+});
+
+test('quiet clear humming retains a short adjacent phrase above the room-noise floor', () => {
+ const phrase:Sung[]=[60,62,64,65].map((midi,i)=>({midi,start:.15+i*.125,end:.15+(i+1)*.125,db:-42}));
+ const {notes,frames}=analyse(sing(phrase,.9,-60));
+ const periodic=frames.filter(f=>f.f0&&f.clarity>.9);
+ assert.ok(periodic.length>20,'fixture must contain a detectable periodic hum');
+ assert.deepEqual(notes.map(n=>n.midi),phrase.map(n=>n.midi),`clear humming: ${periodic.length} voiced frames, max clarity ${Math.max(...periodic.map(f=>f.clarity)).toFixed(3)}, peak level ${Math.max(...periodic.map(f=>f.rmsDb)).toFixed(1)} dBFS`);
+});
+
+
+test('uncertain quiet periodic input still needs the original acquisition margin', () => {
+ const seg=new NoteSegmenter({sampleRate:SR,hop:256,noiseFloorDb:-60});
+ const frames:PitchFrame[]=Array.from({length:120},(_,i)=>({frame:i*256,f0:midiHz(60),clarity:.85,rmsDb:-47}));
+ assert.deepEqual([...seg.push(frames),...seg.flush(120*256)],[]);
+});
+
+test('quiet adjacent semitones are stable across capture alignments and noise realizations', () => {
+ for(let seed=1;seed<=8;seed++){
+  const start=.15+seed*256/SR/8;
+  const phrase:Sung[]=[60,62,64,65].map((midi,i)=>({midi,start:start+i*.125,end:start+(i+1)*.125,db:-42}));
+  const {notes}=analyse(sing(phrase,.9,-60,seed));
+  assert.deepEqual(notes.map(n=>n.midi),phrase.map(n=>n.midi),`capture alignment/noise seed ${seed}`);
+ }
+});
+
+
+test('wide vibrato stays one note across entry phases and normal vibrato rates', () => {
+ for(const vibratoHz of [4.5,5.5,7])for(const vibratoPhase of [0,Math.PI/2,Math.PI,Math.PI*1.5]){
+  const {notes}=analyse(sing([{midi:60,start:.1,end:1.3,vibrato:.6,vibratoHz,vibratoPhase}],1.5));
+  assert.deepEqual(notes.map(n=>n.midi),[60],`${vibratoHz} Hz phase ${vibratoPhase}: ${JSON.stringify(notes)}`);
+ }
+});
+
+
+test('a mixed transition frame cannot veto the following settled pitch indefinitely', () => {
+ const hop=256,seg=new NoteSegmenter({sampleRate:SR,hop,noiseFloorDb:-60});
+ const pitches=[...Array(40).fill(67),66.3,66.1,65.9,...Array(60).fill(65)];
+ const frames=pitches.map((m,i)=>({frame:i*hop,f0:midiHz(m),clarity:.98,rmsDb:-25}));
+ const notes=[...seg.push(frames),...seg.flush(pitches.length*hop)];
+ assert.deepEqual(notes.map(n=>n.midi),[67,65]);
+ assert.ok(Math.abs(notes[1].startFrame-40*hop)<4*hop,'transition should retain its boundary rather than drop the note');
 });
