@@ -282,6 +282,9 @@ def test_volume_changes_are_immediate_and_instant_even_with_a_model_mid_take():
 
 
 def test_adjust_sound_shapes_the_current_patch_within_engine_ranges():
+    from groove_agent.contracts import contracts_dir
+    if not (contracts_dir().parents[1] / "apps" / "web" / "public" / "engine" / "metadata.json").is_file():
+        pytest.skip("needs the built engine metadata (absent in the contracts-and-web CI job)")
     from groove_agent.music_tools import adjust_sound
     [op] = adjust_sound(song(), "synth-1", {"brightness": 25, "reverb": 40, "attack": -100})
     params = op["patch"]["parameters"]
