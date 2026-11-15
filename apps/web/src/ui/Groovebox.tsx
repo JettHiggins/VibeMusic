@@ -111,6 +111,17 @@ export function Groovebox({ engine, voice, session, transport, enabled, busy, me
  // Setup/diagnostics (input, microphone, sound search) start hidden; voice is the normal way in.
  const [devOpen, setDevOpenState] = useState(() => { try { return localStorage.getItem('vs-dev-open') === '1'; } catch { return false; } });
  const setDevOpen = (open: boolean) => { setDevOpenState(open); try { localStorage.setItem('vs-dev-open', open ? '1' : '0'); } catch { /* storage unavailable */ } };
+ // Editor/transcript split: the editor's share of the center pane's height, dragged with the divider.
+ const [split, setSplitState] = useState(() => { try { const v = Number(localStorage.getItem('vs-editor-split')); return v >= 0.2 && v <= 0.92 ? v : 0.75; } catch { return 0.75; } });
+ const splitBox = useRef<HTMLDivElement>(null);
+ const setSplit = (v: number) => { const f = Math.max(0.2, Math.min(0.92, v)); setSplitState(f); try { localStorage.setItem('vs-editor-split', String(f)); } catch { /* storage unavailable */ } };
+ const dragSplit = (e: React.PointerEvent<HTMLDivElement>) => {
+  const box = splitBox.current; if (!box || e.button !== 0) return;
+  e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId);
+  const move = (ev: PointerEvent) => { const r = box.getBoundingClientRect(); setSplit((ev.clientY - r.top) / r.height); };
+  const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); };
+  window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
+ };
  const tracker = useRef<TakeTracker>(emptyTracker);
  const grid = rhythmOf(session), chord = chordOf(session);
  tracker.current = trackTake(tracker.current, transport, input.recorder, grid);
@@ -145,16 +156,25 @@ export function Groovebox({ engine, voice, session, transport, enabled, busy, me
     <PitchSnapControls settings={session.pitchSnap ?? null} trackId={trackId} noteCount={view.notes.length} enabled={enabled}
      onChange={settings => send({ type: 'set-pitch-snap', settings }, 'immediate')}
      onSnap={() => { if (trackId !== 'drums') send({ type: 'snap-notes', trackId }, 'next-loop'); }} />
+    <div ref={splitBox} className="vs-split">
+    <div className="vs-editor" style={{ flexGrow: split }}>
     {trackId === 'drums'
      ? <DrumGrid hits={view.hits} playhead={playhead} lane={lane} disabled={!enabled} eraseEnabled={eraseEventAvailable} loopSteps={(session.tracks.find(t => t.id === 'drums')?.bars ?? 4) * 16}
        provisional={provisional.flatMap(p => p.event.target.lane ? [{ lane: p.event.target.lane as Lane, step: p.step }] : [])}
        onEdit={edit} onErase={(l, step) => erase({ trackId: 'drums', lane: l }, step)} onSelectLane={l => send({ type: 'select', target: { trackId: 'drums', lane: l } })}
        onAudition={engine.audition ? l => engine.audition!({ kind: 'drum', lane: l, velocity: 0.9 }) : undefined} />
-     : <PianoRoll key={trackId} label={TRACK_LABEL[trackId]} notes={view.notes} playhead={playhead} disabled={!enabled} eraseEnabled={eraseEventAvailable} onEdit={edit} onErase={step => erase({ trackId }, step)}
+     : <PianoRoll key={trackId} label={TRACK_LABEL[trackId]} loopSteps={(session.tracks.find(t => t.id === trackId)?.bars ?? 4) * 16} notes={view.notes} playhead={playhead} disabled={!enabled} eraseEnabled={eraseEventAvailable} onEdit={edit} onErase={step => erase({ trackId }, step)}
        provisional={provisional.flatMap(p => p.event.kind === 'note' ? [{ step: p.step, duration: p.duration, midi: snapMidiToScale(p.event.midi, session.pitchSnap), state: p === input.recorder.live ? 'live' as const : p.status }] : [])}
        onAudition={engine.audition ? (midi, on) => engine.audition!({ kind: 'note', trackId: trackId as Exclude<TrackId, 'drums'>, midi, velocity: on ? 0.8 : 0, on }) : undefined} />}
-    {showTake && <TakeFeedbackLine take={take} liveName={liveNote} unit={trackId === 'drums' ? 'hit' : 'note'} />}
-    {transcript}
+    </div>
+    <div role="separator" aria-orientation="horizontal" aria-label="Resize editor" tabIndex={0} aria-valuenow={Math.round(split * 100)} aria-valuemin={20} aria-valuemax={92}
+     className="vs-splitter" onPointerDown={dragSplit} onDoubleClick={() => setSplit(0.75)}
+     onKeyDown={e => { if (e.key === 'ArrowUp') setSplit(split - 0.05); if (e.key === 'ArrowDown') setSplit(split + 0.05); }} title="Drag to resize; double-click to reset" />
+    <div className="vs-under" style={{ flexGrow: 1 - split }}>
+     {showTake && <TakeFeedbackLine take={take} liveName={liveNote} unit={trackId === 'drums' ? 'hit' : 'note'} />}
+     {transcript}
+    </div>
+    </div>
    </main>
    <aside id="vs-inspector" hidden={!devOpen} className="vs-right" style={{ ...pane, display: devOpen ? 'grid' : 'none', gridTemplateColumns: 'minmax(0, 1fr)', gap: 10, alignContent: 'start' }} aria-label="Inspector">
     <details open>
@@ -179,6 +199,17 @@ const layoutCss = `
  .vs-dev-toggle { position: fixed; right: 12px; top: 14px; z-index: 30; font-size: 11px; padding: 3px 8px; opacity: 0.7; }
  .vs-dev-toggle:hover, .vs-dev-toggle:focus-visible { opacity: 1; }
  .vs-left { border-right: 1px solid ${C.line}; }
+ /* The center pane fills the screen below the transport: editor on top, take feedback and transcript
+    below, split by a draggable divider. Small screens fall back to normal page flow. */
+ .vs-center { display: flex; flex-direction: column; box-sizing: border-box; height: calc(100vh - var(--vs-top, 52px)); }
+ .vs-center > * { flex: none; }
+ .vs-center > .vs-split { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; }
+ .vs-editor { flex: 1 1 0; min-height: 120px; overflow: hidden; }
+ .vs-under { flex: 1 1 0; min-height: 60px; overflow-y: auto; overscroll-behavior: contain; }
+ .vs-under .vs-transcript { margin-top: 0; border-top: none; }
+ .vs-splitter { flex: none; height: 9px; margin: 4px 0; cursor: row-resize; touch-action: none; background: linear-gradient(${C.line}, ${C.line}) center / 100% 1px no-repeat; }
+ .vs-splitter:hover, .vs-splitter:focus-visible { background: linear-gradient(${C.accent}, ${C.accent}) center / 100% 2px no-repeat; outline: none; }
+ @media (max-width: 720px) { .vs-center { height: auto; } .vs-editor { height: 420px; flex: none !important; } .vs-under { flex: none !important; overflow: visible; } .vs-splitter { display: none; } }
  .vs-right { border-left: 1px solid ${C.line}; }
  /* Long device names, URLs and provider errors wrap inside their pane instead of widening the page. */
  .vs-left, .vs-center, .vs-right { overflow-wrap: anywhere; }

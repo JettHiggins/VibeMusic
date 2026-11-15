@@ -17,11 +17,11 @@ export function visibleRows(center: number, rows = DEFAULT_ROWS): number[] {
 }
 
 /** Map a pointer position inside the grid to a step (0..63) and the row's MIDI note. */
-export function cellAt(x: number, y: number, width: number, rowHeight: number, rows: number[]): { step: number; midi: number } | null {
+export function cellAt(x: number, y: number, width: number, rowHeight: number, rows: number[], steps = STEPS): { step: number; midi: number } | null {
  if (x < 0 || y < 0 || x >= width) return null;
  const row = Math.floor(y / rowHeight);
  if (row >= rows.length) return null;
- return { step: Math.min(STEPS - 1, Math.floor(x / (width / STEPS))), midi: rows[row] };
+ return { step: Math.min(steps - 1, Math.floor(x / (width / steps))), midi: rows[row] };
 }
 
 export const isBlackKey = (midi: number) => [1, 3, 6, 8, 10].includes(midi % 12);
