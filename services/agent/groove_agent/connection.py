@@ -856,6 +856,8 @@ class Connection:
         unavailable = getattr(self._language, "unavailable", None)
         if unavailable is not None and unavailable() is not None:
             return False  # cooldown: use the quick parse now
+        if isinstance(result, MusicTool) and result.name == "set_volume":
+            return False  # simple loudness changes are exact and must be instant, also mid-take
         if isinstance(result, (MusicTool, SoundSearch)):
             return True  # whole-song edits and sound descriptions benefit from the model's view/rewording
         if isinstance(result, Command) and result.operation["type"] in ("clear", "mute", "edit-pattern"):

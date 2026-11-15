@@ -152,3 +152,35 @@ def rhythm_chord_phrase(verb: str, rest: Sequence[str]) -> Optional[Any]:
             return None, "say one rhythm: quarter, eighth or sixteenth notes"
         return {"type": "set-rhythm-snap", "grid": grids.pop()}, None
     return None
+
+
+_LOUDER = frozenset({"louder", "up"})
+_QUIETER = frozenset({"quieter", "softer", "down", "lower"})
+_SOUND_WORDS = frozenset({"reverb", "delay", "chorus", "drive", "attack", "release", "bright", "brighter", "darker",
+                          "pan", "glide", "bass", "treble", "filter", "tempo", "speed", "octave", "key", "pitch",
+                          "semitone", "semitones", "metronome", "click"})
+
+
+def volume_phrase(tokens: Sequence[str], target) -> Optional[Any]:
+    """("set_volume", args) for exact loudness requests ("turn the drums down", "synth two louder",
+    "drums to 80 percent", "volume up"); None otherwise. target(words) resolves an explicit track."""
+    words = list(tokens)
+    if _SOUND_WORDS & set(words):
+        return None  # a tone/effect/tempo/pitch request, not loudness
+    percent = next((int(w) for i, w in enumerate(words) if w.isdigit() and i + 1 < len(words)
+                    and words[i + 1] in ("percent", "%")), None)
+    volume_words = {"louder", "quieter", "softer", "volume"} & set(words) or ("turn" in words and (_LOUDER | _QUIETER) & set(words))
+    if percent is None and not volume_words:
+        return None
+    loud = "louder" in words or ("up" in words and "down" not in words)
+    quiet = bool({"quieter", "softer", "lower"} & set(words)) or ("down" in words and "up" not in words)
+    if percent is None and loud == quiet:
+        return None
+    resolved = target(words)
+    track = resolved["trackId"] if resolved else ("drums" if {"drums", "drum", "beat", "percussion"} & set(words) else None)
+    args = {"track": track}
+    if percent is not None:
+        args["level"] = max(0, min(100, percent))
+    else:
+        args["change"] = 15 if loud else -15
+    return "set_volume", args

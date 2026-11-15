@@ -20,7 +20,7 @@ from .intents import (BOUNDARY, AcceptCandidate, AuditionCandidate, CancelSearch
 from .control_phrases import InputAction
 from .intents import Plan
 
-MUSIC_TOOLS = ("tidy_timing", "drum_pattern", "drum_steps", "transpose", "change_key")
+MUSIC_TOOLS = ("tidy_timing", "drum_pattern", "drum_steps", "transpose", "change_key", "set_volume", "adjust_sound")
 MAX_DECISIONS = 6
 INPUT_ACTIONS = {"calibrate": {"type": "calibrate-input", "mode": "full"},
                  "calibrate_noise": {"type": "calibrate-input", "mode": "noise"},
@@ -195,6 +195,10 @@ SYSTEM_PROMPT = (
     "set-rhythm-snap, set-chord-mode, set-pitch-snap, clear, undo, erase-event). During recording or count-in "
     "'stop' means stop-recording; otherwise play false. Record/select of drums need a lane. "
     "Microphone calibration or input setup: input_action.\n"
+    "MIX: set_volume for louder/quieter/levels on any track at any time (balance the mix = one set_volume per "
+    "track: drums around 80, lead synth 70, pads and bass 55-65). adjust_sound to shape the current synth sound: "
+    "brighter/darker, attack, release, reverb, delay, chorus, drive, pan, glide. Prefer adjust_sound for tone "
+    "tweaks of the existing sound and search_sound only for a different instrument.\n"
     "If the request is not about this groovebox, or too unclear to act on safely, call refuse_request."
 )
 
@@ -304,6 +308,28 @@ def create_graph(model, voice_research: bool = False):
                            "args": {"root": root_number, "scale": scale, "move_notes": move_notes}})
 
     @tool(return_direct=True)
+    def set_volume(track: Literal["synth-1", "synth-2", "synth-3", "drums"],
+                   level: Optional[Annotated[int, Field(ge=0, le=100)]] = None,
+                   change: Optional[Annotated[int, Field(ge=-100, le=100)]] = None) -> str:
+        """Track volume in percent: an absolute level 0..100, or a change (louder +15, much louder +30,
+        quieter -15). Works any time, also while recording. Balance a mix with one call per track."""
+        return json.dumps({"kind": "tool", "name": "set_volume", "args": {"track": track, "level": level, "change": change}})
+
+    @tool(return_direct=True)
+    def adjust_sound(track: Literal["synth-1", "synth-2", "synth-3"],
+                     brightness: Optional[int] = None, attack: Optional[int] = None, decay: Optional[int] = None,
+                     sustain: Optional[int] = None, release: Optional[int] = None, reverb: Optional[int] = None,
+                     delay: Optional[int] = None, chorus: Optional[int] = None, drive: Optional[int] = None,
+                     pan: Optional[int] = None, glide: Optional[int] = None, absolute: bool = False) -> str:
+        """Shape the CURRENT sound of a synth track (mixing/mastering): each given control changes by a percent
+        of its range, -100..100 (brighter +20, darker -20, softer attack +25, more reverb +30, pan left -40).
+        absolute=true sets positions 0..100 instead. Use this for tone tweaks; search_sound for a new instrument."""
+        given = {name: value for name, value in dict(brightness=brightness, attack=attack, decay=decay, sustain=sustain,
+                 release=release, reverb=reverb, delay=delay, chorus=chorus, drive=drive, pan=pan, glide=glide).items()
+                 if value is not None}
+        return json.dumps({"kind": "tool", "name": "adjust_sound", "args": {"track": track, "changes": given, "absolute": absolute}})
+
+    @tool(return_direct=True)
     def input_action(action: Literal["calibrate", "calibrate_noise", "calibrate_timing", "check_timing",
                                      "cancel_calibration", "noisy_room_profile", "music_profile"]) -> str:
         """Run the browser's microphone calibration or change input settings (the browser does the work and
@@ -311,7 +337,7 @@ def create_graph(model, voice_research: bool = False):
         return json.dumps({"kind": "input", "action": action})
 
     tools = [command_tool, search_sound, accept_candidate, cancel_search, refuse_request,
-             tidy_timing, drum_pattern, drum_steps, transpose, change_key, input_action]
+             tidy_timing, drum_pattern, drum_steps, transpose, change_key, set_volume, adjust_sound, input_action]
     if voice_research:
         @tool(return_direct=True)
         def audition_candidate(index: Annotated[int, Field(ge=1, le=10)]) -> str:

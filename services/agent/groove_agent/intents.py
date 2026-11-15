@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from typing import Any, Mapping, Optional, Sequence, Union
 
 from .spoken_numbers import NUMBER_WORDS, find_number
-from .control_phrases import InputAction, input_phrase, key_phrase, rhythm_chord_phrase
+from .control_phrases import InputAction, input_phrase, key_phrase, rhythm_chord_phrase, volume_phrase
 from .music_tools import music_phrase
 
 WAKE_WORDS = frozenset({"groove", "grove"})  # "grove" is a common recognizer spelling
@@ -48,6 +48,8 @@ BOUNDARY = {
     "set-chord-mode": "immediate",
     # Whole-pattern edits from Groove music tools: scheduled like hand edits (engine requires a boundary).
     "edit-pattern": "next-loop",
+    # Mixing: track volume is immediate so it works anywhere (playing, recording, count-in).
+    "volume": "immediate",
 }
 
 _LANE_PHRASES = (
@@ -378,7 +380,7 @@ def interpret(text: str, session: Mapping[str, Any], during_recording: bool, tak
     # Exact key and browser-input phrases (deterministic, so they survive provider rate limits).
     control = input_phrase(verb, rest)
     if control is None:
-        tool = music_phrase(tokens, session)
+        tool = music_phrase(tokens, session) or volume_phrase(tokens, lambda words: resolve_target(words, session).target)
         if tool is not None:
             return MusicTool(*tool)
         control = rhythm_chord_phrase(verb, rest)

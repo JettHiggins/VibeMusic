@@ -262,3 +262,32 @@ def test_counted_drum_edits_use_exact_steps():
                                     for i, step in enumerate([4, 12, 20, 28, 36, 44, 52, 60])]
     operations, _ = run_tool("drum_steps", {"lane": "snare", "steps": [20, 44], "mode": "remove"}, session)
     assert sorted(h["step"] for h in operations[0]["hits"] if h["lane"] == "snare") == [4, 12, 28, 36, 52, 60]
+
+
+@pytest.mark.parametrize("text, args", [
+    ("Groove, turn the drums down", {"track": "drums", "change": -15}),
+    ("Groove, make synth three louder", {"track": "synth-3", "change": 15}),
+    ("Groove, drums to 80 percent", {"track": "drums", "level": 80}),
+    ("Groove, turn it up", {"track": None, "change": 15}),
+])
+def test_volume_phrases(text, args):
+    assert interpret(text, song(), False) == MusicTool("set_volume", args)
+
+
+def test_volume_changes_are_immediate_and_instant_even_with_a_model_mid_take():
+    conn = agent_connection()
+    [command] = say(conn, "Groove, turn the drums down", "u1")
+    assert command["command"]["operation"] == {"type": "volume", "trackId": "drums", "volume": 0.55}
+    assert command["command"]["boundary"] == "immediate" and conn._language.jobs == []
+
+
+def test_adjust_sound_shapes_the_current_patch_within_engine_ranges():
+    from groove_agent.music_tools import adjust_sound
+    [op] = adjust_sound(song(), "synth-1", {"brightness": 25, "reverb": 40, "attack": -100})
+    params = op["patch"]["parameters"]
+    assert op["type"] == "apply-patch" and params["1"] == 0 and 0 < params["36"] <= 127 and params["5"] > 0
+    validate("SessionCommand", {"id": "x", "expectedRevision": 0, "boundary": "immediate", "operation": op})
+    with pytest.raises(ToolRefusal):
+        adjust_sound(song(), "drums", {"reverb": 10})
+    with pytest.raises(ToolRefusal):
+        adjust_sound(song(), "synth-1", {"wobble": 10})

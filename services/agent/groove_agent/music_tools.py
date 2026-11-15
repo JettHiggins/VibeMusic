@@ -266,6 +266,13 @@ def run_tool(name: str, args: Mapping[str, Any], session: Mapping[str, Any]) -> 
         lane, mode = args.get("lane"), args.get("mode", "replace")
         steps = list(args.get("steps") or [])
         return drum_steps(session, lane, steps, mode), f"{lane}: {mode} {len(steps)} hits"
+    if name == "set_volume":
+        track = args.get("track") or session["selected"]["trackId"]
+        return set_volume(session, track, args.get("level"), args.get("change")), f"{track} volume"
+    if name == "adjust_sound":
+        track = args.get("track") or session["selected"]["trackId"]
+        changes = dict(args.get("changes") or {})
+        return adjust_sound(session, track, changes, bool(args.get("absolute", False))), f"{track}: " + ", ".join(changes)
     if name == "change_key":
         root, scale = int(args.get("root", -1)), args.get("scale")
         operations = change_key(session, root, scale, bool(args.get("move_notes", True)))
@@ -310,17 +317,22 @@ def apply_operations(session: Mapping[str, Any], operations: Sequence[Mapping[st
             track["notes"], track["hits"] = copy.deepcopy(operation["notes"]), copy.deepcopy(operation["hits"])
         elif operation["type"] == "set-pitch-snap":
             result["pitchSnap"] = copy.deepcopy(operation["settings"])
+        elif operation["type"] == "volume":
+            _track(result, operation["trackId"])["volume"] = operation["volume"]
+        elif operation["type"] == "apply-patch":
+            _track(result, operation["trackId"])["patch"] = copy.deepcopy(operation["patch"])
     return result
 
 
 def merge_operations(operations: Sequence[dict]) -> list[dict]:
     """Keep only the final edit-pattern per track (each carries the whole track), in first-seen order."""
-    last: dict[str, int] = {}
+    last: dict[tuple, int] = {}
+    merged = ("edit-pattern", "volume", "apply-patch")  # each carries the whole value for its track
     for index, operation in enumerate(operations):
-        if operation["type"] == "edit-pattern":
-            last[operation["trackId"]] = index
+        if operation["type"] in merged:
+            last[(operation["type"], operation["trackId"])] = index
     return [op for index, op in enumerate(operations)
-            if op["type"] != "edit-pattern" or last[op["trackId"]] == index]
+            if op["type"] not in merged or last[(op["type"], op["trackId"])] == index]
 
 
 _NAMES = ("C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B")
@@ -352,3 +364,70 @@ def song_summary(session: Mapping[str, Any]) -> dict:
         "drums": {lane: sorted(h["step"] for h in drums["hits"] if h["lane"] == lane) for lane in LANES},
         "melody": melody,
     }
+
+
+# -- mixing and sound shaping ("mastering" by voice) ---------------------------------------------
+
+# Friendly name -> engine parameter id (apps/web/public/engine/metadata.json). Level/mute/pattern ids are
+# session-owned (track volume/mute), so loudness uses set_volume instead.
+SOUND_CONTROLS = {"brightness": 5, "attack": 1, "decay": 2, "sustain": 3, "release": 4, "drive": 33,
+                  "chorus": 34, "delay": 35, "reverb": 36, "pan": 39, "glide": 38}
+TRACKS = (*MELODIC, "drums")
+_METADATA: Optional[dict] = None
+
+
+def engine_metadata() -> dict:
+    global _METADATA
+    if _METADATA is None:
+        import json
+        from .contracts import contracts_dir
+        path = contracts_dir().parents[1] / "apps" / "web" / "public" / "engine" / "metadata.json"
+        if not path.is_file():
+            raise ToolRefusal("sound controls need the engine build in apps/web/public/engine")
+        _METADATA = json.loads(path.read_text(encoding="utf-8"))
+    return _METADATA
+
+
+def set_volume(session: Mapping[str, Any], track: str, level: Optional[float] = None,
+               change: Optional[float] = None) -> list[dict]:
+    """Track volume as percent: an absolute level 0..100, or a change -100..100 from the current level.
+    Immediate, so it works while playing or recording."""
+    if track not in TRACKS:
+        raise ToolRefusal("say synth one, two or three, or drums")
+    current = float(_track(session, track)["volume"])
+    if level is not None:
+        target = float(level) / 100
+    elif change is not None:
+        target = current + float(change) / 100
+    else:
+        raise ToolRefusal("say how loud, for example: drums to 80 percent")
+    target = round(min(1.0, max(0.0, target)), 3)
+    if abs(target - current) < 0.005:
+        raise ToolRefusal(f"{track} is already at {round(current * 100)} percent")
+    return [{"type": "volume", "trackId": track, "volume": target}]
+
+
+def adjust_sound(session: Mapping[str, Any], track: str, changes: Mapping[str, float], absolute: bool = False) -> list[dict]:
+    """Shape a synth track's current sound. Each change is percent of that control's range: relative
+    -100..100 (default) or an absolute 0..100 position. Keeps the sound otherwise unchanged (apply-patch)."""
+    if track not in MELODIC:
+        raise ToolRefusal("sound shaping works on the three synth tracks; use volume for the drums")
+    unknown = [name for name in changes if name not in SOUND_CONTROLS]
+    if unknown or not changes:
+        raise ToolRefusal("sound controls are " + ", ".join(SOUND_CONTROLS))
+    metadata = engine_metadata()
+    patch = copy.deepcopy(_track(session, track)["patch"])
+    preset = metadata["engines"][patch["engine"]]["presets"][patch["preset"]]["parameters"]
+    parameters = dict(patch.get("parameters") or {})
+    for name, amount in changes.items():
+        index = SOUND_CONTROLS[name]
+        descriptor = metadata["parameters"][index]
+        low, high = descriptor["min"], descriptor["max"]
+        current = parameters.get(str(index), preset[index] if index < len(preset) else descriptor["default"])
+        span = high - low
+        value = low + float(amount) / 100 * span if absolute else current + float(amount) / 100 * span
+        parameters[str(index)] = int(round(min(high, max(low, value))))
+    if parameters == dict(patch.get("parameters") or {}):
+        raise ToolRefusal("that control is already at its limit")
+    patch["parameters"] = parameters
+    return [{"type": "apply-patch", "trackId": track, "patch": patch}]
