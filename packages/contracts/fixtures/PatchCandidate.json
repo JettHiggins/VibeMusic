@@ -1,0 +1,12 @@
+{
+  "id": "patch-1",
+  "patch": {
+    "engine": 0,
+    "preset": 0,
+    "parameters": {},
+    "engineRevision": "bac9c05ea7627449405aa10e48da21d75b6c8c56"
+  },
+  "provenance": "fixture only; not a researched patch",
+  "previewUrl": "",
+  "score": 0
+}

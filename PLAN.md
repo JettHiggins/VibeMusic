@@ -4,19 +4,30 @@
 
 A browser groovebox controlled by voice after one initial audio activation and microphone permission. With headphones on, a user builds kick, snare, and hi-hat patterns, sings melodies, corrects phrases, describes sounds, auditions editable patches, and stops recording while playback continues.
 
-Use SLOOP's actual browser WASM DSP and sequencer, not a replacement synthesizer. The repository currently has no implementation. This document is the shared specification; contracts and scaffolding are the first implementation task.
+Use SLOOP's actual browser WASM DSP and sequencer. The browser groovebox, musical-input pipeline, local service, and research pipeline are integrated on engine-integration. Read docs/STATUS.md for current evidence, active assignments, and remaining acceptance gates; the milestone descriptions below define the product, not its completion status.
 
 ## Decisions
 
 - Open-source GPL-3.0-only project. Pin SLOOP source and preserve notices; use original artwork and clearly licensed samples.
 - TypeScript/React/Vite browser client; AudioWorklet owns DSP and musical timing. Python/FastAPI local service with LangChain Deep Agents and WebSocket communication. Cloud speech and language providers are allowed; secrets stay server-side.
 - Chrome initially; macOS and Windows with WSL2 development. No FM-1 hardware required.
-- Four bars, 4/4, 120 BPM default, straight sixteenth-note grid. Spoken tempo changes apply at a loop boundary. Recording starts at the next four-bar downbeat with count-in.
+- Four bars, 4/4, 120 BPM default, straight sixteenth-note grid. Spoken tempo changes apply at a loop boundary. Updated after real-device testing: recording starts on the next beat during playback, with a one-bar count-in from stopped. Explicit next-loop scheduling remains available for existing callers.
 - Preserve SLOOP's drum track and three melodic tracks. Initially select kick, snare, or closed hats before beatboxing; detect timing rather than classify drum type. Singing is monophonic.
-- New notes replace overlapping old notes; silence preserves the rest. Repeated drum hits update the same lane/grid position. Support clear and undo.
+- New notes replace overlapping old notes; silence preserves the rest. Repeated drum hits update the same lane/grid position. Clear and Undo act immediately while recording/playback continue; conflicting pre-edit buffered input must never restore removed music. Undo discards pending provisional input first, otherwise restores the last applied musical edit.
 - Normal speech outside recording; during recording commands begin with “Groove.” “Groove, stop” stops recording; “Groove, stop playback” stops transport.
 - Agent inference never controls sample timing. Browser musical state is authoritative; validate agent actions before application.
+- Fresh launches start empty, with 120 BPM/default patches and no automatic song or saved-session restore. Metronome defaults on during playback/recording, with mute and no musical history entry. Mouse and precise voice erasure remove individual committed/provisional events without losing unrelated input.
 - Raw microphone recordings are not persisted by default. Diagnostic capture is opt-in. Playback remains usable without AI services.
+- Speech recognition: local faster-whisper (configurable small-model baseline), selected by Jett. Language-model provider: OpenRouter, free models only, selected by Jett on 2026-11-14. Keep credentials backend-local, never in Git or the browser. Local STT and optional OpenRouter Deep Agents are integrated; live model quality and full-product acceptance remain unfinished. Familiar commands retain the deterministic parser path.
+- Current UI direction: dark monochrome DAW workspace, persistent transport/track/editor/inspector controls, drum step sequencer, and an editable synth piano roll. Replace the tab-based layout. Timing calibration includes preparation, practice clicks, progress, cancellation, and a recording-offset adjustment.
+
+## Latest physical-test steering
+
+Jett's next test found musical syllables appearing then disappearing, continued provider rate limits, and difficult bar-start/rhythmic entry. Preserve performed notes before further sound-quality tuning, make rhythmic snap/start timing explicit, and prepare Gemini using the friend's credit-backed API project. Read [docs/MELODY-RETENTION-ROUND.md](docs/MELODY-RETENTION-ROUND.md): current sixteenth snapping is already implemented, the note-loss cause is not yet established, a musical-syllable/false-wake path is reproduced, and billing endpoint/key configuration is still being clarified. This continues the existing3 ownership streams; no new wire consumers before WS1 proposals are merged.
+
+## Current priority: voice reliability and UI cleanup
+
+The latest interim test found provider quota/unsupported-browser-status errors, inconsistent hum/fast-note detection, short held notes both visually/audibly, and overflowing/cluttered mic UI. Jett clarified key pitches were reasonable; notes were missed. Read [docs/VOICE-RELIABILITY-ROUND.md](docs/VOICE-RELIABILITY-ROUND.md) for three independent work packages and the approximately one-hour return check-in. WS1 temporarily owns melody analysis/calibration/duration internals and integration; WS2 owns UI cleanup; WS3 owns protocol/provider/speech resilience. The Vochlea behavior investigation is an explicit WS1/WS2 deliverable in docs/VOCHLEA-REFERENCE.md. Existing interfaces suffice; do not wait on a new contract/provider decision. The old test freeze is over for development, with tags preserved. All milestones below remain required; this round does not replace the complete hands-free/Deep Agents/research roadmap.
 
 ## Milestones and acceptance
 
@@ -28,25 +39,25 @@ Contracts cover versioned SessionState (tempo, tracks, patches, events, revision
 
 ### 1. Standalone browser groovebox
 
-Build pinned SLOOP browser preview without firmware hardware toolchains. Verify 64-step loop capacity and note-duration representation; extend adapter if necessary. Expose sample-clock timestamps and boundary-scheduled edits. Build compact FM-1-inspired UI with tracks, preset/engine, tempo, bar/beat, grid, transport, mute, volume, audition, and essential patch controls. Add demo pattern and versioned local save/load plus JSON import/export.
+Build pinned SLOOP browser preview without firmware hardware toolchains. Verify 64-step loop capacity and note-duration representation; extend adapter if necessary. Expose sample-clock timestamps and boundary-scheduled edits. Build a dark monochrome DAW workspace with persistent transport, tracks, preset/engine, tempo, bar/beat, drum grid, synth piano roll, mute, volume, audition, and essential patch controls. Keep session operations in a compact menu. Start with empty note/hit arrays and stopped transport; retain default instruments and versioned local save/load plus JSON import/export. Saved projects load only explicitly.
 
 Accept when the real engine plays an editable four-bar drum/melody pattern, changes sounds, saves, and reloads identically.
 
 ### 2. First voice slice and drums
 
-Calibrate input level/noise floor. Preserve transients on performance branch; separate speech processing. Detect onsets with energy/spectral change, adaptive thresholds, and retrigger guard. Map capture timestamps to audio clock with latency compensation and quantize to sixteenths. Buffer provisional performance events, exclude recognized command spans, and commit for a subsequent pass. Include lane selection, record, stop, clear, mute, undo, and tempo commands. On speech disconnect stop new capture commits, preserve composition, and continue playback.
+Calibrate input level/noise floor. Show instructions and a three-second preparation countdown; timing calibration has four practice clicks then eight measured clicks, progress and cancellation. Failed/cancelled calibration preserves the prior valid result. Expose and persist a per-device recording-offset adjustment. Default to aggressive Noisy room cleanup, with an explicit Music profile for less processing; keep separate speech/performance conditioning and calibrate per device/profile. Detect onsets with energy/spectral change, adaptive thresholds, and retrigger guard. Map capture timestamps to audio clock with latency compensation and quantize to sixteenths. Buffer provisional performance events, exclude recognized command spans, and commit for a subsequent pass. Record starts on the next beat during playback or after a one-bar count-in from stopped. Clear/Undo act immediately without stopping playback or fresh capture; invalidate pre-edit events atomically. Include lane selection, stop, mute, and tempo commands. On speech disconnect stop new capture commits, preserve composition, and continue playback.
 
 Accept the complete slice: say record kick, beatbox, hear quantized loop, say Groove stop, hear playback continue. Then build all three lanes hands-free.
 
 ### 3. Melody and correction
 
-Use worker-based YIN pitch tracking with confidence filtering, hysteresis, and minimum duration. Derive MIDI pitch, velocity, duration; quantize starts/ends with minimum one step. Handle silence, vibrato, repeated notes, octave errors, and loop-crossing notes. Apply atomic edits at boundaries. Benchmark Basic Pitch as optional phrase refinement; do not place inference in audio callbacks. No forced musical scale.
+Use worker-based YIN pitch tracking with confidence filtering, hysteresis, and minimum duration. Derive MIDI pitch, velocity, duration; quantize starts/ends with minimum one step. Handle silence, vibrato, repeated notes, octave errors, and loop-crossing notes. Apply atomic edits at boundaries. Benchmark Basic Pitch as optional phrase refinement; do not place inference in audio callbacks. Pitch snapping is optional: Off preserves chromatic capture; a chosen root and Major/Minor scale constrains new sung notes, with an explicit undoable existing-track action.
 
 Accept singing a melody and replacing one phrase while preserving untouched notes.
 
 ### 4. Research-driven sound design
 
-Use offline rendering of the same pinned SLOOP engine. Render presets and seeded bounded variations with fixed notes/phrases; store complete patch parameters, render recipe, revision, audio, embeddings. Retrieve top five by LAION CLAP music checkpoint similarity. Optimize with seeded bounded evolutionary search, initially at most 128 variations/request; reject silent/clipping renders. Run research in a separate worker, returning retrieval first and streaming progress/cancellation. Deep Agents coordinates requests, audition, refinement, acceptance, and undo. Accepted patches preserve music and apply at boundaries with output smoothing.
+Use offline rendering of the same pinned SLOOP engine. Render presets and seeded bounded variations with fixed notes/phrases; store complete patch parameters, render recipe, revision, audio, embeddings. Retrieve top five by LAION CLAP music checkpoint similarity. Optimize with seeded bounded evolutionary search, initially at most 128 variations/request; reject silent/clipping renders. Run research in a separate worker, returning retrieval first and streaming progress/cancellation. Deep Agents coordinates requests, audition, refinement, acceptance, and undo. Accepted patches preserve music and use immediate application with output smoothing; explicit next-loop scheduling remains supported.
 
 Evaluate against preset-only retrieval using fixed prompts and blind listening by all three teammates, recording preference and latency. Do not equate embedding score with musical quality. AutoSynth reproduction and model training are deferred.
 
@@ -74,7 +85,7 @@ Copyable goal:
 
 ## Coordination protocol
 
-Each laptop uses its own clone and feature branch (engine-integration, ui-input, agent-sound). Main stays runnable; nobody pushes implementation directly to main. Workstream 1 merges PRs and owns contract changes; other owners propose small contract PRs before depending on a change. Do not edit another owner's subsystem without agreement. GitHub PRs and issues carry handoffs; independent agent sessions do not share live context.
+Each laptop uses its own clone and feature branch. Start capability branches from the latest reviewed origin/engine-integration, preserving any local work first; do not restart from main or an old workstream tip. Main stays runnable; nobody pushes implementation directly to main. Workstream 1 merges PRs and owns contract changes; other owners propose small contract PRs before depending on a change. Do not edit another owner's subsystem without agreement. GitHub PRs and issues carry handoffs; independent agent sessions do not share live context. WS1 maintains docs/STATUS.md as the concise current assignment/dependency ledger; HANDOFF.md is history. Read STATUS.md at startup, before starting a capability, and before opening a PR. At those checkpoints, fetch remote status and read the linked coordination issue for steering. Do not repeatedly poll; if a dependency is missing, finish independent work and return control.
 
 Every handoff includes commit/PR, capabilities, checks run, limitations, and exact next integration step. Document contract changes with example payloads. Never silently substitute mocks for a completed integration. If blocked, finish independent tasks, leave a precise dependency report, and return control; humans resume sessions after dependencies merge. Do not run repeated dependency polling. Share generated corpus artifacts rather than committing large model/data files.
 

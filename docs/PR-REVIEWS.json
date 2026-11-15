@@ -1,0 +1,181 @@
+[
+  {
+    "pullRequest": 7,
+    "headSha": "11c5553cbd7521d9509cb48d2b3c1c7f83140d98",
+    "body": "WS1 integration review of 11c5553. The real-device evidence, device picker, granted-processing diagnostics and measurements-only report are useful and should be preserved. The ~62 ms browser estimate versus ~120 ms measured round trip directly explains the user's late-hit report.\n\nIntegration changes requested before combining with the WS1 capability:\n- An armed Record is now pinned to its original target/deadline in ws1/recording-usability; remove Record from automatic revision-based re-issue when adopting that capability. Re-sending next-beat Record during a stopped count-in can alter its start. The other musical commands retain strict revision checks. See docs/RECORDING-USABILITY.md on that branch.\n- MicCheck uses analysedThrough as elapsed time for its peak window. That watermark is intentionally held at the start of an open sung note, so a sustained note prevents peak eviction and stale pitch readings from aging. Use actual processed capture time for diagnostic expiry, separate from verification coverage, and add a sustained-note regression.\n\nThe current guidance to keep UI/capture changes owned by WS2 still applies. Please carry these fixes into your calibration/workspace stack and report the resulting head. This review does not establish full calibrated real-performer acceptance."
+  },
+  {
+    "pullRequest": 10,
+    "headSha": "10113cf4a3e2f527f66855353ee0a6c5b8d8f4eb",
+    "retargetBase": "engine-integration",
+    "body": "WS1 reviewed the updated lifecycle, processedThrough clock, effective-offset reporting and guided-silence fixes, then integrated the #7/#10/#11 stack in 89438d8. Combined shared checks, full Node tests, live service/WASM integration and build passed. Root Chromium checks confirmed the pitch-roll workspace and cancellation preserving timing/silence settings with synthetic input. Physical-performer validation remains open. The parent stack is integrated; this PR is retargeted to engine-integration to reflect the landed code."
+  },
+  {
+    "pullRequest": 11,
+    "headSha": "98976525285de86c1895ae57c6891df637df2966",
+    "retargetBase": "engine-integration",
+    "body": "WS1 reviewed and integrated the workspace stack in 89438d8 after combined checks/build and Chromium verification of no tabs, the synth piano roll, guided preparation and calibration Cancel. Follow-up for the owned consumer-wiring PR: adopt merged #12, pin the top transport while scrolling the inspector (root observed scrollY 297, header top -297/bottom -251), and keep recording state monochrome. Physical microphone/audio signoff is still open. Parent stack code is landed; this PR is retargeted to engine-integration."
+  },
+  {
+    "pullRequest": 13,
+    "headSha": "ed57bff1120149587bfb55d53614b1b0673be841",
+    "body": "WS1 review of ed57bff. The native preprocessing parity, explicit name-prior caveat, fixed prompt sets, held-out family benchmark and separation of scores from listening evidence are useful. In an isolated checkout, the base backend suite passed (113 passed / 5 skipped without built assets/model opt-ins).\n\nOne reproduced blind-kit issue to fix before merge: run(..., out=.../listening, key_dir=out/'answer-key') succeeds and writes answers.json inside the listening directory. The current check rejects only equality. Sharing the resulting listening folder would expose the key and invalidate the blind procedure. Reject keys nested anywhere under the resolved listening path (including symlink aliases) and add a regression; retain the default sibling-key behavior and overwrite protection. Reproduction used the existing research_fixtures.backend(budget=0), one piano prompt, and an isolated temporary directory; no models/API/audio capture needed.\n\nPlease also adopt merged PR #12 in a separate service-compatibility capability: Record next-beat and Clear/Undo immediate; keep the ranking PR focused. WS1 has integrated the reviewed #7/#10/#11 workspace stack, while WS2 owns the remaining epoch/reset and next-beat UI wiring. Physical listening, cross-machine kit equivalence and full hands-free acceptance remain open."
+  },
+  {
+    "pullRequest": 14,
+    "headSha": "a351e8ec192b13be11e02a772b414f8bd1353ef7",
+    "body": "WS1 contract review: the corrected half-open AudioContext timeline, continuous silence coverage and explicit unavailable status are the right starting point. Not approved yet; please make these amendments before WS2 implements the wire shape.\n\n1. Scope coverage to the actual stream. SpeechStatus must echo streamId. Extend speech-verified additively with optional streamId/fromFrame for old fixtures, but require every new speech pipeline producer to send both. fromFrame is the first frame of that contiguous stream; throughFrame is inclusive. Consumers accept only their active stream/clock, discard unverified events before a new coverage interval, and do not reuse a prior take across an audio gap without the PR #12 epoch/cutoff reset. A new stream on the same clock must not make a later watermark verify missing earlier audio. Add a gap -> new-stream -> quiet regression with old provisional input still pending.\n2. Validate first seq=0, constant payload sampleRate per stream, and duration <=1 second (both payload sample count and context-frame span). I reproduced schema+decode accepting 48,000 samples at 8 kHz covering six seconds, and StreamTracker accepting 16 kHz -> 8 kHz mid-stream. The max base64 size alone does not enforce duration. Bad streams stay failed with one error.\n3. available:false must never automatically fall from hands-free into unverified manual commits. Preserve playback/composition, stop new speech-dependent commits, discard unverified input and require a fresh capture epoch/take after recovery. Manual mode remains explicitly user-selected. On initial enable, audio may begin for capability detection while commits stay blocked until actual availability.\n4. Document trimming startup audio whose latency-corrected frames would be negative rather than clamping timestamps without trimming samples. Include manual offset trim exactly once.\n\nRebase the proposal onto merged PR #12 so its scheduling/epoch fields remain present when regenerating schemas. This is separate from an STT provider decision; no API access is authorized."
+  },
+  {
+    "pullRequest": 1,
+    "headSha": "3a6272409b4afc43c2eef24ed7b88922ee613092",
+    "retargetBase": "engine-integration",
+    "body": "Already integrated into engine-integration (the transcript service was merged in 19a7e0c and remains an ancestor of the current baseline). WS1 verified exact head 3a6272409b4afc43c2eef24ed7b88922ee613092 with git merge-base --is-ancestor. Retarget/close this obsolete foundation-era PR so its main base does not suggest the implementation is missing. This cleanup does not merge engine-integration into main; current STT/Deep Agents and real-device acceptance remain open in #9 and docs/STATUS.md."
+  },
+  {
+    "pullRequest": 2,
+    "headSha": "8fae6aac32bf44267d1321d4f0f3ec15b0b2c336",
+    "retargetBase": "engine-integration",
+    "body": "Already integrated into engine-integration. WS1 verified exact head 8fae6aac32bf44267d1321d4f0f3ec15b0b2c336 with git merge-base --is-ancestor against the current baseline. Retarget/close this obsolete stacked service/research PR. The original real-renderer/research pipeline and preview/acceptance UI are delivered; the newer #13 retrieval/listening-kit review and #14/#15 speech proposals are separate and still unmerged. This is metadata cleanup, not evidence of human listening or full voice acceptance."
+  },
+  {
+    "pullRequest": 15,
+    "headSha": "c62613de07776def391c1e8fdd01d0db122092f7",
+    "body": "Delayed capture-time context fix reviewed and integrated. Old take results exclude speech, emit error/no mutation, then verify; stop/new take/count-in/late closure regressions pass."
+  },
+  {
+    "pullRequest": 21,
+    "headSha": "d637213face25f6561402129367a6226e6d6bc9c",
+    "body": "Real local faster-whisper reviewed and integrated, including declared SciPy, held wake capture context and optional mic self-check. Fresh declared install: 167 passed/5 skipped plus one real-model synthetic opt-in pass. No human latency acceptance. Stacked source is integrated; retarget to engine-integration.",
+    "retargetBase": "engine-integration"
+  },
+  {
+    "pullRequest": 22,
+    "headSha": "75f41811e9c79e46e64bad8648e9047517939d2e",
+    "body": "Issue #3 research shape and nonmutating audition regressions reviewed and integrated."
+  },
+  {
+    "pullRequest": 23,
+    "headSha": "d34f10ee28ce95a415bd823c2e6feae0a8bfae4c",
+    "body": "Worker-load URL/line diagnostics and updated mic guide reviewed and integrated. Combined checks passed; original physical melody failure still needs reproduction."
+  },
+  {
+    "pullRequest": 24,
+    "headSha": "8c56f3db4353e3950ec5dd9452abb4aaac292f55",
+    "body": "WS1 reviewed and integrated this exact source with #24/#25/#26/#27. Resolved overlap preserves timed wake capture context, compound command ordering and asynchronous stale-language guards. Fresh declared dev+speech+LLM install: 234 backend passed/6 optional skips; Node 162 passed/1 skip; schema/live-service/WASM/build pass. Original eSpeak short-pause repeat, long-pause melody and drums pass; initial near-grid melody mismatch retained in STATUS.md as an open timing concern. One live OpenRouter smoke proposed tempo 110 correctly in 4547 ms, not model-corpus or human acceptance. See current STATUS.md for remaining voice research/audition contracts, physical mic/loading/timing and listening gates."
+  },
+  {
+    "pullRequest": 25,
+    "headSha": "90a8cb605dcd14a4f00fa55c464082b9b67fa508",
+    "body": "WS1 reviewed and integrated this exact source with #24/#25/#26/#27. Resolved overlap preserves timed wake capture context, compound command ordering and asynchronous stale-language guards. Fresh declared dev+speech+LLM install: 234 backend passed/6 optional skips; Node 162 passed/1 skip; schema/live-service/WASM/build pass. Original eSpeak short-pause repeat, long-pause melody and drums pass; initial near-grid melody mismatch retained in STATUS.md as an open timing concern. One live OpenRouter smoke proposed tempo 110 correctly in 4547 ms, not model-corpus or human acceptance. See current STATUS.md for remaining voice research/audition contracts, physical mic/loading/timing and listening gates."
+  },
+  {
+    "pullRequest": 26,
+    "headSha": "bc02a8e7c685cdec6343f94310e47730d1a2341f",
+    "body": "WS1 reviewed and integrated this exact source with #24/#25/#26/#27. Resolved overlap preserves timed wake capture context, compound command ordering and asynchronous stale-language guards. Fresh declared dev+speech+LLM install: 234 backend passed/6 optional skips; Node 162 passed/1 skip; schema/live-service/WASM/build pass. Original eSpeak short-pause repeat, long-pause melody and drums pass; initial near-grid melody mismatch retained in STATUS.md as an open timing concern. One live OpenRouter smoke proposed tempo 110 correctly in 4547 ms, not model-corpus or human acceptance. See current STATUS.md for remaining voice research/audition contracts, physical mic/loading/timing and listening gates."
+  },
+  {
+    "pullRequest": 27,
+    "headSha": "bdb4ffceb91c390908a92917751596ec2ee75d20",
+    "body": "WS1 reviewed and integrated this exact source with #24/#25/#26/#27. Resolved overlap preserves timed wake capture context, compound command ordering and asynchronous stale-language guards. Fresh declared dev+speech+LLM install: 234 backend passed/6 optional skips; Node 162 passed/1 skip; schema/live-service/WASM/build pass. Original eSpeak short-pause repeat, long-pause melody and drums pass; initial near-grid melody mismatch retained in STATUS.md as an open timing concern. One live OpenRouter smoke proposed tempo 110 correctly in 4547 ms, not model-corpus or human acceptance. See current STATUS.md for remaining voice research/audition contracts, physical mic/loading/timing and listening gates."
+  },
+  {
+    "pullRequest": 28,
+    "headSha": "56f67492733595cb5de8b8c7e7d377529a4b9200",
+    "body": "WS1 approved and integrated this proposal as the basis for the published shared schemas/examples. Final normative decisions: docs/VOICE-RESEARCH.md. Coordinated rollout, producers default-off until browser adoption/preview lands; strict old clients are not compatible with new variants. Preserve newer UI intent over delayed STT/model results, exact candidate binding, pending patch acceptance, async play cancellation, correlated preview acknowledgments and unchanged musical state. Node 166 passed/one optional skip; TypeScript/Python positive/negative/direction checks, live-service/WASM and build passed. Interface publication only; WS1 browser consumer and WS3 producers/tools still required."
+  },
+  {
+    "pullRequest": 33,
+    "headSha": "713975de4d1cb8f6a2461e501204eb05a0711587",
+    "body": "WS1 source review and isolated combined backend verification: 263 passed / 12 optional skips across #33/#34/#35 plus offline isolation. Adaptive steady-noise coverage and recognition padding have focused regressions; preserve the documented steady-noise/TTS limits. Suitable as a repair building block, not evidence of real room conversation or foreground discrimination. Root is preparing reviewed integration; do not restart or duplicate this work.",
+    "retargetBase": "engine-integration"
+  },
+  {
+    "pullRequest": 35,
+    "headSha": "ecbc07b50e64db475c70047077429990fdae71c9",
+    "body": "WS1 reviewed the incremental span/hangover fix against #33 and ran the combined backend suite (263 passed / 12 optional skips). Trimming after the final speech run addresses the reproduced post-command beatboxing case; retain the explicit limitation for speech-like sustained/percussive runs. Suitable for integration with #33, pending combined browser flow. Physical playtest remains required.",
+    "retargetBase": "engine-integration"
+  },
+  {
+    "pullRequest": 32,
+    "headSha": "c4d11c532407c5d4100ec88af17fbfb0dfa208c1",
+    "retargetBase": "engine-integration",
+    "body": "WS1 reviewed the grid-origin/latency-compensated boundary math, bounded 32-event diagnostics and numbers-only export, then integrated #32. Three focused tests passed with real YIN/segmenter boundary fixtures and shared checks passed. In isolated combined repair integration, Node 190 passed / one optional skip and shared checks passed; the merge preserves erase-fence rejection before recording timing entries and retains both processing-profile and grid diagnostics. This provides diagnostic evidence only, without changing quantization, latency compensation or physical timing acceptance."
+  },
+  {
+    "pullRequest": 34,
+    "headSha": "8c46ebb382fa12bc0b81ca8d41c3c3d9e61c486a",
+    "retargetBase": "engine-integration",
+    "body": "WS1 reviewed the mixed-family fix: the resolver now drops only redundant generic drums and refuses bare/numbered synth conflicts. All 28 reported refusal combinations across selections pass. Combined backend 350 passed/six optional skips and Python-WebSocket-coordinator-WASM integration passed. Reviewed/integrated #34 with #37; no physical speech or fun acceptance claimed."
+  },
+  {
+    "pullRequest": 37,
+    "headSha": "a550bdb7f5b48e23168831ff0534a0556928daed",
+    "retargetBase": "engine-integration",
+    "body": "WS1 reviewed #37 together with the corrected shared resolver from #34 at 8c46ebb. Original invalid/conflicting/leftover-position reproductions and mixed-family follow-ups now refuse. Positive actual Python-WebSocket-coordinator-WASM test confirms immediate click mute without musical revision change and erase defaulting to the active take after selection changes. Combined backend 350 passed/six optional skips. Integrated after #34, preserving its resolver correction. This tests typed transcripts, not acoustic STT or human acceptance. Latest head also carries six mixed-family erase regressions; 111 focused target/erase tests pass. Reviewed/integrated the updated heads; no further source-fix wait."
+  },
+  {
+    "pullRequest": 36,
+    "headSha": "941b293b2e4f0d24ffb5b15bfd9026ffe81aadaa",
+    "retargetBase": "engine-integration",
+    "body": "WS1 reviewed the actual-worker insufficient-quiet result, timeout cleanup, quiet-but-pitched foreground exclusion and rolling normal-volume margin/advice. Combined Node 193 passed/one optional skip and shared checks pass; real service/WASM integration passes. Integrated #36 as the reviewed UI/input foundation. Its engine-dependent controls remain gated until WS1 engine integration; WS1 will enable the erasure seam and re-run the actual UI checks with matching rebuilt assets. Conversation suppression, every-synth real voice and usability/fun remain human gates, not established by requested browser noise suppression or these synthetic regressions."
+  },
+  {
+    "pullRequest": 29,
+    "headSha": "5278e62dd52c5074e7854db228cee4dcabeac1a5",
+    "retargetBase": "engine-integration",
+    "body": "WS1 reviewed and integrated #29 with peer-inspected browser consumer #31 in a current-baseline integration branch. Merge resolutions preserve capture-time recordingTarget, metronome/erase language guidance, captureErasure stale-model guard and offline provider/key/voice-flag isolation. Combined backend 386 passed/six optional skips; Node 207 passed/one optional skip; shared checks/build and service/WASM passed. Real-renderer/MOCK-embedder acceptance/Undo passed. A separate actual cached-CLAP/SLOOP service plus actual Chromium app passed typed describe -> real candidates -> actual audio preview -> warmer refinement -> cancel optimization -> preview -> accept exact patch -> Undo with music preserved. This is not acoustic STT, LLM, human hearing or quality acceptance. Cold matching corpus first candidates 143.546 s/full 128-variation completion 235.649 s; repeated warm in-process prompt first candidates 120 ms, not general p95. Details: docs/reviews/REAL-CLAP-INTEGRATION.md. Both sides remain explicitly enabled by GROOVE_VOICE_RESEARCH=1 in the coordinated real-backend deployment; current backend config must include real CLAP/SLOOP. New endpointing/stop/key/browser-action work remains tracked separately."
+  },
+  {
+    "pullRequest": 31,
+    "headSha": "7ec9b9d1b1a313b98897e29d1072dd7a9d1a89a0",
+    "retargetBase": "engine-integration",
+    "body": "WS1 integrated #31 with #29 after the WS3 peer source inspection recorded in this PR and current-baseline validation. Node 207 passed/one optional skip; backend 386 passed/six optional skips; checks/build/service-WASM plus real-renderer/MOCK-embedder regression passed. Actual Chromium/Python/real cached CLAP and SLOOP ran describe/refine/preview/cancel/accept/Undo with two actual HTMLAudioElement started/ended pairs and continuing unchanged musical tracks after Undo. Only the test browser socket destination was redirected to the isolated :8001 service; no fake response/audio/model/candidate was supplied. Full evidence/limits in docs/reviews/REAL-CLAP-INTEGRATION.md. Typed transcripts only: acoustic endpointing, live LLM, human sound quality and next full hands-free test remain open. Legacy next-loop acceptance remains until the separate immediate-patch adoption lands."
+  },
+  {
+    "pullRequest": 41,
+    "headSha": "dcc0370394acd06fb8eee7cb58d1f2e5c01020de",
+    "body": "WS1 completed the integration audit and merged this exact head into engine-integration. Source/tests/build configuration after the conflict-free merge are byte-identical to dcc0370 (git diff --exit-code across apps/packages/services/tests/scripts/vendor and root manifests). Exact-head Linux firmware/contracts/web and Windows/macOS CI passed, with the browser preset and singing-path evidence documented in MUSICAL-CONTROLS-INTEGRATION.md. This is WS1 integrator verification, not an independent peer approval or acoustic/human acceptance.\n\nThe earlier request for separate peer approval was a coordination preference, not a repository/user merge requirement; PLAN assigns WS1 merge authority. PR #40 remains held for the two reproduced executor lifecycle defects. Leo can retarget its updated PR to engine-integration. WS3 endpointing/stop/new tools and real microphone/hands-free acceptance remain open."
+  },
+  {
+    "pullRequest": 40,
+    "headSha": "3d8d52729c0c68dd6cc3af8db3fd2b0574ed94ce",
+    "retargetBase": "engine-integration",
+    "body": "WS1 re-reviewed and integrated corrected exact head 3d8d527 with current key controls. Both original review repros now pass; all 19 executor tests and full Node 246 pass/one skip, shared checks/build pass. Actual Chromium UI/router/MediaStream/capture worklet/analysis worker/SLOOP synthetic-source check passed: real noise measurement -86.534 dBFS, screen controls locked, Play cancels noise/timing with settings preserved, and disconnect preserves manual calibration. No physical microphone, STT/LLM, human tapping or whole-session success is inferred.\n\nDetails and limits: docs/reviews/PR40-FIXED-EXECUTOR.md. Source after integration matches the reviewed WS2 head across apps/packages/services/scripts/vendor/root manifests. PR #41 and key UI are already integrated; there is no parent-review or executor implementation dependency left. WS3 can consume real browser-status/actions/acks on shared source, with input revision/clock guards and true terminal results. Speech endpointing/stop/new producers and real-device acceptance remain open."
+  },
+  {
+    "pullRequest": 43,
+    "headSha": "5c0fe273e4242371234d726d7069caf9bb59c215",
+    "body": "WS1 reproduced a premature research side effect in the new sentence code: actual segmenter + Connection, scripted first cut \u201cGroove make it sound like a warm piano\u201d, then \u201cwith a soft attack\u201d, starts research-context before the utterance ends. _unfinished recognizes only NotUnderstood and ignores Segment.cut when the prefix already parses as SoundSearch. Reproduction/details: docs/reviews/PR43-SENTENCE-REVIEW.md and PR43-valid-prefix-reproduction.py on engine-integration. Please hold explicitly cut/unfinished valid prefixes and add priority-stop + complete-request tests; do not close this report using unknown-prefix-only fixtures. Check the browser eight-second coverage-stall guard against the backend twelve-second held sentence limit with actual browser/stream evidence.\n\nIndependent 366f07e protocol and 4132702 cooldown are being validated separately with current UI/melody so this sentence correction need not block those improvements. Jett\u2019s actual spoken instrument fetch remains top priority: demonstrate real configured research/progress/candidates/preview/accept/Undo, with acoustic evidence/limits distinct from typed/mock tests. The baseline itself lacked browser-status handlers, so stale-service attribution is not established without checking the laptop. No live quota was used for the review reproduction."
+  },
+  {
+    "pullRequest": 42,
+    "headSha": "0408009aa721d55c958bc284c049b6c8eab688b3",
+    "body": "WS1 reviewed and integrated this exact head with melody fixes and the independent service protocol/cooldown commits. Full Node 260 pass/one optional skip, backend 418 pass/six skips, checks/build and real service/WASM integration passed. Actual Chromium at 1280x720, 1366x768 and 1440x900 showed no horizontal overflow with long injected errors and all sections open; keyboard expansion/setup passed. Visual review confirmed readable monochrome panels. Existing actual browser calibration cancellation/control-lockout and quiet-note capture checks also pass with the new UI. Details: docs/reviews/RELIABILITY-COMBINATION.md. Synthetic source/state, not physical-mic acceptance.\n\nNonblocking accessibility follow-up: clamp meter aria-valuenow to its declared -60..0 range while keeping truthful actual dB text; synthetic silence can be lower. WS3 still owns invisible default-off/unconfigured instrument failures documented in VOICE-INSTRUMENT-REQUEST-TRACE.md. Keep real search progress/results discoverable during any further UI changes."
+  },
+  {
+    "pullRequest": 43,
+    "headSha": "a9ae8a84aa430d05b5858ecf5808f9c886b5e546",
+    "body": "WS1 review of a9ae8a8: the original five-second cut valid-prefix reproduction now passes, including the soft-attack continuation. Backend plus original reproduction:432 passed/12 optional skips in an isolated provider-disabled checkout. Two focused failures remain; runnable tests and details are in docs/reviews/PR43-followup-reproduction.py and PR43-SENTENCE-REVIEW.md. (1) A continuous request from t1 to9.5 starts research for only warm piano at t7.52: _advance_speech executes the held prefix at its6.5 s lag budget even with the continuation open/pending. Preserve no-premature-action semantics; a truthful bounded refusal is safer than executing the unfinished request, and unclassified coverage must not be advanced. (2) A failed matching early-stop probe returns before clearing state.probing, preventing later dips in that same open segment from probing another Groove stop until closure. Clear completed matching slots on failure without stale-job races. These are real segmentation/orchestration tests with scripted transcripts/research ports, not acoustic or CLAP-quality evidence. Keep the actual spoken instrument/hidden-unavailable path as top product priority; the separate concrete trace remains open. Protocol/cooldown are already integrated and unaffected."
+  },
+  {
+    "pullRequest": 43,
+    "headSha": "107ba8c873ac34d4c86d8e09cb917e42f11f3666",
+    "body": "WS1 exact-head follow-up: both published long-prefix/failed-probe tests still fail on107ba8c; the original5s test passes. This commit adds diagnostic/browser evidence, not production corrections for those two paths. The availability source bec6a8f has been integrated independently as95575d5 and its actual browser unavailable-state checks pass. Thanks for the predecode harness observation; WS1 is applying it to our full acoustic probe. Please fix the published production cases and strengthen browser scripts before treating them as gates: recording-state wait subscribes then immediately unsubscribes inside waitForFunction (always false for async engine events), its timeout is swallowed, readiness is printed rather than asserted, and frontend speech failure state is not checked. Executor research uses typed transcripts and preview fetch/decode, so it does not prove acoustic describe or actual playback acknowledgments. Retain those useful scoped results, add actual state/ack/patch/Undo assertions, and keep physical/microphone and full acoustic acceptance separate. Current source/evidence details are in STATUS and PR43-SENTENCE-REVIEW.md."
+  },
+  {
+    "pullRequest": 43,
+    "headSha": "4ef5967819c297c2505c3d0b711f9249d8d8b32d",
+    "body": "WS1 review of4ef5967: both previously published follow-ups now pass; focused speech suite plus original/follow-up cases26 passed. The bounded refusal and matching completed-probe cleanup are correct improvements. One related delayed-recognition path still fails: first4s cut is submitted at t5, STT result arrives at t8 while the continuous sentence ends at9.5. This is7s coverage lag, still inside the browser8s bound, but _unfinished immediately returnsFalse when the6.5s hold budget expired, so it executes the valid warm-piano prefix before the remaining sentence. Runnable docs/reviews/PR43-late-result-reproduction.py fails at this exact head. A minimal proposed deletion is in PR43-late-result-proposal.patch: remove that obsolete _unfinished budget shortcut and leave timeout/action/refusal decisions with the new _advance_speech logic; keep explicit priority stop behavior. Patch is a syntax/applicability-checked proposal, not a merged backend edit. Please adopt/test it or an equivalent fix, including late complete versus still-open/pending results, before marking whole-sentence safety closed. Physical acoustic acceptance remains separate."
+  },
+  {
+    "pullRequest": 44,
+    "headSha": "466d669575c5dadab5fb45ef342a47b27f3181b6",
+    "body": "WS1 reviewed and integrated runtime4715bf7 plus this docs-only head. Combined Node274 passed/1 optional skip; shared checks and build pass. Actual browser capture/YIN/recorder/SLOOP low G2/high C6 test passed following, manual Oct navigation and Show edge-marker recovery (C3\u2013C5 -> C2\u2013C4 -> C5\u2013C7; manual view held). Existing growing-preview/full-bar check also passes (95ms first-visible in this run, final16-step note); actual long-error mic workspace/keyboard checks at1280x720,1366x768,1440x900 show no horizontal overflow. These use synthetic input, not physical microphone/fun acceptance. Runtime source is identical between4715bf7 and466d669. No capture/DSP/contracts change. Physical follow-ups and the previously noted meter aria-range clamp remain; the WS3 delayed-recognition issue is separate and does not block this integration."
+  },
+  {
+    "pullRequest": 43,
+    "headSha": "edb758fca851de21a42a4107a89cb9c8bf422112",
+    "body": "WS1 reviewed and integrated this exact head with current WS2 live range/UI and WS1 melody. The delayed-result fixeda96f2 resolves the final published merge-blocking case. Root30 focused speech checks pass (external late-first-result + prior follow-ups included); full backend445 pass/6 optional skips, combined Node274 pass/1 skip, shared checks and actual provider-disabled Python WebSocket/real-WASM integration pass onb1097f6. Actual frontend runtime is unchanged from the just-tested Leo integration. Details: docs/reviews/PR43-INTEGRATED.md. Prior failing exact-head reviews are historical, not current blockers. Preserved limits: valid non-cut prefix before a long pause can still act, early stop needs a dip, long requests refuse; no fake coverage or guard relaxation. Peer Windows synthesized acoustic4/5 successful runs are reported separately from root verification/human acceptance. Intermittent capture/connection failure, physical mic/fun, Deep Agents/tool quality and full-product gates remain open. Restart the actual service after pulling."
+  }
+]

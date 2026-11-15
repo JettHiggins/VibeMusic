@@ -1,0 +1,73 @@
+{
+  "type": "session",
+  "session": {
+    "version": 1,
+    "revision": 0,
+    "tempo": 120,
+    "bars": 4,
+    "beatsPerBar": 4,
+    "stepsPerBeat": 4,
+    "selected": {
+      "trackId": "drums",
+      "lane": "kick"
+    },
+    "tracks": [
+      {
+        "id": "synth-1",
+        "name": "synth-1",
+        "muted": false,
+        "volume": 0.7,
+        "patch": {
+          "engine": 0,
+          "preset": 0,
+          "parameters": {},
+          "engineRevision": "bac9c05ea7627449405aa10e48da21d75b6c8c56"
+        },
+        "notes": [],
+        "hits": []
+      },
+      {
+        "id": "synth-2",
+        "name": "synth-2",
+        "muted": false,
+        "volume": 0.7,
+        "patch": {
+          "engine": 0,
+          "preset": 0,
+          "parameters": {},
+          "engineRevision": "bac9c05ea7627449405aa10e48da21d75b6c8c56"
+        },
+        "notes": [],
+        "hits": []
+      },
+      {
+        "id": "synth-3",
+        "name": "synth-3",
+        "muted": false,
+        "volume": 0.7,
+        "patch": {
+          "engine": 0,
+          "preset": 0,
+          "parameters": {},
+          "engineRevision": "bac9c05ea7627449405aa10e48da21d75b6c8c56"
+        },
+        "notes": [],
+        "hits": []
+      },
+      {
+        "id": "drums",
+        "name": "drums",
+        "muted": false,
+        "volume": 0.7,
+        "patch": {
+          "engine": 0,
+          "preset": 0,
+          "parameters": {},
+          "engineRevision": "bac9c05ea7627449405aa10e48da21d75b6c8c56"
+        },
+        "notes": [],
+        "hits": []
+      }
+    ]
+  }
+}

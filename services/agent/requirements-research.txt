@@ -1,0 +1,5 @@
+# Optional: only for GROOVE_EMBEDDER=clap. Not installed by CI.
+# CPU-only torch: add --index-url https://download.pytorch.org/whl/cpu when installing torch.
+torch==2.15.0
+transformers==5.23.0
+scipy==1.18.1

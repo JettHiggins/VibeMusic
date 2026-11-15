@@ -1,0 +1,1662 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "browser-action"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "clockId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "expectedInputRevision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "operation": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "calibrate-input"
+                },
+                "mode": {
+                  "type": "string",
+                  "enum": [
+                    "noise",
+                    "timing",
+                    "check-timing",
+                    "full"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "mode"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "cancel-input-action"
+                },
+                "actionId": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "type",
+                "actionId"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "set-input-profile"
+                },
+                "profile": {
+                  "type": "string",
+                  "enum": [
+                    "noisy-room",
+                    "music"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "profile"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "set-input-offset"
+                },
+                "milliseconds": {
+                  "type": "integer",
+                  "minimum": -150,
+                  "maximum": 150
+                }
+              },
+              "required": [
+                "type",
+                "milliseconds"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        }
+      },
+      "required": [
+        "type",
+        "id",
+        "clockId",
+        "expectedInputRevision",
+        "operation"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "command"
+        },
+        "command": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "expectedRevision": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "boundary": {
+              "type": "string",
+              "enum": [
+                "immediate",
+                "next-beat",
+                "next-loop"
+              ]
+            },
+            "operation": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "set-pitch-snap"
+                    },
+                    "settings": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "root": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 11
+                            },
+                            "scale": {
+                              "type": "string",
+                              "enum": [
+                                "major",
+                                "minor"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "root",
+                            "scale"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "settings"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "set-rhythm-snap"
+                    },
+                    "grid": {
+                      "type": "string",
+                      "enum": [
+                        "sixteenth",
+                        "eighth",
+                        "quarter"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "grid"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "set-chord-mode"
+                    },
+                    "mode": {
+                      "type": "string",
+                      "enum": [
+                        "off",
+                        "triad"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "mode"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "set-track-length"
+                    },
+                    "trackId": {
+                      "type": "string",
+                      "enum": [
+                        "synth-1",
+                        "synth-2",
+                        "synth-3",
+                        "drums"
+                      ]
+                    },
+                    "bars": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "const": 1
+                        },
+                        {
+                          "type": "number",
+                          "const": 2
+                        },
+                        {
+                          "type": "number",
+                          "const": 4
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "trackId",
+                    "bars"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "snap-notes"
+                    },
+                    "trackId": {
+                      "type": "string",
+                      "enum": [
+                        "synth-1",
+                        "synth-2",
+                        "synth-3"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "trackId"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "metronome"
+                    },
+                    "enabled": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "enabled"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "erase-event"
+                    },
+                    "target": {
+                      "type": "object",
+                      "properties": {
+                        "trackId": {
+                          "type": "string",
+                          "enum": [
+                            "synth-1",
+                            "synth-2",
+                            "synth-3",
+                            "drums"
+                          ]
+                        },
+                        "lane": {
+                          "type": "string",
+                          "enum": [
+                            "kick",
+                            "snare",
+                            "closed-hat"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "trackId"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "step": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 63
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "target",
+                    "step"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "select"
+                    },
+                    "target": {
+                      "type": "object",
+                      "properties": {
+                        "trackId": {
+                          "type": "string",
+                          "enum": [
+                            "synth-1",
+                            "synth-2",
+                            "synth-3",
+                            "drums"
+                          ]
+                        },
+                        "lane": {
+                          "type": "string",
+                          "enum": [
+                            "kick",
+                            "snare",
+                            "closed-hat"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "trackId"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "target"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "record"
+                    },
+                    "target": {
+                      "type": "object",
+                      "properties": {
+                        "trackId": {
+                          "type": "string",
+                          "enum": [
+                            "synth-1",
+                            "synth-2",
+                            "synth-3",
+                            "drums"
+                          ]
+                        },
+                        "lane": {
+                          "type": "string",
+                          "enum": [
+                            "kick",
+                            "snare",
+                            "closed-hat"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "trackId"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "target"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "stop-recording"
+                    }
+                  },
+                  "required": [
+                    "type"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "play"
+                    },
+                    "playing": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "playing"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "tempo"
+                    },
+                    "bpm": {
+                      "type": "number",
+                      "minimum": 40,
+                      "maximum": 240
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "bpm"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "clear"
+                    },
+                    "target": {
+                      "type": "object",
+                      "properties": {
+                        "trackId": {
+                          "type": "string",
+                          "enum": [
+                            "synth-1",
+                            "synth-2",
+                            "synth-3",
+                            "drums"
+                          ]
+                        },
+                        "lane": {
+                          "type": "string",
+                          "enum": [
+                            "kick",
+                            "snare",
+                            "closed-hat"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "trackId"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "target"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "mute"
+                    },
+                    "trackId": {
+                      "type": "string",
+                      "enum": [
+                        "synth-1",
+                        "synth-2",
+                        "synth-3",
+                        "drums"
+                      ]
+                    },
+                    "muted": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "trackId",
+                    "muted"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "undo"
+                    },
+                    "discardCaptureOnly": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "type"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "edit-pattern"
+                    },
+                    "trackId": {
+                      "type": "string",
+                      "enum": [
+                        "synth-1",
+                        "synth-2",
+                        "synth-3",
+                        "drums"
+                      ]
+                    },
+                    "notes": {
+                      "maxItems": 64,
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "step": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 63
+                          },
+                          "duration": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 64
+                          },
+                          "midi": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 127
+                          },
+                          "velocity": {
+                            "type": "number",
+                            "minimum": 0,
+                            "maximum": 1
+                          },
+                          "chord": {
+                            "maxItems": 3,
+                            "type": "array",
+                            "items": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 127
+                            }
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "step",
+                          "duration",
+                          "midi",
+                          "velocity"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "hits": {
+                      "maxItems": 192,
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "step": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 63
+                          },
+                          "lane": {
+                            "type": "string",
+                            "enum": [
+                              "kick",
+                              "snare",
+                              "closed-hat"
+                            ]
+                          },
+                          "velocity": {
+                            "type": "number",
+                            "minimum": 0,
+                            "maximum": 1
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "step",
+                          "lane",
+                          "velocity"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "trackId",
+                    "notes",
+                    "hits"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "volume"
+                    },
+                    "trackId": {
+                      "type": "string",
+                      "enum": [
+                        "synth-1",
+                        "synth-2",
+                        "synth-3",
+                        "drums"
+                      ]
+                    },
+                    "volume": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "trackId",
+                    "volume"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "load-session"
+                    },
+                    "session": {
+                      "type": "object",
+                      "properties": {
+                        "version": {
+                          "type": "number",
+                          "const": 1
+                        },
+                        "revision": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "tempo": {
+                          "type": "number",
+                          "minimum": 40,
+                          "maximum": 240
+                        },
+                        "bars": {
+                          "type": "number",
+                          "const": 4
+                        },
+                        "beatsPerBar": {
+                          "type": "number",
+                          "const": 4
+                        },
+                        "stepsPerBeat": {
+                          "type": "number",
+                          "const": 4
+                        },
+                        "selected": {
+                          "type": "object",
+                          "properties": {
+                            "trackId": {
+                              "type": "string",
+                              "enum": [
+                                "synth-1",
+                                "synth-2",
+                                "synth-3",
+                                "drums"
+                              ]
+                            },
+                            "lane": {
+                              "type": "string",
+                              "enum": [
+                                "kick",
+                                "snare",
+                                "closed-hat"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "trackId"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "tracks": {
+                          "minItems": 4,
+                          "maxItems": 4,
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "enum": [
+                                  "synth-1",
+                                  "synth-2",
+                                  "synth-3",
+                                  "drums"
+                                ]
+                              },
+                              "name": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "muted": {
+                                "type": "boolean"
+                              },
+                              "volume": {
+                                "type": "number",
+                                "minimum": 0,
+                                "maximum": 1
+                              },
+                              "patch": {
+                                "type": "object",
+                                "properties": {
+                                  "engine": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "preset": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "parameters": {
+                                    "type": "object",
+                                    "propertyNames": {
+                                      "type": "string"
+                                    },
+                                    "additionalProperties": {
+                                      "type": "number"
+                                    }
+                                  },
+                                  "engineRevision": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  }
+                                },
+                                "required": [
+                                  "engine",
+                                  "preset",
+                                  "parameters",
+                                  "engineRevision"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "notes": {
+                                "maxItems": 64,
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "id": {
+                                      "type": "string",
+                                      "minLength": 1
+                                    },
+                                    "step": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 63
+                                    },
+                                    "duration": {
+                                      "type": "integer",
+                                      "minimum": 1,
+                                      "maximum": 64
+                                    },
+                                    "midi": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 127
+                                    },
+                                    "velocity": {
+                                      "type": "number",
+                                      "minimum": 0,
+                                      "maximum": 1
+                                    },
+                                    "chord": {
+                                      "maxItems": 3,
+                                      "type": "array",
+                                      "items": {
+                                        "type": "integer",
+                                        "minimum": 0,
+                                        "maximum": 127
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "id",
+                                    "step",
+                                    "duration",
+                                    "midi",
+                                    "velocity"
+                                  ],
+                                  "additionalProperties": false
+                                }
+                              },
+                              "hits": {
+                                "maxItems": 192,
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "id": {
+                                      "type": "string",
+                                      "minLength": 1
+                                    },
+                                    "step": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 63
+                                    },
+                                    "lane": {
+                                      "type": "string",
+                                      "enum": [
+                                        "kick",
+                                        "snare",
+                                        "closed-hat"
+                                      ]
+                                    },
+                                    "velocity": {
+                                      "type": "number",
+                                      "minimum": 0,
+                                      "maximum": 1
+                                    }
+                                  },
+                                  "required": [
+                                    "id",
+                                    "step",
+                                    "lane",
+                                    "velocity"
+                                  ],
+                                  "additionalProperties": false
+                                }
+                              },
+                              "bars": {
+                                "anyOf": [
+                                  {
+                                    "type": "number",
+                                    "const": 1
+                                  },
+                                  {
+                                    "type": "number",
+                                    "const": 2
+                                  },
+                                  {
+                                    "type": "number",
+                                    "const": 4
+                                  }
+                                ]
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "name",
+                              "muted",
+                              "volume",
+                              "patch",
+                              "notes",
+                              "hits"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "pitchSnap": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "root": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 11
+                                },
+                                "scale": {
+                                  "type": "string",
+                                  "enum": [
+                                    "major",
+                                    "minor"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "root",
+                                "scale"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "rhythmSnap": {
+                          "type": "string",
+                          "enum": [
+                            "sixteenth",
+                            "eighth",
+                            "quarter"
+                          ]
+                        },
+                        "chordMode": {
+                          "type": "string",
+                          "enum": [
+                            "off",
+                            "triad"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "version",
+                        "revision",
+                        "tempo",
+                        "bars",
+                        "beatsPerBar",
+                        "stepsPerBeat",
+                        "selected",
+                        "tracks"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "session"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "commit-performance"
+                    },
+                    "events": {
+                      "minItems": 1,
+                      "maxItems": 256,
+                      "type": "array",
+                      "items": {
+                        "oneOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "const": "onset"
+                              },
+                              "id": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "target": {
+                                "type": "object",
+                                "properties": {
+                                  "trackId": {
+                                    "type": "string",
+                                    "enum": [
+                                      "synth-1",
+                                      "synth-2",
+                                      "synth-3",
+                                      "drums"
+                                    ]
+                                  },
+                                  "lane": {
+                                    "type": "string",
+                                    "enum": [
+                                      "kick",
+                                      "snare",
+                                      "closed-hat"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "trackId"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "captureFrame": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991
+                              },
+                              "clockId": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "confidence": {
+                                "type": "number",
+                                "minimum": 0,
+                                "maximum": 1
+                              },
+                              "velocity": {
+                                "type": "number",
+                                "minimum": 0,
+                                "maximum": 1
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "id",
+                              "target",
+                              "captureFrame",
+                              "clockId",
+                              "confidence",
+                              "velocity"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "const": "note"
+                              },
+                              "id": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "target": {
+                                "type": "object",
+                                "properties": {
+                                  "trackId": {
+                                    "type": "string",
+                                    "enum": [
+                                      "synth-1",
+                                      "synth-2",
+                                      "synth-3",
+                                      "drums"
+                                    ]
+                                  },
+                                  "lane": {
+                                    "type": "string",
+                                    "enum": [
+                                      "kick",
+                                      "snare",
+                                      "closed-hat"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "trackId"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "captureFrame": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991
+                              },
+                              "endFrame": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991
+                              },
+                              "clockId": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "confidence": {
+                                "type": "number",
+                                "minimum": 0,
+                                "maximum": 1
+                              },
+                              "velocity": {
+                                "type": "number",
+                                "minimum": 0,
+                                "maximum": 1
+                              },
+                              "midi": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 127
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "id",
+                              "target",
+                              "captureFrame",
+                              "endFrame",
+                              "clockId",
+                              "confidence",
+                              "velocity",
+                              "midi"
+                            ],
+                            "additionalProperties": false
+                          }
+                        ]
+                      }
+                    },
+                    "excludedSpans": {
+                      "maxItems": 64,
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "startFrame": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "endFrame": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          }
+                        },
+                        "required": [
+                          "startFrame",
+                          "endFrame"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "verifiedThroughFrame": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "replacesCommandId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "recordingEpoch": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "events",
+                    "excludedSpans",
+                    "verifiedThroughFrame"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "apply-patch"
+                    },
+                    "trackId": {
+                      "type": "string",
+                      "enum": [
+                        "synth-1",
+                        "synth-2",
+                        "synth-3",
+                        "drums"
+                      ]
+                    },
+                    "patch": {
+                      "type": "object",
+                      "properties": {
+                        "engine": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "preset": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "parameters": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {
+                            "type": "number"
+                          }
+                        },
+                        "engineRevision": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      "required": [
+                        "engine",
+                        "preset",
+                        "parameters",
+                        "engineRevision"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "trackId",
+                    "patch"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "expectedRevision",
+            "boundary",
+            "operation"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "type",
+        "command"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "speech-verified"
+        },
+        "clockId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "throughFrame": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "streamId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fromFrame": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "type",
+        "clockId",
+        "throughFrame"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "command-span"
+        },
+        "utteranceId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "clockId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "startFrame": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "endFrame": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "type",
+        "utteranceId",
+        "clockId",
+        "startFrame",
+        "endFrame"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "research"
+        },
+        "jobId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "running",
+            "complete",
+            "cancelled",
+            "failed"
+          ]
+        },
+        "progress": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "candidates": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "patch": {
+                "type": "object",
+                "properties": {
+                  "engine": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "preset": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "parameters": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {
+                      "type": "number"
+                    }
+                  },
+                  "engineRevision": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "engine",
+                  "preset",
+                  "parameters",
+                  "engineRevision"
+                ],
+                "additionalProperties": false
+              },
+              "provenance": {
+                "type": "string",
+                "minLength": 1
+              },
+              "previewUrl": {
+                "type": "string"
+              },
+              "score": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "id",
+              "patch",
+              "provenance",
+              "previewUrl",
+              "score"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "error": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "jobId",
+        "status",
+        "progress",
+        "candidates"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "error"
+        },
+        "requestId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "type",
+        "requestId",
+        "message"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "research-context"
+        },
+        "requestId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "jobId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "trackId": {
+          "type": "string",
+          "enum": [
+            "synth-1",
+            "synth-2",
+            "synth-3"
+          ]
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "origin": {
+          "type": "string",
+          "const": "voice"
+        }
+      },
+      "required": [
+        "type",
+        "requestId",
+        "jobId",
+        "trackId",
+        "description",
+        "origin"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "speech-transcript"
+        },
+        "utteranceId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "streamId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "clockId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "startFrame": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "endFrame": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 1000
+        },
+        "outcome": {
+          "type": "string",
+          "enum": [
+            "command",
+            "refused",
+            "ignored",
+            "held",
+            "interpreting",
+            "research"
+          ]
+        },
+        "detail": {
+          "type": "string",
+          "maxLength": 300
+        }
+      },
+      "required": [
+        "type",
+        "utteranceId",
+        "clockId",
+        "startFrame",
+        "endFrame",
+        "text",
+        "outcome"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "candidate-preview"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "jobId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "candidateId": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "type",
+        "id",
+        "jobId",
+        "candidateId"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "speech-status"
+        },
+        "streamId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "available": {
+          "type": "boolean"
+        },
+        "provider": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "streamId",
+        "available",
+        "provider"
+      ],
+      "additionalProperties": false
+    }
+  ]
+}

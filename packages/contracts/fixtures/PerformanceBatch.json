@@ -1,0 +1,11 @@
+{
+  "id": "performance-batch-1",
+  "expectedRevision": 1,
+  "boundary": "next-loop",
+  "operation": {
+    "type": "commit-performance",
+    "events": [{"kind":"onset","id":"kick-hit-1","target":{"trackId":"drums","lane":"kick"},"captureFrame":358300,"clockId":"audio-1","confidence":0.95,"velocity":0.8}],
+    "excludedSpans": [],
+    "verifiedThroughFrame": 360000
+  }
+}

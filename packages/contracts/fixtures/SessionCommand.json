@@ -1,0 +1,12 @@
+{
+  "id": "select-kick-1",
+  "expectedRevision": 0,
+  "boundary": "immediate",
+  "operation": {
+    "type": "select",
+    "target": {
+      "trackId": "drums",
+      "lane": "kick"
+    }
+  }
+}

@@ -1,0 +1,25 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {runInNewContext} from 'node:vm';
+import {transformSync} from 'esbuild';
+test('real capture worklet speech tap excludes buffered pre-enable samples and preserves performance copies',()=>{
+ let Processor:any;
+ const context={currentFrame:0,Float32Array,registerProcessor:(_name:string,p:any)=>{Processor=p;},AudioWorkletProcessor:class{port={onmessage:null as any};}};
+ runInNewContext(transformSync(readFileSync('apps/web/src/input/capture-worklet.ts','utf8'),{loader:'ts'}).code,context);
+ const node=new Processor(),performance:any[]=[],speech:any[]=[];
+ const port=(output:any[])=>({postMessage:(m:any,transfer:any[]=[])=>output.push(structuredClone(m,{transfer})),close(){}});
+ node.port.onmessage({data:{type:'connect',port:port(performance)}});
+ const block=()=>{node.process([[new Float32Array(128).fill(.25)]]);context.currentFrame+=128;};
+ for(let i=0;i<4;i++)block();
+ node.port.onmessage({data:{type:'connect-speech',port:port(speech)}});
+ for(let i=0;i<4;i++)block();
+ assert.equal(performance[0].startFrame,0);assert.equal(performance[0].samples.length,1024);
+ assert.equal(speech[0].startFrame,512);assert.equal(speech[0].samples.length,512);
+ assert.equal(performance[0].samples[0],.25);assert.equal(speech[0].samples[0],.25);
+ node.port.onmessage({data:{type:'disconnect-speech'}});
+ for(let i=0;i<8;i++)block();
+ assert.equal(performance.length,2);assert.equal(speech.length,1,'speech disconnect does not interrupt performance');
+ context.currentFrame+=128;block();
+ assert.ok(performance.some(m=>m.type==='gap'),'capture discontinuity remains visible to performance');
+});
