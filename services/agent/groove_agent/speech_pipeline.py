@@ -273,6 +273,11 @@ class EnergySegmenter:
         return end
 
     @property
+    def speaking(self) -> bool:
+        """A candidate segment is open: speech (or something loud) is still going on."""
+        return self._open is not None
+
+    @property
     def decided_through(self) -> int:
         """Last context frame whose speech classification is final (-1 for none)."""
         if self._open is not None and self._history_f:

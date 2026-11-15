@@ -265,3 +265,66 @@ def test_held_sentences_never_push_browser_coverage_past_its_eight_second_stall_
         worst = max(worst, (chunk["endFrame"] - verified) / CONTEXT_RATE)
     print(f"worst coverage lag {worst:.2f} s")
     assert HOLD_LAG_BUDGET_SECONDS < 8.0 and worst < 8.0, worst
+
+
+# -- WS1 follow-up review (docs/reviews/PR43-followup-reproduction.py) -------------------------------
+
+def test_a_request_still_going_at_the_hold_budget_is_refused_never_partly_executed(tmp_path):
+    connection, port, log = research_run(
+        tmp_path, ["Groove make it sound like a warm piano", "with a soft attack and a mellow tone", "and a little chorus"],
+        speech=(1, 9.5), seconds=13)
+    replies = flat(log)
+    assert port.started == [] and not [r for r in replies if r["type"] in ("research-context", "command")]
+    errors = [r for r in replies if r["type"] == "error"]
+    assert len(errors) == 1 and "too long" in errors[0]["message"] and "nothing was changed" in errors[0]["message"]
+
+
+def test_a_refused_long_request_in_a_take_is_excluded_and_its_continuation_never_acts(tmp_path):
+    worker = ScriptedWorker(["Groove set the tempo to", "um one hundred and something like", "forty"])
+    connection = connect(worker, recording=True)
+    take = synth_take(tmp_path / "long-take.wav", hits=(), speech=(1, 9.5), seconds=13)
+    replies = flat(stream(connection, worker, chunks_from_wav(take)))
+    assert commands(replies) == []
+    spans = [r for r in replies if r["type"] == "command-span"]
+    assert spans and spans[0]["startFrame"] <= frame_at(1.05) and max(s["endFrame"] for s in spans) >= frame_at(9.0)
+
+
+def test_a_failed_probe_frees_its_slot_so_a_later_dip_can_still_stop(tmp_path):
+    class FlakyProbes(ScriptedWorker):
+        supports_probe = True
+        def __init__(self):
+            super().__init__(["la la la"])
+            self.probes = []
+        def finish(self, connection):
+            replies = []
+            while self.jobs:
+                job = self.jobs.pop(0)
+                if job.probe:
+                    self.probes.append(job)
+                    failed = len(self.probes) == 1
+                    text = None if failed else ("Groove stop" if len(self.probes) == 2 else "")
+                    replies += connection.speech_result(job, text, "temporary probe failure" if failed else None, 0.0)
+                else:
+                    self.transcribed.append(job)
+                    replies += connection.speech_result(job, self.texts.pop(0) if self.texts else "", None, 0.0)
+            return replies
+    worker = FlakyProbes()
+    connection = connect(worker, recording=True)
+    take = synth_take(tmp_path / "flaky.wav", hits=(), speech=(1, 1.4), more_speech=((1.7, 2.1), (2.4, 2.8), (3.1, 3.5)),
+                      seconds=4.8)
+    replies = flat(stream(connection, worker, chunks_from_wav(take)))
+    assert len(worker.probes) >= 2 and commands(replies) == [{"type": "stop-recording"}]
+
+
+def test_a_stale_probe_result_cannot_clear_or_act_for_a_newer_probe(tmp_path):
+    worker = ProbingWorker("Groove, stop.")
+    connection = connect(worker, recording=True)
+    take = synth_take(tmp_path / "stale.wav", hits=(), speech=(2.0, 2.6), seconds=2.95)  # ends inside the hangover
+    for chunk in chunks_from_wav(take):
+        connection.handle(chunk, 0.0)  # probes queue up but are not answered yet
+    state = connection._speech_state["take-1"]
+    current = state.probing
+    assert current is not None
+    from dataclasses import replace
+    stale = replace(current, job_id=current.job_id + ":old")
+    assert connection.speech_result(stale, "Groove, stop.", None, 0.0) == [] and state.probing is current
