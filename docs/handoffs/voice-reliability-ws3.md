@@ -106,7 +106,7 @@ Jett integrated `366f07e` (protocol) and `4132702` (cooldown). This branch merge
 
 ## Checks (Windows, Python 3.13)
 
-- **Backend suite:** `pytest -q` → **437 passed, 6 skipped** (now including the 5 real SLOOP tests). The 4 `test_sloop` errors were already present: this laptop has no native SLOOP module built.
+- **Backend suite:** `pytest -q` → **437 passed, 6 skipped**, now including the 5 real SLOOP engine tests (they previously errored only because the repo root was not on the import path).
 - **New test files:**
   - `test_browser_protocol.py` (15 tests, including a real FastAPI WebSocket session)
   - `test_provider_resilience.py` (13 tests: scripted 402/429/Retry-After/timeouts, a worker storm test, and a real WebSocket degrade test)
