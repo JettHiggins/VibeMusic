@@ -13,7 +13,7 @@ const cell = (on: boolean, strong: boolean, mark: boolean): React.CSSProperties 
  * first beat and which bar it starts on. Beat cells are decorative; the status line carries the meaning
  * and only changes on phase changes (and count-in numbers), so screen readers are not flooded per beat.
  */
-export function RecordingPhaseStrip({ phase }: { phase: RecordingPhase }) {
+export function RecordingPhaseStrip({ phase, children }: { phase: RecordingPhase; children?: React.ReactNode }) {
  const armed = phase.state === 'armed', recording = phase.state === 'recording';
  const countdown = armed && phase.beatsToStart !== null ? Math.min(4, phase.beatsToStart) : null;
  const announce = armed ? phase.headline : recording ? 'Recording' : phase.state === 'playing' ? 'Playing' : 'Stopped';
@@ -30,6 +30,7 @@ export function RecordingPhaseStrip({ phase }: { phase: RecordingPhase }) {
    {[1, 2, 3, 4].map(b => <span key={b} data-bar={b} style={{ ...cell(!armed && phase.bar === b, false, armed && phase.start?.bar === b), width: 22, height: 8 }} />)}
   </span>
   <span style={{ color: C.muted, flex: '1 1 180px', minWidth: 0 }}>{phase.detail}</span>
+  {children}
   <span role="status" aria-live="polite" className="vs-sr">{announce}</span>
  </div>;
 }
@@ -47,4 +48,29 @@ export function TakeFeedbackLine({ take, liveName, unit }: { take: TakeFeedback;
   <div>{parts.flatMap((p, i) => i ? [' · ', p] : [p])}</div>
   {take.reason && <div style={{ color: C.warn, marginTop: 2, fontFamily: 'inherit' }}>{take.reason}</div>}
  </div>;
+}
+
+/**
+ * Recording grid and chord mode (PLAYTEST-CONTROLS-CONTRACT.md), shown in the phase strip because they
+ * shape how the next take is written. Both are immediate and undoable; neither rewrites existing notes.
+ */
+export function TakeSettings({ grid, chord, gridHint, chordHint, chordBlocked, enabled, onGrid, onChord, options }: {
+ grid: string; chord: string; gridHint: string; chordHint: string; chordBlocked: string | null; enabled: boolean;
+ onGrid: (grid: string) => void; onChord: (mode: string) => void; options: { value: string; label: string }[];
+}) {
+ const lbl: React.CSSProperties = { display: 'flex', gap: 5, alignItems: 'center', color: C.muted, fontSize: 12 };
+ return <span role="group" aria-label="Take settings" style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+  <label style={lbl} title={gridHint}>Grid
+   <select aria-label="Recording grid" aria-description={gridHint} value={grid} disabled={!enabled} onChange={e => onGrid(e.target.value)}>
+    {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+   </select>
+  </label>
+  <label style={lbl} title={chordBlocked ?? chordHint}>Chord
+   <select aria-label="Chord mode" aria-description={chordBlocked ?? chordHint} value={chord} disabled={chordBlocked !== null} onChange={e => onChord(e.target.value)}>
+    <option value="off">Off</option>
+    <option value="triad">Triad</option>
+   </select>
+  </label>
+  {gridHint.startsWith('This take') && <small style={{ color: C.text }}>{gridHint}</small>}
+ </span>;
 }

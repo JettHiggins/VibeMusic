@@ -33,7 +33,10 @@ const wrap = (step: number) => ((Math.round(step) % 64) + 64) % 64;
 export const moveNote = (id: string, step: number, midi: number): PatternOp => p => {
  const note = p.notes.find(n => n.id === id);
  if (!note) return p;
- const moved = { ...note, step: wrap(step), midi: Math.max(0, Math.min(127, Math.round(midi))) };
+ const target = Math.max(0, Math.min(127, Math.round(midi)));
+ const moved: typeof note = { ...note, step: wrap(step), midi: target };
+ // A chord moves with its root; pitches pushed outside MIDI 0..127 are omitted, as triadFor does.
+ if (note.chord?.length) { const chord = note.chord.map(m => m + target - note.midi).filter(m => m >= 0 && m <= 127); if (chord.length) moved.chord = chord; else delete moved.chord; }
  return { ...p, notes: [...withoutOverlaps(p.notes, moved.step, moved.duration, id).filter(n => n.id !== id), moved] };
 };
 
