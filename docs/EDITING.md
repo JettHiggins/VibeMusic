@@ -1,6 +1,6 @@
 # Engine editing and session restore for Workstream 2
 
-Current priority: [PLAYTEST-REPAIR.md](PLAYTEST-REPAIR.md) and [STATUS.md](STATUS.md). New repair behavior is planned, not yet implemented; historical demo/count-in/editing/noise guidance below may be superseded. Use a frozen integrated commit for human acceptance.
+Current priority: [MELODY-RETENTION-ROUND.md](MELODY-RETENTION-ROUND.md) and [STATUS.md](STATUS.md). New repair behavior is planned, not yet implemented; historical demo/count-in/editing/noise guidance below may be superseded. Use a frozen integrated commit for human acceptance.
 
 These are additive v1 commands handled by the real audio-thread engine. Use the current getSession().revision, a unique command ID, and the normal applied/rejected subscription feedback. Do not update the UI's authoritative session from a queued submission receipt.
 
@@ -30,4 +30,4 @@ Send note-off on pointer/key release and when canceling an interaction. These ev
 
 ## Verification and current limits
 
-Real-WASM tests cover boundary edits, wrapped notes, volume isolation, rejected imports, normalized revisions, undo, auditions, and load during playback. The full editing/persistence interface is not implemented by these engine APIs. Pull schemas and restart the backend after contract updates.
+Real-WASM tests cover boundary edits, wrapped notes, volume isolation, rejected imports, normalized revisions, undo, auditions, and load during playback. The UI and persistence consumer use these engine APIs; current acceptance remains in STATUS.md. Pull schemas and restart the backend after contract updates.

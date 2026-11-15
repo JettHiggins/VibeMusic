@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createSession,ServerMessage,type ClientMessage,type Transport} from '../packages/contracts/src/index.ts';
-import {displayedLane} from '../apps/web/src/ui/InputPanel.tsx';
+import {displayedLane} from '../apps/web/src/ui/labels.ts';
 import {handleSpeechMessage} from '../apps/web/src/input/speech-messages.ts';
 test('completed take target does not override a newly selected drum lane',()=>{
  const session=createSession();session.selected={trackId:'drums',lane:'closed-hat'};

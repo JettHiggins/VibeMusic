@@ -1,6 +1,6 @@
 # Musical control contract
 
-WS1 publication for HANDSFREE-COMPLETION.md. The sections below are normative; producers/consumers wait for the corresponding engine/executor support before enabling actions. No new payload shape is needed for immediate patches: SessionCommand already permits the `immediate` boundary.
+WS1 publication for MELODY-RETENTION-ROUND.md. The sections below are normative; producers/consumers wait for the corresponding engine/executor support before enabling actions. No new payload shape is needed for immediate patches: SessionCommand already permits the `immediate` boundary.
 
 `apply-patch` now supports **immediate OR next-loop**. `next-beat` remains invalid. Existing explicit next-loop callers keep their behavior. New interactive preset/engine/parameter selection and accepted voice sound choices should use immediate so the user hears the choice without a four-bar wait. Backend model latency never schedules audio samples.
 
@@ -17,7 +17,7 @@ Example, using a real metadata-valid patch (replace placeholder parameters with 
 {"id":"choose-preset-1","expectedRevision":7,"boundary":"immediate","operation":{"type":"apply-patch","trackId":"synth-1","patch":{"engine":1,"preset":0,"parameters":{},"engineRevision":"bac9c05ea7627449405aa10e48da21d75b6c8c56"}}}
 ```
 
-The same operation with `boundary:"next-loop"` remains valid. Publish matching engine support and consumer PRs before calling the preset-delay report fixed in the shared app. Engine regressions must verify acknowledgment/state before a loop boundary during playback/capture, unchanged timing/music, output continuity, Undo, stale rejection and legacy scheduling.
+The same operation with `boundary:"next-loop"` remains valid. Matching engine and consumers are integrated. Engine regressions must verify acknowledgment/state before a loop boundary during playback/capture, unchanged timing/music, output continuity, Undo, stale rejection and legacy scheduling.
 
 ## Optional pitch snapping — published wire and mapping
 

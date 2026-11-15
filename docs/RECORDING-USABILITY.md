@@ -1,8 +1,8 @@
-# Recording usability: WS1 contract and engine handoff
+# Recording scheduling and live-edit contract
 
-Current priority: [PLAYTEST-REPAIR.md](PLAYTEST-REPAIR.md) and [STATUS.md](STATUS.md). New repair behavior is planned, not yet implemented; historical demo/count-in/editing/noise guidance below may be superseded. Use a frozen integrated commit for human acceptance.
+Current scope: [MELODY-RETENTION-ROUND.md](MELODY-RETENTION-ROUND.md) and [STATUS.md](STATUS.md). Test a recorded current integration commit and restart both app/service after pulling.
 
-This capability is integrated into `engine-integration` through reviewed PR #12 (source ece7d80; consumer review covered bd1428b). Consumers should integrate its approved merge commit, not invent equivalent fields. The browser UI and input reset consumer remain WS2 work; the backend parser/proposal changes remain WS3 work. Existing callers remain supported while those owners integrate.
+The engine, input consumer and service are integrated. The following timing/reset semantics remain normative; current assignment and validation evidence lives in STATUS.md.
 
 ## Scheduling and live edits
 
@@ -35,49 +35,10 @@ recordingLoopStartFrame is the recording window's musical grid origin. Use it fo
 - Accept/store the added transport fields through the generated schema. Do not infer speech verification from them.
 - Normal backend Undo remains a normal proposal. WS2 must account for its local provisional capture before dispatching that proposal, preserving the command ID and acknowledging the actual operation. No speech audio contract or provider decision is implied here.
 
-## Validation and review
+## Implementation invariants
 
-Wire examples: `packages/contracts/fixtures/RecordingUsability.json`, validated by TypeScript and Python. Real-WASM tests cover 120/137 BPM, next-beat starts, stopped one-bar count-in, correct mid-loop placement, immediate Clear, cutoff-before-ack ordering, epoch/legacy rejection of late audio, fresh capture after edits, discard-only versus musical Undo, unrelated-lane isolation, tempo Undo and count-in cancellation. Existing loop/renderer/input tests remain required.
+Applied acknowledgments retain the existing shape; the consumer labels discard-only versus musical-history Undo using its own request/pending state. discardCaptureOnly requires a retained/current recording window. Tempo remains next-loop and rejects during capture. Explicit Clear/Undo cancels conflicting queued pattern intentions, including discard-only Undo without a revision change; do not retry them. Armed Record is never automatically reissued.
 
-Patch-output smoothing is a separate preceding commit (`735f122`), blending the prior stereo output sample into the new output over five milliseconds without delaying the firmware clock. Human listening has not validated that change.
+## Consumer verification
 
-Review does not establish calibrated microphone performance on Lenny's laptop or the complete hands-free acceptance scenario. Those remain explicit human/device gates in STATUS.md.
-
-## WS2 consumer review clarifications
-
-WS2 reviewed bd1428b with its calibration/workspace stack and reported clean TypeScript checks and 141 passing tests (one opt-in test skipped). The applied acknowledgment deliberately has the existing shape: it does not distinguish discard-only from musical-history Undo. The input/UI consumer knows whether it requested discardCaptureOnly or had queued/provisional input and should label that result accordingly. discardCaptureOnly requires an existing retained/current recording window; without one it rejects with `No capture to discard`. Tempo remains next-loop and is rejected during active capture; keep those tempo controls disabled during a take. These clarify the tested behavior and add no interface changes.
-
-## Consumer implementation handoff
-
-WS1 temporarily took over the consumer while Leo is out of usage (explicit user assignment).
-The workspace now requests next-beat Record and immediate Clear/Undo. `VoiceInput.prepareCommand`
-is shared by the UI CommandClient and backend SessionCoordinator; it preserves the backend command
-ID and uses discardCaptureOnly when completed provisional/submitted input or a held sung note exists.
-The recorder clears old flight/replacement/retry bookkeeping on epoch changes, tags fresh batches,
-rejects late pre-cutoff results and projects from the composition origin. The worker resets without
-flushing old notes and trims queued chunks at the raw cutoff (effective latency added once).
-
-Explicit live Clear/Undo supersedes local queued pattern intentions too. The engine cancels queued
-edit-pattern commands (the clear target's track, or all for Undo), including discard-only Undo whose
-revision stays unchanged; clients drop those intentions rather than retrying them. There is no wire
-shape change. Clear/Undo remain enabled during capture. Armed Record is never automatically re-issued.
-
-The transport is sticky, its session menu remains above the editor and recording/diagnostic colors
-use the monochrome palette. `tests/browser/recording-consumer.js` exercises the real UI/WASM with
-synthetic silent input and an injected provisional event; `tests/browser/input-pipeline.js` exercises
-synthetic audio through the actual worklet/worker. Neither establishes physical-microphone acceptance.
-
-`tests/browser/next-beat-melody.js` additionally feeds three generated harmonic/vibrato tones through
-the actual browser capture worklet and YIN worker after next-beat Record. It requires C4/E4/G4 at
-composition steps 20/24/28 (durations 3/3/4), three committed notes, no input error and continuing
-playback. This passed on the WS1 Linux Chromium setup (~8.1 ms p95 analysis). It narrows the software
-path under test; it does not reproduce or resolve Lenny's reported physical-device loading error.
-
-`tests/browser/live-capture-edits.js` covers the cross-port live-edit race with continuous generated
-sustained tones through the actual capture and analysis workers. Undo occurs while C4 is held inside
-the worker, before any completed note event exists: discard-only Undo keeps the musical revision.
-Clear then occurs while E4 is held and completed C4 is provisional. Capture/playback continue; every
-subsequent submitted event must use the new epoch and begin at/after the reset cutoff. Only fresh E4
-remains in the real engine, with no old C4 or rejected-input error. This passed in WS1 Chromium
-(~8.6 ms p95 analysis). Run this isolated diagnostic on the consumer branch with Vite and staged WASM
-assets; no microphone permission, provider or raw audio persistence is involved.
+VoiceInput.prepareCommand is shared by UI and backend proposal paths. Epoch changes clear old flight/replacement/retry state; workers reset without flushing old notes, and late pre-cutoff results are terminal. Consumers project against the composition grid origin, not the take start. tests/browser/recording-consumer.js, input-pipeline.js, next-beat-melody.js and melody-pipeline.js cover real worklet/worker/recorder/WASM paths using synthetic input. Physical acceptance remains separate.

@@ -1,6 +1,6 @@
 # Real-microphone test (each teammate, on their own laptop)
 
-Current priority: [PLAYTEST-REPAIR.md](PLAYTEST-REPAIR.md) and [STATUS.md](STATUS.md). New repair behavior is planned, not yet implemented; historical demo/count-in/editing/noise guidance below may be superseded. Use a frozen integrated commit for human acceptance.
+Current scope: [MELODY-RETENTION-ROUND.md](MELODY-RETENTION-ROUND.md) and [STATUS.md](STATUS.md). Test a recorded current integration commit and restart both app/service after pulling.
 
 Use Chrome with wired headphones. This is a manual-input/device check, not the final hands-free speech acceptance. Microphone audio is analysed live and is not saved or uploaded by this workflow; the copied report contains measurements only. Use a normal browser with microphone permission if an embedded browser does not expose the device.
 
@@ -31,4 +31,6 @@ Use Chrome with wired headphones. This is a manual-input/device check, not the f
 
 Earlier Windows evidence: ~120 ms round trip versus a ~62 ms browser estimate, with ~−39 dBFS room floor. That suggests a plausible late-placement cause. It is not a calibrated performer pass on Lenny's device. Synthetic browser tests and CI do not fill in this table on a human's behalf.
 
-Final hands-free acceptance remains separate: after real STT/Deep Agents integration, complete PLAN.md's voice-only drum/melody/correction/sound-refinement/clear/undo/stop workflow, and measure command latency and ten-minute audible playback on each development platform.
+Final hands-free acceptance remains separate: with the configured real STT/Deep Agents service, complete PLAN.md's voice-only drum/melody/correction/sound-refinement/clear/undo/stop workflow, and measure command latency and ten-minute audible playback on each development platform.
+
+For the latest retention failure, repeat the same fast duh phrase with hands-free off and on, observe live/pending/committed state across two loops, then test a held note, silence and real Groove stop. Record the heard transcript and exact error if notes vanish. Do not assume the cause from appearance alone.

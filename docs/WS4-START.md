@@ -1,7 +1,5 @@
-# WS4: evaluation and acceptance support
+# WS4: evaluation support
 
-Start with the command corpus, then the listening summarizer, then held-out sound cases. Full tickets are in WS4-TICKETS.json and are published as GitHub issues by the coordination workflow. All three can start without API access, models or a running app. Own only evals/, tools/evaluation/ and docs/WS4-HANDOFF.md; do not change the active UI, speech, engine or contract implementations.
+Published tickets are the source of truth: [command acceptance corpus #17](https://github.com/JettHiggins/VoiceSynthesizer/issues/17), [blind-listening summarizer #18](https://github.com/JettHiggins/VoiceSynthesizer/issues/18), [held-out sound cases #19](https://github.com/JettHiggins/VoiceSynthesizer/issues/19). Work in that order after reading AGENTS, PLAN, STATUS and issue9; preserve local work and branch from reviewed origin/engine-integration.
 
-Copy this into the fourth teammate's agent:
-
-> Read AGENTS.md, PLAN.md, docs/STATUS.md, docs/WS4-START.md and issue #9 in JettHiggins/VoiceSynthesizer. Own WS4 evaluation support. Find the open issue titled "WS4: build the hands-free command acceptance corpus" and complete it first on ws4/command-corpus, branched from reviewed origin/engine-integration after preserving local work. Follow its file ownership and acceptance criteria. Open a focused PR to engine-integration with validation and a handoff; do not call APIs, configure keys, download models or edit other workstreams. Then take the listening-summary and held-out sound-case tickets in priority order. Label synthetic evidence honestly; never fill human listening results yourself. Do not poll dependencies.
+Own only evals/, tools/evaluation/ and docs/WS4-HANDOFF.md. Follow each issue's acceptance criteria; no API access, models or running app are required. Submit focused PRs to engine-integration with checks/limits/next step. Label synthetic evidence; never invent human listening results. Keep implementation out of other owners' app/service/contracts.

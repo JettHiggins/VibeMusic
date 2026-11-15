@@ -1,9 +1,0 @@
-# WS1 key-snapping engine handoff
-
-Branch: `ws1/key-snapping`, based on published musical-control schemas/fixtures. See MUSICAL-CONTROL-CONTRACT.md for normative behavior and the shared snapMidiToScale mapping. Immediate-patch engine support is a separate feature branch and is not included in this one.
-
-The engine now handles immediate set-pitch-snap without changing committed music, the recording epoch or an armed deadline. Missing/null remains Off for old saves. Accepted sung notes use the current setting at commit time; raw MIDI stays in capture events. Explicit next-loop snap-notes changes only pitches on one melodic track, rejects Off/drums, and creates one Undo entry only when something changes. Same-setting/already-in-scale operations do not add revision/history. Existing schema, stale checks, note identity/timing/velocity and unrelated tracks are preserved.
-
-Validation: five focused real-WASM tests pass, including old/Off capture, accepted-note mapping, exact committed-track transformation/Undo/no-op, armed deadline and stale/boundary rejection. A real PerformanceRecorder + WASM test changes key after queuing raw input, observes normal stale retry and verifies one correctly snapped committed note. The full Node suite passed 201 tests/one optional skip; shared checks, frontend build and provider-disabled local service/WebSocket/WASM integration passed. The shared mapping separately checks every MIDI pitch for all twelve Major/Minor roots.
-
-Next: peer-create/review the focused engine PR, adopt WS2 key controls/provisional preview and WS3 deterministic key commands, then integrate with immediate patches and the real microphone. This branch has no new visible key selector and does not establish sung intonation, acoustic accuracy or human acceptance. No firmware export/build change is needed beyond matching current assets. Preserve the frozen playtest-repair-1 tag.

@@ -3,12 +3,11 @@ name: Publish team coordination update
 on:
   push:
     branches: [engine-integration]
-    paths: [docs/TEAM-UPDATE.md, docs/PR-REVIEWS.json, docs/WS4-TICKETS.json, .github/workflows/team-update.yml]
+    paths: [docs/TEAM-UPDATE.md, .github/workflows/team-update.yml]
 
 permissions:
   contents: read
   issues: write
-  pull-requests: write
 
 concurrency:
   group: team-coordination-update
@@ -42,57 +41,6 @@ jobs:
               await github.rest.issues.update({owner, repo, issue_number: issue.number, body});
               await github.rest.issues.createComment({owner, repo, issue_number: issue.number,
                 body: `${marker}\n@leoAndrade2332 @lennyyanza — Jett published updated priorities and assignments at ${base}/commit/${context.sha}. Please read the updated issue body and docs/STATUS.md at your next work checkpoint.`});
-            }
-            const comments = await github.paginate(github.rest.issues.listComments, {owner, repo, issue_number: 3, per_page: 100});
-            if (!comments.some(comment => comment.user.login === 'github-actions[bot]' && comment.body.includes(marker))) {
-              await github.rest.issues.createComment({owner, repo, issue_number: 3,
-                body: `${marker}\n@leoAndrade2332 @lennyyanza — WS1 answers to contract questions (a–e), the local faster-whisper STT decision, deferred language-model decision and temporary WS1 ownership of recording UI/input are published in the linked issue body. This supersedes the old blocker table. Read ${issue.html_url} and [docs/STATUS.md](${base}/blob/engine-integration/docs/STATUS.md) before the next capability/PR. Please acknowledge branch/base SHA and next owned task there. API access remains deferred.`});
-            }
-            if (fs.existsSync('docs/PR-REVIEWS.json')) {
-              const reviews = JSON.parse(fs.readFileSync('docs/PR-REVIEWS.json', 'utf8'));
-              for (const review of reviews) {
-                core.info(`Inspecting reviewed PR ${review.pullRequest}`);
-                let pull = (await github.rest.pulls.get({owner, repo, pull_number: review.pullRequest})).data;
-                if (pull.state === 'open' && pull.head.sha === review.headSha && review.retargetBase && pull.base.ref !== review.retargetBase) {
-                  const comparison = (await github.rest.repos.compareCommitsWithBasehead({owner, repo, basehead: `${review.retargetBase}...${review.headSha}`})).data;
-                  if (!['behind', 'identical'].includes(comparison.status)) throw new Error(`PR ${review.pullRequest} is not already integrated; refusing metadata retarget`);
-                  try {
-                    pull = (await github.rest.pulls.update({owner, repo, pull_number: review.pullRequest, base: review.retargetBase})).data;
-                  } catch (error) {
-                    if (error.status !== 422 || !JSON.stringify(error.response?.data ?? {}).includes('There are no new commits')) throw error;
-                    const integratedMarker = `<!-- ws1-integrated:${review.pullRequest}:${review.headSha} -->`;
-                    const oldComments = await github.paginate(github.rest.issues.listComments, {owner, repo, issue_number: review.pullRequest, per_page: 100});
-                    if (!oldComments.some(c => c.user.login === 'github-actions[bot]' && c.body.includes(integratedMarker))) {
-                      await github.rest.issues.createComment({owner, repo, issue_number: review.pullRequest,
-                        body: `${integratedMarker}\n${review.body}\n\nThe reviewed head is already an ancestor of ${review.retargetBase} (${comparison.base_commit.sha}). GitHub refuses to retarget this stacked PR because there are no new commits. Closing as already integrated; this does not claim a GitHub merge into its former stack base.`});
-                    }
-                    pull = (await github.rest.pulls.update({owner, repo, pull_number: review.pullRequest, state: 'closed'})).data;
-                  }
-                }
-                if (pull.state !== 'open' || pull.head.sha !== review.headSha) {
-                  core.notice(`Review ${review.pullRequest} skipped: head changed or PR closed`);
-                  continue;
-                }
-                const reviewMarker = `<!-- ws1-review:${review.pullRequest}:${review.headSha} -->`;
-                const existing = await github.paginate(github.rest.issues.listComments, {owner, repo, issue_number: review.pullRequest, per_page: 100});
-                if (!existing.some(c => c.user.login === 'github-actions[bot]' && c.body.includes(reviewMarker))) {
-                  core.info(`Posting review comment on PR ${review.pullRequest}`);
-                  await github.rest.issues.createComment({owner, repo, issue_number: review.pullRequest,
-                    body: `${reviewMarker}\n${review.body}\n\nPosted from the WS1-reviewed coordination commit ${context.sha}.`});
-                }
-              }
-            }
-            if (fs.existsSync('docs/WS4-TICKETS.json')) {
-              const tickets = JSON.parse(fs.readFileSync('docs/WS4-TICKETS.json', 'utf8'));
-              const allIssues = await github.paginate(github.rest.issues.listForRepo, {owner, repo, state: 'all', per_page: 100});
-              for (const ticket of tickets) {
-                const ticketMarker = `<!-- ws4-ticket:${ticket.id} -->`;
-                const existing = allIssues.find(x => !x.pull_request && x.body?.includes(ticketMarker));
-                if (!existing) {
-                  const created = await github.rest.issues.create({owner, repo, title: ticket.title, body: `${ticketMarker}\n${ticket.body}`});
-                  core.notice(`WS4 ticket: ${created.data.html_url}`);
-                }
-              }
             }
             core.notice(`Team update published: ${issue.html_url}`);
             await core.summary.addHeading('Team coordination published').addLink('Read team update', issue.html_url).write();

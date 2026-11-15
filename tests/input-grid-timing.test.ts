@@ -17,7 +17,7 @@ test('boundary timing: signed offset from the rounded step and distance to the r
  assert.equal(gridTiming({ kind: 'onset', start: Math.round(2 * STEP) }, 0, 120, SR).nearThreshold, false);
 });
 
-/** WS1's synthetic fixture (docs/reviews/PITCH-BOUNDARY-DIAGNOSTIC.md): C4/E4/G4 at a phase within the sixteenth. */
+/** WS1's synthetic fixture (pitch/grid alignment regression): C4/E4/G4 at a phase within the sixteenth. */
 function phrase(phaseMs: number) {
  const input = new Float32Array(3 * SR);
  const notes: [number, number, number][] = [[1 + phaseMs / 1000, 0.375, 60], [1.5 + phaseMs / 1000, 0.375, 64], [2 + phaseMs / 1000, 0.5, 67]];

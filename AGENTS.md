@@ -1,23 +1,14 @@
 # Agent working agreement
 
-Read PLAN.md before work. It defines the product, workstream ownership, milestone gates, and acceptance criteria.
+Read PLAN.md and docs/STATUS.md before work. At startup, before a capability, and before a PR: fetch origin, preserve local changes, and read [coordination issue #9](https://github.com/JettHiggins/VoiceSynthesizer/issues/9). STATUS is the current assignment ledger; Git history contains retired plans and reviews.
 
-Read docs/STATUS.md at startup, before starting a capability, and before opening a PR. WS1 owns that current assignment/dependency ledger; HANDOFF.md and older issues contain history and may be stale. At these checkpoints fetch remote updates and read the coordination issue titled "Team restart: recording usability and real-device fixes". Preserve local work before integrating changes. Independent laptop sessions do not receive live instructions automatically; GitHub mentions notify people, not agent conversations.
+- Start owner-specific branches from reviewed origin/engine-integration. Open small PRs against engine-integration; WS1 integrates. Do not push implementation directly to main.
+- WS1 owns engine, shared contracts, root build/CI and vendored upstream. WS2 owns UI, persistence and normally microphone/input analysis. WS3 owns services/agent, speech, language orchestration and sound research.
+- **Current round override:** WS1 owns apps/web/src/input/{pitch,analysis-worker,calibration,recorder,mic-check,voice-input,processing-profile}.ts, plus microphone.ts/capture-worklet.ts when needed for measured fixes. WS2 owns UI/presentation/persistence and uses existing input interfaces. See docs/MELODY-RETENTION-ROUND.md; general ownership otherwise persists.
+- Propose shared contract changes with compatible examples/tests before consumers depend on them. Keep browser state authoritative and audio timing independent of agent latency. Mocks and synthetic tests do not establish physical acceptance.
+- Finish independent work before reporting an exact dependency, responsible owner and unblock condition. Do not dependency-poll or invent competing interfaces. Independent laptop agents must explicitly read shared GitHub updates; mentions do not inject conversation instructions.
+- Handoffs state commit/PR, behavior, validation, limitations and next integration step. Keep STATUS concise; replace obsolete assignments rather than appending history.
+- Never commit or print secrets, raw microphone recordings, downloaded models or generated corpora. Diagnostics containing real audio require opt-in.
+- Local faster-whisper and existing free-only OpenRouter are selected. Jett selected a Google Cloud/Vertex AI migration using a friend's credits; adapter/billing/project setup is pending. No live Google calls until the credit-backed project and local authentication are configured. Do not route a Google credential through OpenRouter or silently enable another paid provider.
 
-When blocked, state the exact dependency, the agent/workstream responsible, and the change or evidence needed to unblock it. Complete independent work first, then remain available and wait/sleep instead of ending the goal or returning control solely because of the blocker. Use sleep intervals of at most 60 seconds so new instructions can be handled; check the specific dependency at reasonable intervals rather than busy-polling. Resume when the dependency is resolved. Do not invent competing contracts or cross ownership boundaries to bypass a blocker. This waiting policy supersedes older instructions in PLAN.md, STATUS.md and handoffs that say to return control or forbid dependency checks while blocked. Higher-priority runtime limits still apply.
-
-- Workstream 1 owns engine, integration, root build configuration, CI, vendored upstream, and shared contracts.
-- Workstream 2 owns UI, persistence, microphone capture, and performance analysis.
-- Workstream 3 owns backend, speech/agent orchestration, and sound research.
-
-## Current round ownership override
-
-Jett requested three balanced, independent work packages after the musical-controls test. For **docs/VOICE-RELIABILITY-ROUND.md only**, WS1 owns melodic input/calibration/segmentation/recording internals: apps/web/src/input/{pitch.ts,analysis-worker.ts,calibration.ts,recorder.ts,mic-check.ts,voice-input.ts,processing-profile.ts}, with microphone.ts/capture-worklet.ts only as needed for measured capture fixes. WS2 owns apps/web/src/ui/**, layout/theme and presentation/persistence and calls existing input methods/state; it does not edit these DSP/controller internals this round. WS3 owns services/agent/** and tests. WS1 retains contracts/engine/root CI/integration. Keep public input interfaces/wire contracts compatible so no stream waits for another implementation. This explicit temporary split supersedes the normal WS2 input ownership above for this round; general ownership otherwise persists.
-
-- Work in an owner-specific feature branch and submit small PRs. The integrator merges; do not push implementation directly to main.
-- Milestone 0 must publish contracts and mocks before independent implementation. If absent, name the blocking owner/dependency and follow the waiting policy above; do not invent competing interfaces.
-- Propose shared contract changes before using them. Include compatible examples and tests.
-- Keep real audio timing independent of backend/agent response time. Do not mark mock-only features complete.
-- Handoffs include commit/PR, behavior, validation, limitations, and next integration step.
-- Never commit secrets, raw microphone recordings, downloaded models, or large generated corpora.
-- Setup and verified foundation commands are in docs/SETUP.md; protocol and directory ownership are in docs/CONTRACTS.md. OpenRouter free-model access is authorized by Jett; credentials stay backend-local and must never be printed or committed. Other provider access requires a new credential decision.
+Setup: docs/SETUP.md. Protocol: docs/CONTRACTS.md. Current goals: docs/WORKSTREAM-{1,2,3}.md. Keep licenses and the pinned vendor revision intact.

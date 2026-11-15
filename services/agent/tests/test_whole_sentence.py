@@ -188,7 +188,7 @@ def test_at_most_one_probe_is_in_flight_per_stream(tmp_path):
     assert len(worker.probed) == 1
 
 
-# -- WS1 review of PR #43 (docs/reviews/PR43-SENTENCE-REVIEW.md): valid prefixes and coverage ------
+# -- WS1 review of PR #43 (PR43 valid-prefix regression): valid prefixes and coverage ------
 
 from groove_agent.connection import HOLD_LAG_BUDGET_SECONDS  # noqa: E402
 from test_research import FakePort  # noqa: E402
@@ -267,7 +267,7 @@ def test_held_sentences_never_push_browser_coverage_past_its_eight_second_stall_
     assert HOLD_LAG_BUDGET_SECONDS < 8.0 and worst < 8.0, worst
 
 
-# -- WS1 follow-up review (docs/reviews/PR43-followup-reproduction.py) -------------------------------
+# -- WS1 follow-up review (PR43 continuation regression) -------------------------------
 
 def test_a_request_still_going_at_the_hold_budget_is_refused_never_partly_executed(tmp_path):
     connection, port, log = research_run(
@@ -330,7 +330,7 @@ def test_a_stale_probe_result_cannot_clear_or_act_for_a_newer_probe(tmp_path):
     assert connection.speech_result(stale, "Groove, stop.", None, 0.0) == [] and state.probing is current
 
 
-# -- WS1 late-result review (docs/reviews/PR43-late-result-reproduction.py) ---------------------------
+# -- WS1 late-result review (PR43 delayed-result regression) ---------------------------
 
 def late_research_run(tmp_path, texts, speech, more=(), seconds=13.0, deliver_at=8.0):
     """Recognition of every segment is delayed until `deliver_at` seconds (a slow recognizer)."""

@@ -1,35 +1,39 @@
-# Team OpenRouter setup
+# Backend provider setup
 
-Use the reviewed engine-integration baseline. Main is not the running product. Install Python/Node and engine assets per SETUP.md first. Each teammate receives a distinct revocable OpenRouter key through encrypted password-manager/one-time secret sharing. Do not send keys in GitHub, agent chats or source. Keys under one account share its quota.
+Use current engine-integration and SETUP.md. Local faster-whisper handles recognition; language providers interpret requests, never sample timing. Familiar commands retain the deterministic path. Leave GROOVE_LLM blank for parser-only operation. No credentials belong in the browser, GitHub, agent prompts or source.
 
-From the repository root with your Python environment active:
+## Selected migration: Google Cloud / Vertex AI — not implemented yet
+
+Jett confirmed the friend's $10 credits are **Google Cloud credits**. WS3 must add a Vertex-capable adapter behind the existing bounded Deep Agents harness. Current runtime only supports OpenRouter; do not set a guessed GROOVE_LLM=gemini value and expect it to work.
+
+Before a live test, identify the Cloud project linked to the credit-bearing billing account, verify the credit's eligible services/expiry and model access, enable the required API, and choose a supported project/location/model. Cloud credits are not proof that an arbitrary AI Studio key is covered. Check the actual credit terms in Cloud Billing.
+
+Prefer each teammate's own authorized identity with Application Default Credentials; share project/location/model identifiers and grant appropriate project access rather than distributing a personal credential file. For local development Google's documented ADC login is `gcloud auth application-default login`. The adapter must select the intended project/quota project explicitly. Do not run setup or billable probes automatically as part of ordinary tests. See [Google Cloud authentication](https://cloud.google.com/vertex-ai/generative-ai/docs/start/gcp-auth) and [Cloud Billing credits](https://cloud.google.com/billing/docs/how-to/view-billing-account-credits).
+
+WS3 publishes exact supported environment variables/install instructions with the adapter. Missing configuration, permissions, quota and timeout must produce sanitized actionable errors with no silent fallback/replay. Credits do not remove quota limits.
+
+## Existing OpenRouter path
+
+Install backend dependencies from the repository root with your virtualenv active:
 
 ```sh
 python -m pip install -r services/agent/requirements-dev.txt -r services/agent/requirements-speech.txt -r services/agent/requirements-llm.txt
 ```
 
-If services/agent/.env does not already exist, copy services/agent/.env.example there. Never overwrite existing local configuration. Open that ignored file in your editor and set:
+If services/agent/.env is absent, copy services/agent/.env.example there; preserve an existing file. Edit it locally:
 
 ```dotenv
 GROOVE_LLM=openrouter
-OPENROUTER_API_KEY=<your distinct key, entered locally>
-GROOVE_LLM_MODEL=inclusionai/ling-3.2-flash:free
+OPENROUTER_API_KEY=<entered locally>
+GROOVE_LLM_MODEL=<supported free model ID>
 GROOVE_STT=faster-whisper
 GROOVE_STT_MODEL=base.en
 ```
 
-Only the backend reads this file. Process environment variables take precedence. Do not use VITE_ variables or paste a secret into a shell command/agent prompt. Start the backend (restart an existing instance after config/code changes):
+Use distinct revocable keys delivered privately if continuing OpenRouter; account quota is shared. Never use VITE_ variables for credentials. Restart the backend after configuration changes:
 
 ```sh
 python -m uvicorn groove_agent.app:app --app-dir services/agent --host 127.0.0.1 --port 8000
 ```
 
-In another terminal run npm run dev, open Vite's URL, enable audio/microphone and select Hands-free commands. Local speech downloads the model on first use. OpenRouter is language interpretation, not speech recognition or sample timing. GET /healthz reports language/speech mode without credentials. Health alone does not prove live provider success.
-
-Optional explicit live test (sends this text and compact session summary; can consume several model requests):
-
-```sh
-python services/agent/scripts/language_check.py 'Set the tempo to 110 beats per minute.' --live
-```
-
-Omit --live for an offline parser-only result. Current free-model candidate is not a proven winner. Configuration rejects paid models/fallback; quota/auth/timeout failures leave state unchanged. Tell agents the key is configured locally and must never be printed; they do not need its value in conversation. If an error occurs, share the sanitized result, not the .env file. Leave GROOVE_LLM blank to use the standalone parser without provider calls.
+Enable browser audio/microphone and Hands-free commands. GET /healthz reports modes without credentials, not live-provider success. `python services/agent/scripts/language_check.py 'Set the tempo to110.'` is offline unless explicitly passed --live; live tests can use several requests. OpenRouter rejects paid models/fallback. Share sanitized failures, never .env contents.

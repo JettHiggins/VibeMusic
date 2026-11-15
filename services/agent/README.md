@@ -124,7 +124,6 @@ Mock mode was exercised here only with synthetic metadata from the test fixtures
 ## Remaining acceptance
 
 - Local faster-whisper and optional OpenRouter Deep Agents are implemented. Human recognition/timing, a fixed command-corpus evaluation and full hands-free acceptance remain unfinished.
-- Voice-started research visibility and non-mutating voice audition still need the shared proposal in [the WS3 proposal](https://github.com/JettHiggins/VoiceSynthesizer/blob/ws3/voice-research-proposal/services/agent/VOICE-RESEARCH-PROPOSAL.md) approved/implemented. The existing UI preview is usable manually; applying a patch and Undo is not an audition substitute.
 - Listening-verified sound quality and comparison against preset-only retrieval need the shared blind kit and human listeners.
 - The original physical melody module/chord-loading failure, calibrated performance and ten-minute audible playback still require real-device evidence. Read docs/STATUS.md for current assignments and limitations.
 
@@ -203,7 +202,7 @@ the three-person listening comparison in PLAN.md.
 
 ### Speech timing inside joined singing/command segments
 
-Local recognition now returns internal word alignment: the existing wire command-span begins at the measured Groove/Grove onset with 120 ms pre-roll, rather than deleting all preceding singing in the same energy segment. It includes the measured end plus at most 120 ms of already-classified quiet. Invalid/missing alignment remains conservative. Paused wake joining and capture-time take checks stay enabled. See TIMED-SPEECH-HANDOFF.md for tests and the pending exact browser reproduction.
+Local recognition now returns internal word alignment: the existing wire command-span begins at the measured Groove/Grove onset with 120 ms pre-roll, rather than deleting all preceding singing in the same energy segment. It includes the measured end plus at most 120 ms of already-classified quiet. Invalid/missing alignment remains conservative. Paused wake joining and capture-time take checks stay enabled. Owned alignment/STT tests cover these semantics; physical acceptance remains open.
 
 ## Optional OpenRouter / Deep Agents
 
@@ -215,10 +214,14 @@ Familiar commands use the parser immediately. Unknown addressed speech can use a
 
 Each socket permits one running language request and four queued requests. Disconnect cancels pending inference. Late results are refused after take/clock/revision changes, newer edits (including revision-preserving Undo), or replacement candidates. Timeout/quota/auth failures produce explicit errors with no mutation; provider exception text is never forwarded. Parser commands remain available after provider errors.
 
-Run `python services/agent/scripts/language_check.py "Groove stop" --recording` for an offline parser result. Add `--live` only after local backend configuration to explicitly measure that text against the selected free model. It reports latency and parser agreement; agreement is not correctness. Initial live smoke tests include a successful tempo paraphrase, not a corpus/model-selection result; see LANGUAGE-HANDOFF.md for exact evidence. Proposal tools return directly after validation to avoid an unnecessary model follow-up. `test_language.py` exercises the real graph/SDK with scripted responses and disables environment-enabled providers during ordinary tests. WS4's frozen corpus, provider comparison, full browser integration and human acceptance remain open.
+Run `python services/agent/scripts/language_check.py "Groove stop" --recording` for an offline parser result. Add `--live` only after local backend configuration to explicitly measure that text against the selected free model. It reports latency and parser agreement; agreement is not correctness. Initial live smoke tests include a successful tempo paraphrase, not a corpus/model-selection result; see docs/STATUS.md for current evidence. Proposal tools return directly after validation to avoid an unnecessary model follow-up. `test_language.py` exercises the real graph/SDK with scripted responses and disables environment-enabled providers during ordinary tests. Provider comparison and full physical hands-free acceptance remain open.
 
 ## Coordinated voice research rollout
 
 `GROOVE_VOICE_RESEARCH` defaults to `0`/unset. Set it to `1` only after the reviewed browser consumer and this backend are integrated together per docs/VOICE-RESEARCH.md, then restart the backend and reload the browser together. `/healthz` reports `voiceResearch`. New `research-context` and `candidate-preview` frames are never emitted merely because the schemas exist. The flag also enables the typed `audition_candidate` language tool. Your backend credential file is not changed by tests or rollout code.
 
-Enabled voice describe/refine jobs publish context before progress, keep their original synth binding, cancel superseded work and reject older delayed speech/model intentions after a newer UI search. `Groove audition candidate two` requests the exact current candidate's existing preview; it never applies a patch or adds Undo history. Preview acknowledgments must match request/job/candidate and confirm actual browser playback. Start/finish timeouts are 10/135 seconds, with delivery margin over browser limits. New research waits for unresolved patch acceptance; unknown queued UI edits are conservatively treated as potentially pending patch changes. See VOICE-RESEARCH-HANDOFF.md for evidence and remaining combined/human gates.
+Enabled voice describe/refine jobs publish context before progress, keep their original synth binding, cancel superseded work and reject older delayed speech/model intentions after a newer UI search. `Groove audition candidate two` requests the exact current candidate's existing preview; it never applies a patch or adds Undo history. Preview acknowledgments must match request/job/candidate and confirm actual browser playback. Start/finish timeouts are 10/135 seconds, with delivery margin over browser limits. New research waits for unresolved patch acceptance; unknown queued UI edits are conservatively treated as potentially pending patch changes. See docs/STATUS.md for remaining acoustic/human gates.
+
+## Selected provider migration
+
+Jett selected Google Cloud credits for Gemini via a credit-backed Cloud/Vertex project. This adapter is not implemented yet; current OpenRouter settings remain the only hosted runtime path. Follow docs/TEAM-API-SETUP.md and MELODY-RETENTION-ROUND.md for project/authentication requirements and offline work.
