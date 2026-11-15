@@ -25,7 +25,7 @@ from .control_phrases import InputAction
 from .speech import ChunkError, StreamTracker, decode_chunk
 from .speech_pipeline import EnergySegmenter, SpeechJob, SpeechWorker
 from .speech_pipeline import Transcript
-from .speech_alignment import locate_command
+from .speech_alignment import SUNG_SYLLABLES, locate_command
 from .preview import PreviewRequests
 
 from .language import LanguageJob
@@ -40,10 +40,15 @@ REMEMBERED_UTTERANCES = 256
 # A segment that is only the wake word waits this long for the command that follows it.
 WAKE_JOIN_SECONDS = 2.0
 # The same wait applies to an addressed sentence that is not yet a complete command ("Groove, set the
-# tempo to <pause> one twenty") or that the segmenter cut at its maximum length: it is held for its
-# continuation instead of executing (or reaching the language model) as a fragment. Complete
-# commands such as "Groove stop" never wait. A held sentence is never extended beyond this length.
-MAX_SENTENCE_SECONDS = 12.0
+# tempo to <pause> one twenty"), to a segment the segmenter cut at its maximum length even when its
+# prefix already parses, and to open-ended sound descriptions ("make it sound like a warm piano
+# <pause> with a soft attack"): each is held for its continuation instead of executing, starting
+# research or reaching the language model as a fragment. Stop commands never wait.
+# Holding keeps speech-verified at the held sentence's start. The browser fails a stream whose
+# coverage lags received audio by more than 8 s (SpeechSession SPEECH_STALL_SECONDS), so a hold is
+# released once the audio received since the sentence began exceeds this budget, leaving margin for
+# recognition of the following segment.
+HOLD_LAG_BUDGET_SECONDS = 6.5
 # Without a configured recognizer, speech-audio is validated and dropped and speech-verified is
 # never sent: nothing was classified.
 # Browser input actions (MUSICAL-CONTROL-CONTRACT.md): a request the browser never starts is given up
@@ -370,22 +375,32 @@ class Connection:
         recording, armed, target = self._speech_context(job)
         return self._interpret(text, self.session, recording, take_armed=armed, recording_target=target)
 
+    def _hold_lag_exceeded(self, job: SpeechJob) -> bool:
+        rate = (self.transport or {}).get("sampleRate", 44100)
+        received = self._received_capture.get(job.clock_id, job.segment.last_frame)
+        return received - job.segment.start_frame > HOLD_LAG_BUDGET_SECONDS * rate
+
     def _unfinished(self, job: SpeechJob, text: str) -> bool:
-        """Hold a bare wake word, or one addressed sentence that does not yet parse as a command."""
+        """Hold a bare wake word, a cut segment, an open-ended sound description, or a sentence that
+        does not yet parse. A stop is never held, even inside a cut segment."""
         if _bare_wake(text):
             return True
         if self.session is None or len(split_commands(text)) != 1:
             return False  # several commands: run them now rather than delaying a stop behind a fragment
-        rate = (self.transport or {}).get("sampleRate", 44100)
-        if job.segment.last_frame - job.segment.start_frame > MAX_SENTENCE_SECONDS * rate:
+        if self._hold_lag_exceeded(job):
+            return False  # the browser's coverage-stall limit wins; act on what was heard
+        result = self._parses(job, text)
+        if isinstance(result, Command) and result.operation["type"] in ("stop-recording", "play"):
             return False
-        return isinstance(self._parses(job, text), NotUnderstood)
+        return job.segment.cut or isinstance(result, (NotUnderstood, SoundSearch))
 
     def _continues(self, held_job: SpeechJob, held_text: str, text: str, joined: str) -> bool:
         """Whether the next segment completes the held sentence rather than being separate audio."""
         tokens = tokenize(text)
         if tokens and tokens[0] in WAKE_WORDS:
             return False  # a new addressed command, not the rest of this one
+        if tokens and all(token in SUNG_SYLLABLES for token in tokens):
+            return False  # singing after the sentence is music, never part of the request
         if _bare_wake(held_text):
             return True
         recording, _, _ = self._speech_context(held_job)
@@ -406,8 +421,9 @@ class Connection:
             return []
         out: list[dict] = []
         decided = state.segmenter.decided_through
-        if (state.held_wake is not None and not state.pending
-                and decided >= state.held_wake[0].segment.last_frame + self._wake_join_frames()):
+        if state.held_wake is not None and (
+                (not state.pending and decided >= state.held_wake[0].segment.last_frame + self._wake_join_frames())
+                or self._hold_lag_exceeded(state.held_wake[0])):
             wake_job, wake_text = state.held_wake  # no command followed: excluded, then not understood
             state.held_wake = None
             out.extend(self._speech_utterance(wake_job, wake_text, now))

@@ -186,3 +186,82 @@ def test_at_most_one_probe_is_in_flight_per_stream(tmp_path):
                       seconds=3.6)
     flat(stream(connect(worker, recording=True), worker, chunks_from_wav(take)))
     assert len(worker.probed) == 1
+
+
+# -- WS1 review of PR #43 (docs/reviews/PR43-SENTENCE-REVIEW.md): valid prefixes and coverage ------
+
+from groove_agent.connection import HOLD_LAG_BUDGET_SECONDS  # noqa: E402
+from test_research import FakePort  # noqa: E402
+
+
+def research_run(tmp_path, texts, speech, more=(), seconds=9.0, recording=False):
+    worker = ScriptedWorker(texts)
+    connection = connect(worker, recording=recording)
+    connection.session["selected"] = {"trackId": "synth-1"}
+    connection._research = port = FakePort()
+    connection._voice_research = True
+    take = synth_take(tmp_path / "research.wav", hits=(), speech=speech, more_speech=more, seconds=seconds)
+    log = stream(connection, worker, chunks_from_wav(take))
+    return connection, port, log
+
+
+def test_ws1_repro_forced_cut_valid_sound_prefix_waits_for_the_whole_request(tmp_path):
+    _, port, log = research_run(tmp_path, ["Groove make it sound like a warm piano", "with a soft attack"], speech=(1, 6))
+    early = [r for chunk, replies in log if chunk["endFrame"] < frame_at(6) for r in replies if r["type"] == "research-context"]
+    assert early == []
+    assert [description for _, description, _ in port.started] == ["warm piano with a soft attack"]
+    contexts = [r for r in flat(log) if r["type"] == "research-context"]
+    assert len(contexts) == 1 and contexts[0]["description"] == "warm piano with a soft attack"
+
+
+def test_a_paused_valid_sound_prefix_is_completed_by_its_continuation(tmp_path):
+    _, port, _ = research_run(tmp_path, ["Groove, find a warm piano", "with a soft attack"],
+                              speech=(1.0, 2.2), more=((3.0, 3.8),), seconds=7.0)
+    assert [description for _, description, _ in port.started] == ["warm piano with a soft attack"]
+
+
+def test_a_complete_sound_request_starts_exactly_once_after_the_join_wait(tmp_path):
+    _, port, log = research_run(tmp_path, ["Groove, find a warm piano"], speech=(1.0, 2.2), seconds=5.0)
+    started = next(chunk for chunk, replies in log if any(r["type"] == "research-context" for r in replies))
+    assert frame_at(2.2 + 2.0) <= started["endFrame"] <= frame_at(2.2 + 0.6 + 2.0 + 0.1)
+    assert [description for _, description, _ in port.started] == ["warm piano"]
+
+
+def test_singing_after_a_sound_request_in_a_take_is_not_part_of_it(tmp_path):
+    _, port, log = research_run(tmp_path, ["Groove, find a warm piano", "la la la"], speech=(1.0, 2.2),
+                                more=((3.0, 3.8),), seconds=7.0, recording=True)
+    assert [description for _, description, _ in port.started] == ["warm piano"]
+    spans = [r for r in flat(log) if r["type"] == "command-span"]
+    assert len(spans) == 1 and spans[0]["endFrame"] < frame_at(3.0)
+
+
+def test_priority_stop_in_a_forced_cut_segment_acts_without_waiting(tmp_path):
+    worker = ScriptedWorker(["Groove, stop", "la la la"])
+    connection = connect(worker, recording=True)
+    log = stream(connection, worker, chunks_from_wav(synth_take(tmp_path / "cutstop.wav", hits=(), speech=(1, 6), seconds=7)))
+    issued = next(chunk for chunk, replies in log if any(r["type"] == "command" for r in replies))
+    assert worker.transcribed[0].segment.cut and issued["endFrame"] <= frame_at(5.1)  # at the 4 s cut, not after
+    assert commands(flat(log)) == [{"type": "stop-recording"}]
+
+
+def test_complete_commands_are_never_held(tmp_path):
+    _, worker, replies = run(tmp_path, ["Groove tempo 100", "Groove select synth three"], recording=False,
+                             speech=(1.0, 1.8), more=((2.4, 3.2),), seconds=4.2)
+    assert commands(replies) == [{"type": "tempo", "bpm": 100}, {"type": "select", "target": {"trackId": "synth-3"}}]
+
+
+def test_held_sentences_never_push_browser_coverage_past_its_eight_second_stall_limit(tmp_path):
+    # An unfinished fragment followed by long continuous speech (cut at 4 s) and more speech: the
+    # longest hold this produces. Coverage lag is what the browser's SpeechSession measures:
+    # last received frame minus the latest speech-verified throughFrame.
+    worker = ScriptedWorker(["Groove, set the tempo to", "um so I was thinking that maybe", "we could try", "something"])
+    connection = connect(worker, recording=True)
+    take = synth_take(tmp_path / "lag.wav", hits=(), speech=(1.0, 1.8), more_speech=((2.3, 7.0), (7.3, 9.5)), seconds=12)
+    verified, worst = frame_at(0), 0.0
+    for chunk, replies in stream(connection, worker, chunks_from_wav(take)):
+        for reply in replies:
+            if reply["type"] == "speech-verified":
+                verified = reply["throughFrame"]
+        worst = max(worst, (chunk["endFrame"] - verified) / CONTEXT_RATE)
+    print(f"worst coverage lag {worst:.2f} s")
+    assert HOLD_LAG_BUDGET_SECONDS < 8.0 and worst < 8.0, worst
