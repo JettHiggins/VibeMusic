@@ -37,12 +37,12 @@ class KeepListening{
   const speech=voice.getState().speech;
   if(this.wanted&&!speech.enabled){this.wanted=false;return;} // the user switched hands-free off
   if(!this.wanted||this.busy||speech.status!=='unavailable'||Date.now()<this.next)return;
-  this.busy=true;this.onMessage('Reconnecting to Groove…');
+  this.busy=true;this.onMessage('Reconnecting…');
   try{await voice.enableHandsFree();}catch{/* reported by the voice state */}
   finally{
    this.busy=false;
    if(voice.getState().speech.status==='unavailable'){this.next=Date.now()+this.wait;this.wait=Math.min(10000,this.wait*2);}
-   else{this.wait=1000;this.onMessage('Listening — say "Groove, …" to control the song.');}
+   else{this.wait=1000;this.onMessage('');}
   }
  }
 }
@@ -75,7 +75,7 @@ function App(){
   try{await voice.enableMicrophone();}catch(e){setMessage(`Microphone: ${String(e)}`);return;}
   await voice.enableHandsFree();
   keepListening?.start();
-  setMessage('Listening — say "Groove, …" to control the song.');
+  setMessage('');
  }
  function command(operation:SessionCommand['operation'],boundary:SessionCommand['boundary']='immediate'){
   setBusy(true);try{const receipt=engine.dispatch({id:crypto.randomUUID(),expectedRevision:session.revision,boundary,operation});if(receipt.type==='ack'&&receipt.status==='rejected'){setBusy(false);setMessage(receipt.reason??'Rejected');}}catch(e){setBusy(false);setMessage(String(e));}

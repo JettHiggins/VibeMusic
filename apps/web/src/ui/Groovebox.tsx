@@ -6,7 +6,7 @@ import { CommandClient, type CommandResult } from './command-client.ts';
 import { PatternEditQueue, type PatternOp } from './pattern-edit.ts';
 import { displayedTarget, noteName, playheadStep, TRACK_LABEL, type EditorEngine, type Lane, type TrackId } from './labels.ts';
 import { TransportBar } from './TransportBar.tsx';
-import { TrackList } from './TrackList.tsx';
+import { TrackList, barsLabel } from './TrackList.tsx';
 import { PianoRoll } from './PianoRoll.tsx';
 import { DrumGrid } from './DrumGrid.tsx';
 import { SoundPanel } from './SoundPanel.tsx';
@@ -108,6 +108,9 @@ export function Groovebox({ engine, voice, session, transport, enabled, busy, me
  const provisional = [...input.recorder.provisional, ...(input.recorder.live ? [input.recorder.live] : [])].filter(p => p.event.target.trackId === trackId);
  const status = patterns.lastError ?? result?.text ?? engineMessage ?? '';
  const phase = recordingPhase(transport, session.tempo, TRACK_LABEL[trackId]);
+ // Setup/diagnostics (input, microphone, sound search) start hidden; voice is the normal way in.
+ const [devOpen, setDevOpenState] = useState(() => { try { return localStorage.getItem('vs-dev-open') === '1'; } catch { return false; } });
+ const setDevOpen = (open: boolean) => { setDevOpenState(open); try { localStorage.setItem('vs-dev-open', open ? '1' : '0'); } catch { /* storage unavailable */ } };
  const tracker = useRef<TakeTracker>(emptyTracker);
  const grid = rhythmOf(session), chord = chordOf(session);
  tracker.current = trackTake(tracker.current, transport, input.recorder, grid);
@@ -116,7 +119,7 @@ export function Groovebox({ engine, voice, session, transport, enabled, busy, me
  const liveNote = input.recorder.live?.event.kind === 'note' ? noteName(snapMidiToScale(input.recorder.live.event.midi, session.pitchSnap)) : null;
  const showTake = micReady && (rec !== 'idle' || take.waiting + take.sent + take.saved + take.notKept > 0 || !!take.reason);
 
- return <div ref={root} className="vs" style={{ minHeight: '100vh', background: C.bg }}>
+ return <div ref={root} className={devOpen ? 'vs' : 'vs vs-nodev'} style={{ minHeight: '100vh', background: C.bg }}>
   <style>{workspaceCss + layoutCss}</style>
   <a href="#editor" className="vs-skip-link">Skip to editor</a>
   <h1 className="vs-sr">VoiceSynthesizer</h1>
@@ -126,12 +129,14 @@ export function Groovebox({ engine, voice, session, transport, enabled, busy, me
    voiceControl={<VoiceIndicator voice={voice} input={input} enabled={enabled} heard={heardSpeech?.clockId === transport?.clockId ? heardSpeech : null} />} onTiming={() => setTimingOpen(true)} />
   {activity}
   <TimingSetup open={timingOpen} onClose={() => setTimingOpen(false)} voice={voice} input={input} playing={!!transport?.playing} />
-  <div className="vs-body">
+  <button className="vs-dev-toggle" aria-expanded={devOpen} aria-controls="vs-inspector" onClick={() => setDevOpen(!devOpen)}
+   title={devOpen ? 'Hide setup and diagnostics' : 'Show setup and diagnostics'}>{devOpen ? 'Hide dev' : 'Dev'}</button>
+  <div className={devOpen ? 'vs-body' : 'vs-body vs-body-nodev'}>
    <aside className="vs-left" style={pane}>
     <TrackList session={session} metadata={engine.metadata} selected={trackId} enabled={enabled} locked={rec !== 'idle'} onSelect={selectTrack} send={send} />
    </aside>
    <main id="editor" tabIndex={-1} className="vs-center" style={pane} aria-label="Editor">
-    <h2>{TRACK_LABEL[trackId]}{view.pending ? ' · Saving…' : ''}</h2>
+    <h2>{TRACK_LABEL[trackId]} · {barsLabel(session.tracks.find(t => t.id === trackId)?.bars)}{view.pending ? ' · Saving…' : ''}</h2>
     <RecordingPhaseStrip phase={phase}>
      <TakeSettings grid={grid} chord={chord} options={GRID_OPTIONS} enabled={enabled}
       gridHint={gridHint(grid, takeGrid)} chordHint={chordHint(chord, session.pitchSnap)} chordBlocked={chordBlocked(trackId, enabled)}
@@ -141,7 +146,7 @@ export function Groovebox({ engine, voice, session, transport, enabled, busy, me
      onChange={settings => send({ type: 'set-pitch-snap', settings }, 'immediate')}
      onSnap={() => { if (trackId !== 'drums') send({ type: 'snap-notes', trackId }, 'next-loop'); }} />
     {trackId === 'drums'
-     ? <DrumGrid hits={view.hits} playhead={playhead} lane={lane} disabled={!enabled} eraseEnabled={eraseEventAvailable}
+     ? <DrumGrid hits={view.hits} playhead={playhead} lane={lane} disabled={!enabled} eraseEnabled={eraseEventAvailable} loopSteps={(session.tracks.find(t => t.id === 'drums')?.bars ?? 4) * 16}
        provisional={provisional.flatMap(p => p.event.target.lane ? [{ lane: p.event.target.lane as Lane, step: p.step }] : [])}
        onEdit={edit} onErase={(l, step) => erase({ trackId: 'drums', lane: l }, step)} onSelectLane={l => send({ type: 'select', target: { trackId: 'drums', lane: l } })}
        onAudition={engine.audition ? l => engine.audition!({ kind: 'drum', lane: l, velocity: 0.9 }) : undefined} />
@@ -151,7 +156,7 @@ export function Groovebox({ engine, voice, session, transport, enabled, busy, me
     {showTake && <TakeFeedbackLine take={take} liveName={liveNote} unit={trackId === 'drums' ? 'hit' : 'note'} />}
     {transcript}
    </main>
-   <aside className="vs-right" style={{ ...pane, display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 10, alignContent: 'start' }} aria-label="Inspector">
+   <aside id="vs-inspector" hidden={!devOpen} className="vs-right" style={{ ...pane, display: devOpen ? 'grid' : 'none', gridTemplateColumns: 'minmax(0, 1fr)', gap: 10, alignContent: 'start' }} aria-label="Inspector">
     <details open>
      <summary>Input</summary>
      <InputInspector voice={voice} state={input} transport={transport} enabled={enabled} melodic={trackId !== 'drums'} pitchSnap={session.pitchSnap ?? null} />
@@ -169,6 +174,10 @@ export function Groovebox({ engine, voice, session, transport, enabled, busy, me
 const pane: React.CSSProperties = { padding: 16, minWidth: 0 };
 const layoutCss = `
  .vs-body { display: grid; grid-template-columns: 210px minmax(0, 1fr) 330px; gap: 0; padding: 0; align-items: start; }
+ .vs-body-nodev { grid-template-columns: 210px minmax(0, 1fr); }
+ .vs-nodev .vs-dev-only { display: none; }
+ .vs-dev-toggle { position: fixed; right: 12px; top: 14px; z-index: 30; font-size: 11px; padding: 3px 8px; opacity: 0.7; }
+ .vs-dev-toggle:hover, .vs-dev-toggle:focus-visible { opacity: 1; }
  .vs-left { border-right: 1px solid ${C.line}; }
  .vs-right { border-left: 1px solid ${C.line}; }
  /* Long device names, URLs and provider errors wrap inside their pane instead of widening the page. */
