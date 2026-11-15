@@ -181,3 +181,23 @@ def test_typed_ui_searches_never_auto_load():
 def test_run_tool_labels():
     operations, label = run_tool("drum_pattern", {"lane": "kick", "every": 4}, song())
     assert label == "kick every 4 sixteenths" and operations[0]["type"] == "edit-pattern"
+
+
+def test_auto_load_happens_once_after_retrieval_and_once_at_completion_with_distinct_ids():
+    conn = connection()
+    job = say(conn, "Groove, can I get a bright disco synth", "u1")[0]["jobId"]
+    listing = candidates(job)
+    ten = (listing * 4)[:10]
+    issued = []
+    for status, items in [("running", ten), ("running", list(reversed(ten))), ("running", ten), ("complete", [listing[2]] + ten[:9])]:
+        out = conn.observe_research({"type": "research", "jobId": job, "status": status, "progress": 0.5, "candidates": items})
+        for message in out:
+            if message["type"] == "command":
+                issued.append(message["command"])
+                patched = song()
+                patched["revision"] = len(issued)
+                patched["tracks"][0]["patch"] = message["command"]["operation"]["patch"]
+                conn.handle({"type": "ack", "commandId": message["command"]["id"], "status": "applied", "revision": len(issued)}, 1)
+                conn.handle({"type": "session", "session": patched}, 1)
+    assert [c["id"].rsplit(":", 2)[-2] for c in issued] == ["load-retrieval", "load-final"]
+    assert issued[1]["operation"]["patch"] == listing[2]["patch"]

@@ -134,6 +134,7 @@ class _Search:
     # stay listed to swap. loaded_patch is what Groove last applied, so a later user choice is kept.
     auto_load: bool = False
     loaded_patch: Optional[str] = None
+    load_stage: str = ""  # "" -> "retrieval" (first complete candidate list) -> "final" (job complete)
 
 
 _WAKE_SPLIT = re.compile(r"(?<=\S)\s+(?=(?:%s)\b)" % "|".join(sorted(WAKE_WORDS)), re.IGNORECASE)
@@ -628,9 +629,15 @@ class Connection:
         by something else in between (a manual pick wins)."""
         if not self.auto_load_sounds or not search.auto_load or not message["candidates"] or self.session is None or search is not self._latest_search():
             return []
-        retrieval_done = message["status"] == "complete" or (message["status"] == "running" and len(message["candidates"]) >= CANDIDATES)
-        if not retrieval_done:
+        # Exactly two loads with distinct command ids (a repeated id is a duplicate to the browser):
+        # the best retrieved match as soon as the list is complete, then the final best on completion.
+        if message["status"] == "complete" and search.load_stage != "final":
+            stage = "final"
+        elif message["status"] == "running" and not search.load_stage and len(message["candidates"]) >= CANDIDATES:
+            stage = "retrieval"
+        else:
             return []
+        search.load_stage = stage
         best = message["candidates"][0]
         best_patch = json.dumps(best["patch"], sort_keys=True)
         if best_patch == search.loaded_patch:
@@ -642,7 +649,7 @@ class Connection:
         if self._patch_acceptance_pending():
             return []
         search.loaded_patch = best_patch
-        proposal = _Proposal(f"{search.job_id}:load-{message['status']}",
+        proposal = _Proposal(f"{search.job_id}:load-{stage}",
                              {"type": "apply-patch", "trackId": search.track_id, "patch": best["patch"]}, BOUNDARY["apply-patch"])
         return [self._issue(proposal, time.monotonic())]
 

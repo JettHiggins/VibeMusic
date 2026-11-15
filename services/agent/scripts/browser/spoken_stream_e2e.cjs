@@ -97,7 +97,12 @@ function check(ok, what, detail = '') {
     check(/electric piano/.test(context.m.description) && context.m.trackId === 'synth-2', 'C. heard the description for synth two', context.m.description);
     const done = await waitFor(async () => { const r = await researchState(); return r.jobId === context.m.jobId && ['complete', 'failed'].includes(r.status) ? r : null; }, 600000, 'C. research finished in the panel');
     if (done) {
-      check(done.status === 'complete' && done.candidates.length === 5 && done.candidates.every(c => !!c.previewUrl), 'C. 5 real candidates with previews', `${done.status}, ${done.candidates.length} candidates, ${((Date.now() - t0) / 1000).toFixed(1)} s`);
+      check(done.status === 'complete' && done.candidates.length === 10 && done.candidates.every(c => !!c.previewUrl), 'C. 10 real candidates with previews', `${done.status}, ${done.candidates.length} candidates, ${((Date.now() - t0) / 1000).toFixed(1)} s`);
+      // Groove loads the best match itself (auto-load); Undo after a manual choice returns to it.
+      await page.waitForTimeout(1500);
+      const autoLoaded = canon((await session()).tracks.find(t => t.id === 'synth-2').patch);
+      check(autoLoaded === canon(done.candidates[0].patch), 'C. Groove loaded the best match into synth two');
+      var beforeAccept = autoLoaded;
       t0 = Date.now();
       await say('audition');
       const preview = await waitFor(() => after(t0, 'candidate-preview')[0], 15000, 'C. spoken audition requested a preview');
@@ -122,7 +127,7 @@ function check(ok, what, detail = '') {
         const undo = await waitFor(() => commandAfter(t0, 'undo'), 15000, 'C. spoken undo produced undo');
         if (undo) {
           await waitFor(() => ackFor(undo.m.command.id)?.m.status === 'applied', 5000, 'C. undo applied');
-          check(canon((await session()).tracks.find(t => t.id === 'synth-2').patch) === original, 'C. undo restores the original patch exactly');
+          check(canon((await session()).tracks.find(t => t.id === 'synth-2').patch) === beforeAccept, 'C. undo returns to the sound Groove loaded');
         }
       }
     }
