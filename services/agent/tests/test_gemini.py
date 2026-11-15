@@ -4,6 +4,7 @@ Vertex AI is the default backend because the team's credit is Google Cloud credi
 Deep Agents harness, validation, shared cooldown and no-replay rules apply as for OpenRouter.
 """
 import asyncio
+import json
 
 import pytest
 
@@ -45,7 +46,8 @@ def test_environment_selects_gemini_on_vertex_with_no_sdk_retries(monkeypatch):
     language = language_from_env()
     model = built[0]
     assert type(model).__name__ == "ChatGoogleGenerativeAI"
-    assert (model.model, model.vertexai, model.project, model.location) == (DEFAULT_GEMINI_MODEL, True, "demo-project", "global")
+    # With an API key the project is not passed (express mode); otherwise the client ignores the key.
+    assert (model.model, model.vertexai, model.project) == (DEFAULT_GEMINI_MODEL, True, None)
     assert (model.max_retries, model.temperature, model.max_output_tokens, model.timeout) == (0, 0, 512, 8.0)
     assert language.config.api_key == FAKE_KEY  # trailing newline stripped (it breaks HTTP headers)
     assert FAKE_KEY not in repr(language.config)
@@ -134,3 +136,52 @@ def test_a_vertex_api_key_alone_uses_the_agent_platform_endpoint(monkeypatch):
     model = built[0]
     assert model.vertexai is True and model.project is None
     assert str(model.client._api_client._http_options.base_url).startswith("https://aiplatform.googleapis.com/")
+
+
+def test_vertex_key_mode_hides_project_variables_from_the_google_client(monkeypatch):
+    pytest.importorskip("langchain_google_genai")
+    import os
+    import groove_agent.language as module
+    built = []
+    monkeypatch.setattr(module, "create_graph", lambda model, **_: built.append(model))
+    env(monkeypatch, GROOVE_LLM="gemini", GOOGLE_API_KEY=FAKE_KEY, GOOGLE_CLOUD_PROJECT="demo-project",
+        GOOGLE_CLOUD_LOCATION="us-central1")
+    language_from_env()
+    # Live finding: with a project visible, the client ignores the key and needs gcloud credentials.
+    assert built[0].project is None and "GOOGLE_CLOUD_PROJECT" not in os.environ and "GOOGLE_CLOUD_LOCATION" not in os.environ
+
+
+def test_model_schema_is_flat_with_allowed_operation_names():
+    from groove_agent.language import MODEL_OPERATIONS_EXCLUDED, model_operation_schema
+    schema = model_operation_schema()
+    assert "oneOf" not in json.dumps(schema)  # Gemini's tool schema drops oneOf
+    names = schema["properties"]["type"]["enum"]
+    assert {"tempo", "mute", "select", "set-rhythm-snap", "set-chord-mode"} <= set(names)
+    assert not set(names) & MODEL_OPERATIONS_EXCLUDED
+    assert "drums" in schema["properties"]["trackId"]["enum"]  # mute drums must be expressible
+
+
+@pytest.mark.parametrize("operation, expected", [
+    # Live Gemini shapes: every optional field filled with defaults, or the operation as a JSON string.
+    ({"type": "tempo", "bpm": 128, "muted": False, "enabled": False, "step": 0, "target": {"trackId": "synth-2"}},
+     {"type": "tempo", "bpm": 128}),
+    ('{"type": "mute", "trackId": "drums", "muted": true}', {"type": "mute", "trackId": "drums", "muted": True}),
+])
+def test_model_proposals_are_cleaned_then_validated(operation, expected):
+    from test_language import scripted_model
+    from groove_agent.language import DeepLanguage, LanguageJob
+    from groove_agent.contracts import load_fixture
+    model = scripted_model([[{"name": "propose_command", "args": {"operation": operation}, "id": "c1", "type": "tool_call"}]])
+    language = DeepLanguage(LanguageConfig(api_key="placeholder-only"), model=model)
+    result = asyncio.run(language.infer(LanguageJob("u", "Groove do it", load_fixture("SessionState"), False, False)))
+    assert result.operation == expected
+
+
+def test_free_text_operations_are_rejected_not_guessed():
+    from test_language import scripted_model
+    from groove_agent.language import DeepLanguage, LanguageJob
+    from groove_agent.contracts import load_fixture
+    model = scripted_model([[{"name": "propose_command", "args": {"operation": "tempo 128"}, "id": "c1", "type": "tool_call"}]])
+    language = DeepLanguage(LanguageConfig(api_key="placeholder-only"), model=model)
+    with pytest.raises(Exception):
+        asyncio.run(language.infer(LanguageJob("u", "Groove faster", load_fixture("SessionState"), False, False)))
