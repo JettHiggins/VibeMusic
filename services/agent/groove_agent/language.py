@@ -6,6 +6,8 @@ import json
 import logging
 import os
 import re
+import threading
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Annotated, Any, Callable, Optional
@@ -172,6 +174,7 @@ def create_graph(model, voice_research: bool = False):
 class DeepLanguage:
     def __init__(self, config: LanguageConfig, model=None) -> None:
         self.config = config
+        self.gate = ProviderGate()  # one per process: shared by every connection's worker
         if model is None:
             from langchain_openrouter import ChatOpenRouter
             from openrouter import OpenRouter
@@ -247,19 +250,101 @@ def safe_language_error(error: Exception) -> str:
         return "language request timed out; no change applied"
     status = getattr(error, "status_code", None)
     if status in (402, 429):
-        return "language provider quota/rate limit reached; no change applied"
+        return ("language provider quota/rate limit reached; no change applied. "
+                "Exact commands still work, for example: Groove stop, Groove tempo 120, Groove undo")
     if status in (401, 403):
         return "language provider authentication failed; check the backend configuration"
     return "language request failed or was invalid; no change applied"
+
+
+# Shared provider cooldown. A free-model quota or rate limit (402/429) affects every connection,
+# so one gate per process stops all of them from hammering the provider. Retry-After is honored
+# when the provider sends it; otherwise the wait doubles from BACKOFF_START_S to BACKOFF_MAX_S.
+BACKOFF_START_S = 15.0
+BACKOFF_MAX_S = 300.0
+TIMEOUT_COOLDOWN_S = 10.0  # after TIMEOUT_STREAK consecutive timeouts
+TIMEOUT_STREAK = 2
+
+
+def _retry_after(error: Exception) -> Optional[float]:
+    for holder in (error, getattr(error, "response", None), getattr(error, "raw_response", None)):
+        headers = getattr(holder, "headers", None)
+        if headers is None:
+            continue
+        try:
+            value = headers.get("retry-after") or headers.get("Retry-After")
+        except Exception:
+            continue
+        try:
+            seconds = float(value)
+        except (TypeError, ValueError):
+            continue
+        if seconds >= 0:
+            return seconds
+    return None
+
+
+class ProviderGate:
+    """Whether the language provider may be called now. Thread-safe; never stores error text."""
+
+    def __init__(self, clock: Callable[[], float] = time.monotonic) -> None:
+        self._clock = clock
+        self._lock = threading.Lock()
+        self._until = 0.0
+        self._limits = 0
+        self._timeouts = 0
+        self._reason = ""
+
+    def blocked(self) -> Optional[float]:
+        """Seconds until the provider may be tried again, or None when it may be called now."""
+        with self._lock:
+            remaining = self._until - self._clock()
+            return remaining if remaining > 0 else None
+
+    def unavailable_message(self) -> Optional[str]:
+        remaining = self.blocked()
+        if remaining is None:
+            return None
+        return (f"language provider {self._reason} for about {max(1, round(remaining))} s; no change applied. "
+                "Exact commands still work, for example: Groove stop, Groove tempo 120, Groove undo")
+
+    def success(self) -> None:
+        with self._lock:
+            self._limits = 0
+            self._timeouts = 0
+
+    def failure(self, error: Exception) -> None:
+        with self._lock:
+            now = self._clock()
+            if isinstance(error, (TimeoutError, asyncio.TimeoutError)):
+                self._timeouts += 1
+                if self._timeouts >= TIMEOUT_STREAK:
+                    self._until = max(self._until, now + TIMEOUT_COOLDOWN_S)
+                    self._reason = "is not responding"
+                return
+            self._timeouts = 0
+            if getattr(error, "status_code", None) not in (402, 429):
+                return
+            hinted = _retry_after(error)
+            delay = (min(BACKOFF_MAX_S, max(1.0, hinted)) if hinted is not None
+                     else min(BACKOFF_MAX_S, BACKOFF_START_S * 2 ** self._limits))
+            self._limits += 1
+            self._until = max(self._until, now + delay)
+            self._reason = "quota/rate limit reached"
 
 
 class LanguageWorker:
     """One bounded sequential queue per connection; cancellation drops pending work on disconnect."""
     def __init__(self, language: DeepLanguage, deliver: Callable) -> None:
         self.language, self.deliver = language, deliver
+        self.gate: Optional[ProviderGate] = getattr(language, "gate", None)
         self.closed = False
         self.jobs: asyncio.Queue = asyncio.Queue(maxsize=4)
         self.task = asyncio.create_task(self._run())
+
+    def unavailable(self) -> Optional[str]:
+        """Why the provider must not be called right now (shared cooldown), or None."""
+        return self.gate.unavailable_message() if self.gate is not None else None
 
     def submit(self, job: LanguageJob) -> bool:
         if self.closed:
@@ -273,11 +358,19 @@ class LanguageWorker:
     async def _run(self) -> None:
         while True:
             job = await self.jobs.get()
+            blocked = self.unavailable()
+            if blocked is not None:
+                self.deliver(job, None, blocked)  # queued before a rate limit: fail fast, never call
+                continue
             try:
                 result = await self.language.infer(job)
             except Exception as error:
+                if self.gate is not None:
+                    self.gate.failure(error)
                 self.deliver(job, None, safe_language_error(error))
             else:
+                if self.gate is not None:
+                    self.gate.success()
                 self.deliver(job, result, None)
 
     async def close(self) -> None:

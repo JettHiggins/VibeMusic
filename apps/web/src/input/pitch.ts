@@ -26,7 +26,13 @@ export interface PitchOptions {
 export const hzToMidi = (hz: number) => 69 + 12 * Math.log2(hz / 440);
 /** Segmenter defaults: a voiced frame needs this clarity and this many dB above the noise floor. */
 export const PITCH_GATE_DB = 15;
+/** A held, periodic note can soften without becoming a fresh note or opening on room noise. */
+export const PITCH_HOLD_MARGIN_DB = 6;
 export const MIN_PITCH_CLARITY = 0.8;
+/** Clear periodic humming needs slightly less excess level than uncertain voiced input. */
+export function pitchGateDb(noiseFloorDb: number, clarity: number, holding: boolean, gateDb = PITCH_GATE_DB) {
+ return noiseFloorDb + gateDb - (holding ? PITCH_HOLD_MARGIN_DB : clarity >= 0.9 ? 3 : 0);
+}
 
 /**
  * Live pitch diagnosis for one analysis block, so a singer can see why no notes appear:
@@ -38,7 +44,7 @@ export function readPitch(frames: PitchFrame[], noiseFloorDb: number, holding: b
  if (!frames.length) return null;
  // The loudest frame represents the block; its pitch is the one a singer would expect to see.
  const f = frames.reduce((a, b) => (b.rmsDb > a.rmsDb ? b : a));
- const gate = noiseFloorDb + gateDb;
+ const gate = pitchGateDb(noiseFloorDb, f.clarity, holding, gateDb);
  const midi = f.f0 ? Math.round(hzToMidi(f.f0)) : null;
  const state: PitchState = f.rmsDb < noiseFloorDb + 6 ? 'silent' : f.rmsDb < gate ? 'quiet' : !f.f0 || f.clarity < minClarity ? 'unclear' : 'pitch';
  return { state, midi, clarity: f.clarity, levelDb: f.rmsDb, gateDb: gate, holding };
@@ -138,7 +144,7 @@ export class YinTracker {
  }
 }
 
-interface Open { start: number; pitches: number[]; clarity: number[]; peakDb: number; minSincePeak: number; minFrame: number; lastVoiced: number }
+interface Open { start: number; pitches: number[]; clarity: number[]; peakDb: number; minSincePeak: number; minFrame: number; lastVoiced: number; lastUnvoiced: number | null }
 
 /** Streaming note segmentation over PitchFrames. */
 export class NoteSegmenter {
@@ -179,13 +185,14 @@ export class NoteSegmenter {
   return notes;
  }
 
- private voiced(f: PitchFrame) { return f.f0 !== null && f.clarity >= this.minClarity && f.rmsDb >= this.noiseFloorDb + this.gate; }
+ private voiced(f: PitchFrame) { return f.f0 !== null && f.clarity >= this.minClarity && f.rmsDb >= pitchGateDb(this.noiseFloorDb, f.clarity, this.open !== null, this.gate); }
  private median(values: number[]) { const s = [...values].sort((a, b) => a - b); return s[s.length >> 1]; }
 
  private step(f: PitchFrame, notes: SungNote[]) {
   const half = this.hopFrames / 2;
   if (!this.voiced(f)) {
    this.candidate = []; this.deviating = [];
+   if (this.open) this.open.lastUnvoiced = f.frame;
    if (this.open && ++this.unvoiced >= 6) this.close(this.open.lastVoiced + half, notes);
    return;
   }
@@ -196,7 +203,7 @@ export class NoteSegmenter {
    this.candidate.push(f);
    if (this.candidate.length >= 3) {
     const c = this.candidate; this.candidate = [];
-    this.open = { start: c[0].frame - half, pitches: c.map(x => hzToMidi(x.f0!)), clarity: c.map(x => x.clarity), peakDb: Math.max(...c.map(x => x.rmsDb)), minSincePeak: Infinity, minFrame: 0, lastVoiced: f.frame };
+    this.open = { start: c[0].frame - half, pitches: c.map(x => hzToMidi(x.f0!)), clarity: c.map(x => x.clarity), peakDb: Math.max(...c.map(x => x.rmsDb)), minSincePeak: Infinity, minFrame: 0, lastVoiced: f.frame, lastUnvoiced: null };
    }
    return;
   }
@@ -205,24 +212,29 @@ export class NoteSegmenter {
   const centre = this.median(o.pitches);
   // Octave errors: a jump of ~12 semitones relative to the held note is folded back.
   if (Math.abs(Math.abs(m - centre) - 12) < 0.7) m += m > centre ? -12 : 12;
-  // Re-articulation of the same pitch: a ≥ 9 dB dip followed by a ≥ 6 dB rise splits the note.
+  // Re-articulation needs a recent break in periodic voicing as well as an envelope dip/rise.
+  // A confident, continuously voiced swell is still one held note, even if its level varies.
   if (f.rmsDb > o.peakDb) { o.peakDb = f.rmsDb; o.minSincePeak = Infinity; }
   else if (f.rmsDb < o.minSincePeak) { o.minSincePeak = f.rmsDb; o.minFrame = f.frame; }
-  if (o.minSincePeak < o.peakDb - 9 && f.rmsDb > o.minSincePeak + 6) {
+  if (o.lastUnvoiced !== null && f.frame - o.lastUnvoiced <= this.options.sampleRate * 0.06 && o.minSincePeak < o.peakDb - 9 && f.rmsDb > o.minSincePeak + 6) {
    const split = o.minFrame;
    this.close(split, notes);
-   this.open = { start: split, pitches: [m], clarity: [f.clarity], peakDb: f.rmsDb, minSincePeak: Infinity, minFrame: 0, lastVoiced: f.frame };
+   this.open = { start: split, pitches: [m], clarity: [f.clarity], peakDb: f.rmsDb, minSincePeak: Infinity, minFrame: 0, lastVoiced: f.frame, lastUnvoiced: null };
    this.deviating = [];
    return;
   }
-  // Hysteresis: a new pitch must persist ≥ 12 hops (~70 ms) before it ends the note. A sung step
-  // holds; a wide vibrato excursion (±0.6 semitone at 5–6 Hz) stays beyond 0.9 for well under that.
-  if (Math.abs(m - centre) > 0.9) {
+  // A semitone change must be observable before reaching its exact centre: quiet/noisy YIN
+  // frames can stay just shy of a full semitone. Keep the 12-hop (~70 ms) persistence test
+  // so brief excursions from wide vibrato still cannot become a new note. Anchor this
+  // comparison to the held MIDI note, not a momentarily biased raw vibrato median.
+  if (Math.abs(m - Math.round(centre)) > 0.65) {
    this.deviating.push({ ...f, f0: 440 * 2 ** ((m - 69) / 12) });
+   // Forget the mixed-pitch transition instead of letting its first frame veto a settled note forever.
+   if (this.deviating.length > 12) this.deviating.shift();
    if (this.deviating.length >= 12 && this.deviating.every(x => Math.abs(hzToMidi(x.f0!) - hzToMidi(this.deviating[0].f0!)) <= 1)) {
     const d = this.deviating; this.deviating = [];
     this.close(d[0].frame - half, notes);
-    this.open = { start: d[0].frame - half, pitches: d.map(x => hzToMidi(x.f0!)), clarity: d.map(x => x.clarity), peakDb: Math.max(...d.map(x => x.rmsDb)), minSincePeak: Infinity, minFrame: 0, lastVoiced: f.frame };
+    this.open = { start: d[0].frame - half, pitches: d.map(x => hzToMidi(x.f0!)), clarity: d.map(x => x.clarity), peakDb: Math.max(...d.map(x => x.rmsDb)), minSincePeak: Infinity, minFrame: 0, lastVoiced: f.frame, lastUnvoiced: null };
    }
    return;
   }

@@ -117,10 +117,10 @@ test('the mic test report holds measurements only', () => {
 test('live pitch diagnosis explains why singing does or does not become notes', async () => {
  const { readPitch } = await import('../apps/web/src/input/pitch.ts');
  const f = (rmsDb: number, f0: number | null, clarity: number) => ({ frame: 0, rmsDb, f0, clarity });
- // Noisy room from real testing: floor -39 dBFS, so notes need -24 dBFS.
+ // Noisy room from real testing: floor -39 dBFS; clear periodic input uses the -27 dBFS acquisition gate.
  assert.equal(readPitch([f(-44, 220, 0.9)], -39, false)!.state, 'silent');
  const quiet = readPitch([f(-30, 220, 0.95)], -39, false)!;
- assert.deepEqual([quiet.state, quiet.midi, quiet.gateDb], ['quiet', 57, -24]);
+ assert.deepEqual([quiet.state, quiet.midi, quiet.gateDb], ['quiet', 57, -27]);
  assert.equal(readPitch([f(-20, 220, 0.6)], -39, false)!.state, 'unclear');
  assert.equal(readPitch([f(-20, null, 0)], -39, false)!.state, 'unclear');
  const ok = readPitch([f(-40, 110, 0.9), f(-18, 261.63, 0.93)], -39, true)!;
@@ -130,7 +130,7 @@ test('live pitch diagnosis explains why singing does or does not become notes', 
  const check = new MicCheck(SR);
  assert.match(check.state(-39).pitchAdvice, /Sing or hum/);
  check.add(frame(1024, -30, { pitch: quiet }));
- assert.match(check.state(-39).pitchAdvice, /notes need -24 dBFS: sing louder or closer, or reduce room noise/);
+ assert.match(check.state(-39).pitchAdvice, /notes need -27 dBFS: sing louder or closer, or reduce room noise/);
  check.add(frame(2048, -20, { pitch: readPitch([f(-20, 220, 0.6)], -39, false) }));
  assert.match(check.state(-39).pitchAdvice, /clarity 0.60, needs 0.80/);
  check.add(frame(3072, -18, { pitch: ok }));
@@ -144,7 +144,7 @@ test('live pitch diagnosis explains why singing does or does not become notes', 
  const lowMargin = reference.state(-39);
  assert.equal(lowMargin.foregroundDb, -30);
  assert.equal(lowMargin.foregroundMarginDb, 9);
- assert.match(lowMargin.foregroundAdvice, /9 dB above room noise; notes need about 15 dB/);
+ assert.match(lowMargin.foregroundAdvice, /9 dB above room noise; notes need about 12 dB/);
  const clearReference = new MicCheck(SR);
  const normalPitch = readPitch([f(-18, 220, 0.95)], -39, false)!;
  for (let i = 0; i < 30; i++) clearReference.add(frame((i + 1) * Math.round(SR * 0.025), -18, { pitch: normalPitch }));

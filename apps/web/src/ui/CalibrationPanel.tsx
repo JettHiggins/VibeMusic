@@ -17,14 +17,8 @@ export function CalibrationPanel({ voice, state, disabled, playing }: { voice: V
  const [verify, setVerify] = useState(false);
  const start = () => { void voice.calibrateLatency({ verify }); };
 
- const silence = state.silenceRun;
+ // Countdown, progress and Cancel for a running measurement are shown by ActiveInputRun, outside this optional section.
  return <div aria-label="Timing calibration" style={box}>
-  {silence && <div role="status" aria-live="polite" style={{ margin: '6px 0' }}>
-   {silence.phase === 'countdown'
-    ? <div style={{ fontSize: 24, fontWeight: 700 }}>Stay quiet… measuring in {silence.countdownLeft}</div>
-    : <div style={{ fontWeight: 600 }}>Measuring room noise: stay quiet; singing and voices are excluded (up to 6 seconds)</div>}
-   <button onClick={() => voice.cancelCalibration()}>Cancel</button>
-  </div>}
   <div style={row}>
    <strong>Timing</strong>
    {cal && <span>{cal.latencySource === 'tap-along' ? `measured ${measuredMs} ms` : `browser estimate ${measuredMs} ms (not measured)`}{trim ? `, trim ${trim > 0 ? '+' : ''}${trim} ms` : ''}</span>}
@@ -41,20 +35,7 @@ export function CalibrationPanel({ voice, state, disabled, playing }: { voice: V
    <button disabled={disabled || playing} onClick={start}>{verify ? 'Start timing check' : 'Start calibration'}</button>
   </div>}
 
-  {run && <div role="status" aria-live="polite" style={{ margin: '6px 0' }}>
-   {run.phase === 'countdown'
-    ? <div style={{ fontSize: 28, fontWeight: 700 }}>Get ready… {run.countdownLeft}</div>
-    : <>
-     <div>{run.phase === 'practice' ? `Practice ${run.practiceDone}/4: tap with the clicks` : run.phase === 'measuring' ? `Measuring ${run.measuredDone}/${run.measuredTotal}: keep tapping` : 'Analysing…'}</div>
-     <div style={{ display: 'flex', gap: 3, margin: '4px 0' }}>
-      {Array.from({ length: 4 + run.measuredTotal }, (_, i) => {
-       const done = i < 4 ? i < run.practiceDone : i - 4 < run.measuredDone;
-       return <span key={i} style={{ width: 16, height: 8, borderRadius: 2, background: done ? (i < 4 ? C.muted : C.ok) : C.raised }} />;
-      })}
-     </div>
-    </>}
-   <button onClick={() => voice.cancelCalibration()}>Cancel</button>
-  </div>}
+  {run && <div style={{ margin: '6px 0', color: C.muted }}>Timing calibration running; follow the countdown above.</div>}
 
   {result && !run && <div role="status" style={{ color: result.ok ? C.ok : C.warn }}>{result.ok ? '✓ ' : '⚠ '}{result.text}
    {result.suggestTrimMs !== undefined && <> <button disabled={disabled} onClick={() => voice.setOffsetAdjust(result.suggestTrimMs!)}>Apply trim {result.suggestTrimMs > 0 ? '+' : ''}{result.suggestTrimMs} ms</button></>}

@@ -1,6 +1,6 @@
 import type { AnalysisFrame } from './microphone.ts';
 import type { PitchReading } from './pitch.ts';
-import { PITCH_GATE_DB, MIN_PITCH_CLARITY } from './pitch.ts';
+import { pitchGateDb, MIN_PITCH_CLARITY } from './pitch.ts';
 
 const NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 const name = (midi: number) => `${NAMES[midi % 12]}${Math.floor(midi / 12) - 1}`;
@@ -87,10 +87,11 @@ export class MicCheck {
   const p = this.pitch?.reading ?? null;
   const foregroundDb = this.foreground.length >= Math.ceil(this.sampleRate / 1024 * 0.5) ? this.percentile(this.foreground.map(x => x.db), 0.5) : null;
   const foregroundMarginDb = foregroundDb === null ? null : foregroundDb - noiseFloorDb;
+  const requiredMarginDb = pitchGateDb(noiseFloorDb, p?.clarity ?? 0, false) - noiseFloorDb;
   const foregroundAdvice = foregroundMarginDb === null
    ? 'Sing a steady note at your usual volume for about 1 second to measure it against the room.'
-   : foregroundMarginDb < PITCH_GATE_DB
-    ? `Your normal-volume voice is ${foregroundMarginDb.toFixed(0)} dB above room noise; notes need about ${PITCH_GATE_DB} dB. Move closer to the mic or reduce room noise, then recheck.`
+   : foregroundMarginDb < requiredMarginDb
+    ? `Your normal-volume voice is ${foregroundMarginDb.toFixed(0)} dB above room noise; notes need about ${requiredMarginDb} dB. Move closer to the mic or reduce room noise, then recheck.`
     : `Your normal-volume voice is ${foregroundMarginDb.toFixed(0)} dB above room noise and clears the pitch level gate. If notes still do not appear, check pitch stability and speech verification.`;
   const pitchAdvice = !p || p.state === 'silent' ? 'Sing or hum a steady note to check pitch detection.'
    : p.state === 'quiet' ? `Voice heard at ${p.levelDb.toFixed(0)} dBFS but notes need ${p.gateDb.toFixed(0)} dBFS: sing louder or closer${noisyRoom ? ', or reduce room noise and Measure silence again' : ''}.`

@@ -158,10 +158,17 @@ def test_invalid_model_operation_cannot_escape_connection_validation():
 
 def test_connection_language_backlog_is_bounded():
     connection, language = connection_with_language()
-    for i in range(5):
-        assert [r["type"] for r in connection.handle(utterance(request=f"u{i}"), 0)] == ["command-span"]
-    replies = connection.handle(utterance(request="overflow"), 0)
+    words = ["glassy", "warm", "dusty", "bright", "hollow"]
+    for i, word in enumerate(words):
+        text = f"Groove transform this into {word} bells"
+        assert [r["type"] for r in connection.handle(utterance(text, request=f"u{i}"), 0)] == ["command-span"]
+    replies = connection.handle(utterance("Groove transform this into soft bells", request="overflow"), 0)
     assert len(language.jobs) == 5 and [r["type"] for r in replies] == ["command-span", "error"]
+    # An identical request already being interpreted is not sent to the provider twice.
+    connection._language_pending.clear()
+    connection.handle(utterance("Groove transform this into icy bells", request="a"), 0)
+    replies = connection.handle(utterance("Groove, transform this into icy bells.", request="b"), 0)
+    assert replies[-1]["message"] == "the same request is already being interpreted" and len(language.jobs) == 6
 
 
 def test_language_inference_never_holds_classified_coverage_of_excluded_command_audio(tmp_path):
