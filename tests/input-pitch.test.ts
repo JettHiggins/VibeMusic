@@ -167,3 +167,13 @@ test('wide vibrato stays one note across entry phases and normal vibrato rates',
   assert.deepEqual(notes.map(n=>n.midi),[60],`${vibratoHz} Hz phase ${vibratoPhase}: ${JSON.stringify(notes)}`);
  }
 });
+
+
+test('a mixed transition frame cannot veto the following settled pitch indefinitely', () => {
+ const hop=256,seg=new NoteSegmenter({sampleRate:SR,hop,noiseFloorDb:-60});
+ const pitches=[...Array(40).fill(67),66.3,66.1,65.9,...Array(60).fill(65)];
+ const frames=pitches.map((m,i)=>({frame:i*hop,f0:midiHz(m),clarity:.98,rmsDb:-25}));
+ const notes=[...seg.push(frames),...seg.flush(pitches.length*hop)];
+ assert.deepEqual(notes.map(n=>n.midi),[67,65]);
+ assert.ok(Math.abs(notes[1].startFrame-40*hop)<4*hop,'transition should retain its boundary rather than drop the note');
+});
