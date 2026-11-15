@@ -104,39 +104,55 @@ Jett integrated `366f07e` (protocol) and `4132702` (cooldown). This branch merge
   - Audible preview, applying the patch in the engine and Undo in the browser are not covered by this script.
 - **"Stale service" claim corrected:** the base before `366f07e` had no `browser-status` handler at all, so the earlier "unsupported browser-status" report is explained by the missing handler. A stale service is not established. Check `/healthz` and the process working directory when testing.
 
-## Real browser checks (headless Chromium)
+## WS1 follow-up review (docs/reviews/PR43-followup-reproduction.py)
 
-Run on head `c27cfd5`, with the app on 5173 (`--strictPort`) and this service on 8000.
-- **Service:** faster-whisper `base.en`, SLOOP/CLAP research and voice research on.
-- **Browser:** headless Chromium through the real page, coordinator, `BrowserActionRouter`, `VoiceInput` executor, `SpeechSession`, engine and WebSocket.
-- **Microphone:** replaced by quiet synthetic room tone plus injected synthesized speech, the same boundary as `tests/browser/input-action-lifecycle.js`.
-- **Scripts:** `services/agent/scripts/browser/`.
+Both cases now pass, along with the original 5 s case.
+- **Request still going at the budget:** when `HOLD_LAG_BUDGET_SECONDS` is reached while the sentence is still open or being transcribed, the held request is refused: "that request was too long to hold while listening; nothing was changed. Say it again as one sentence of under 5.5 seconds".
+  - Speech continuing it belongs to the refused request: it's excluded from a take and never acted on alone.
+  - Coverage advances only over classified audio.
+  - If the sentence has ended at the budget (nothing open or pending), it's acted on.
+  - In Jett's continuous 1–9.5 s request, nothing starts and one refusal is sent.
+- **Failed probe:** a finished early-stop probe (failed or irrelevant) clears its slot, only while it's still the current probe, so a later dip can still catch "Groove stop". A stale probe result never clears or acts for a newer probe.
+- **Setup message:** the "not configured" text now gives the actual setup (`GROOVE_RESEARCH=sloop GROOVE_EMBEDDER=clap`, the engine build location, the cached CLAP model, minutes for the first corpus build) instead of implying WS1's renderer was missing.
 
-**`executor_research_e2e.js`** (typed transcripts over the real socket):
-- **Calibration:** "calibrate noise" made the service send a `browser-action`.
-  - The executor ran countdown then measuring and measured −86.5 dBFS.
-  - It acknowledged `running`, then `complete` ("Noise floor -86.5 dBFS"), after 6 `browser-status` snapshots.
-  - The input revision went from 0 to 1.
-- **Key:** "key D minor" applied `set-pitch-snap` and changed the session's key.
-- **Sound search:** "make it sound like a warm electric piano" on synth two:
-  - One `research-context` and 11 research updates.
-  - The research panel finished in 63.9 s (warm corpus) with 5 candidates, all with previews. Candidate 2's preview decoded in the page as 3.0 s of audio, peak 0.55.
-- **Accept and undo:** "use number two" applied the patch (the engine patch changed), and "undo" restored it exactly.
-- **Errors:** no "unsupported message" errors from the service, and no page errors.
+## Real browser gates (headless Chromium, `services/agent/scripts/browser/*.cjs`)
 
-**`spoken_stream_e2e.js`** (synthesized speech through the browser's own speech stream):
-- **Paused sentence:** "Groove, set the tempo to" ⟨0.9 s⟩ "one forty" gave one `tempo 140` command and no errors.
-- **Stop during a take:** "Groove, stop" with a sung tone starting 0.35 s after it:
-  - `command-span`, then `stop-recording` 0.36 s after the clip ended, while the singing continued.
-  - Applied with playback continuing (`playing: true`, recording idle).
-- **Coverage:** 319 speech-verified updates, with no coverage stall, discontinuity or page errors.
-- **Harness note:** decoding clip audio on the page's main thread during capture caused a "Microphone capture discontinuity" in headless Chromium, so the script pre-decodes its clips. That is a harness constraint, not a service result.
+**Setup:**
+- **Service:** this branch on 8000, with faster-whisper `base.en`, SLOOP/CLAP research (warm corpus) and voice research on.
+- **App:** on 5173 with `--strictPort`.
+- **Browser:** the real page, `SpeechSession`, capture worklets, coordinator, `BrowserActionRouter`, `VoiceInput` executor, engine and socket.
+- **Microphone:** replaced by quiet synthetic room tone plus predecoded Windows SAPI speech clips. The clips are never committed.
+- **Pass/fail:** every check is asserted. Waits fail on timeout and report the browser's own speech-failure reason. The scripts exit non-zero on any failure.
 
-This is synthesized speech, not a human microphone or hearing check.
+**`spoken_stream_e2e.cjs`** (spoken except the typed "select synth two" and "record synth one"):
+- **A. Paused sentence:** "Groove, set the tempo to" ⟨0.9 s⟩ "one forty" gave exactly one `tempo 140`, acknowledged, with no errors.
+- **C. Acoustic sound request:**
+  - The described "warm electric piano" for synth two was announced with a `research-context`.
+  - The panel completed with 5 real candidates, all with previews, in 68–84 s (warm).
+  - Spoken "audition candidate two" produced a `candidate-preview` for candidate two, and the browser's real `preview-ack` went started then ended.
+  - Spoken "use number two" sent `apply-patch` with exactly candidate two's patch (compared by value), acknowledged applied; the engine patch equals it.
+  - Spoken "undo" restored the original patch exactly.
+- **B. Stop with singing straight after:**
+  - Recording was confirmed (through a persistent transport subscription) before "Groove, stop" was spoken.
+  - A sung tone started 0.35 s after the words. `stop-recording` arrived 0.30–0.42 s after the words, with the command-span first.
+  - Exactly one command was sent, recording went idle, and playback kept going.
+- **Throughout:** browser speech state never `unavailable`, no unsupported errors, no page errors.
+- **Result: 4 of 5 full runs passed every check.** One early run (before failure diagnostics existed) lost the agent connection during the first sentence. That matches the intermittent browser capture failure WS1 observed. The gate now reports the browser's failure reason if it recurs. Not fixed here: capture is WS1-owned this round.
+
+**`executor_research_e2e.cjs`** (typed transcripts; covers the executor and research wiring, not acoustics):
+- **Calibration:** "calibrate noise" made the service send a `browser-action`. The executor acknowledged `running` then `complete` with a real −86.6 dBFS measurement, and the input revision went up by 1.
+- **Key:** D minor applied.
+- **Sound search:** 5 candidates with previews on synth two, announced once.
+- **Preview:** candidate two's preview decodes as audible audio. This is fetch and decode only, not a playback acknowledgment.
+- **Accept and undo:** accept applies exactly candidate two, and undo restores exactly.
+- **Errors:** none unsupported, no page errors.
+- **Result: all checks passed.**
+
+**Not covered:** a human microphone or room, listening quality of the candidates, and live language-model quality.
 
 ## Checks (Windows, Python 3.13)
 
-- **Backend suite:** `pytest -q` → **437 passed, 6 skipped**, now including the 5 real SLOOP engine tests (they previously errored only because the repo root was not on the import path).
+- **Backend suite:** `pytest -q` → **441 passed, 6 skipped**, now including the 5 real SLOOP engine tests (they previously errored only because the repo root was not on the import path).
 - **New test files:**
   - `test_browser_protocol.py` (15 tests, including a real FastAPI WebSocket session)
   - `test_provider_resilience.py` (13 tests: scripted 402/429/Retry-After/timeouts, a worker storm test, and a real WebSocket degrade test)

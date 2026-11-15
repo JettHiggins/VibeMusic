@@ -1,11 +1,15 @@
 // Usage: start the app (5173, strictPort) and this service (8000) with GROOVE_STT=faster-whisper,
 // GROOVE_RESEARCH=sloop GROOVE_EMBEDDER=clap GROOVE_VOICE_RESEARCH=1; Playwright from the global npm install.
-// node services/agent/scripts/browser/executor_research_e2e.js
+// node services/agent/scripts/browser/executor_research_e2e.cjs
 // Headless Chromium end to end against the running app (5173) and WS3 service (8000).
 // Real page, coordinator, BrowserActionRouter, VoiceInput executor, engine and service; only the
 // physical microphone is replaced by quiet synthetic room tone (as tests/browser/input-action-lifecycle.js).
 const path = require('path');
 const { chromium } = require(path.join(process.env.APPDATA, 'npm', 'node_modules', 'playwright'));
+
+const failures = [];
+function check(ok, what, detail = '') { console.log(`${ok ? 'PASS' : 'FAIL'} ${what}${detail ? ' — ' + detail : ''}`); if (!ok) failures.push(what); }
+const canon = v => JSON.stringify(v, (k, x) => x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.entries(x).sort(([a], [b]) => a.localeCompare(b))) : x);
 
 (async () => {
   const browser = await chromium.launch({ args: ['--autoplay-policy=no-user-gesture-required'] });
@@ -55,13 +59,19 @@ const { chromium } = require(path.join(process.env.APPDATA, 'npm', 'node_modules
   const after = await status();
   console.log('   phases seen:', [...phases].join(' -> '), '| after:', JSON.stringify({ rev: after.inputRevision, cal: after.calibration }));
   since(t0, m => ['browser-action', 'browser-action-ack', 'error', 'utterance'].includes(m.type)).forEach(f => console.log('   ' + show(f)));
+  const action = since(t0, m => m.type === 'browser-action')[0];
+  check(action?.m.operation?.type === 'calibrate-input' && action.m.operation.mode === 'noise', 'calibrate noise -> browser-action from the service');
+  const acks = action ? since(t0, m => m.type === 'browser-action-ack' && m.id === action.m.id).map(f => f.m.status) : [];
+  check(acks.join(',') === 'running,complete', 'executor acknowledged running then complete', acks.join(','));
+  check(after.inputRevision === before.inputRevision + 1 && after.calibration.noiseMeasured === true, 'real noise measurement applied (input revision +1)', JSON.stringify(after.calibration));
   console.log('   browser-status frames sent:', since(t0, m => m.type === 'browser-status').length);
 
   // 2. Key command
   t0 = Date.now();
   console.log('2. key D minor:', await submit('key D minor'));
   await page.waitForTimeout(800);
-  console.log('   session pitchSnap:', JSON.stringify(await page.evaluate(() => globalThis.__voicesynth.engine.getSession().pitchSnap)));
+  const snap = await page.evaluate(() => globalThis.__voicesynth.engine.getSession().pitchSnap);
+  check(snap?.root === 2 && snap?.scale === 'minor', 'key D minor applied to the session', JSON.stringify(snap));
   since(t0, m => ['command', 'ack', 'error'].includes(m.type)).forEach(f => console.log('   ' + show(f)));
 
   // 3. Spoken-style sound request through real research (voice research context)
@@ -75,7 +85,9 @@ const { chromium } = require(path.join(process.env.APPDATA, 'npm', 'node_modules
   console.log(`   research panel after ${((Date.now() - t0) / 1000).toFixed(1)} s:`, JSON.stringify(research));
   const ctx = since(t0, m => m.type === 'research-context'); console.log('   research-context frames:', ctx.length, '| research updates:', since(t0, m => m.type === 'research').length);
   const firstPreview = await page.evaluate(async () => { const r = globalThis.__voicesynth.research; const s = r.getState ? r.getState() : r.state; const url = s.candidates[1]?.previewUrl; if (!url) return null; const res = await fetch(url); const buf = await res.arrayBuffer(); const ctx = globalThis.__voicesynth.engine.getAudioContext(); const audio = await ctx.decodeAudioData(buf); let peak = 0; const d = audio.getChannelData(0); for (const v of d) peak = Math.max(peak, Math.abs(v)); return { bytes: buf.byteLength, seconds: audio.duration, peak }; });
-  console.log('   candidate 2 preview decoded in page:', JSON.stringify(firstPreview));
+  check(research.status === 'complete' && research.candidates === 5 && research.preview.every(Boolean) && research.track === 'synth-2', 'typed description -> 5 real candidates with previews on synth two', JSON.stringify(research));
+  check(ctx.length === 1, 'research announced once with research-context');
+  check(!!firstPreview && firstPreview.seconds > 1 && firstPreview.peak > 0.01, 'candidate two preview decodes as audible audio (fetch/decode only, not a playback ack)', JSON.stringify(firstPreview));
 
   // 4. Accept and Undo
   t0 = Date.now();
@@ -86,8 +98,13 @@ const { chromium } = require(path.join(process.env.APPDATA, 'npm', 'node_modules
   await page.waitForTimeout(1500);
   const patchUndone = await page.evaluate(() => JSON.stringify(globalThis.__voicesynth.engine.getSession().tracks.find(t => t.id === 'synth-2').patch));
   since(t0, m => ['command', 'ack', 'error'].includes(m.type)).forEach(f => console.log('   ' + show(f)));
-  console.log('   patch changed by accept:', patchAccepted !== patchBefore, '| restored by undo:', patchUndone === patchBefore);
+  const candidateTwo = await page.evaluate(() => { const r = globalThis.__voicesynth.research; const s = r.getState ? r.getState() : r.state; return s.candidates[1]?.patch; });
+  check(canon(JSON.parse(patchAccepted)) === canon(candidateTwo), 'use number two applied exactly candidate two');
+  check(patchUndone === patchBefore, 'undo restored the original patch exactly');
   const unsupported = frames.filter(f => f.dir === 'in' && f.m.type === 'error' && /unsupported/.test(f.m.message));
-  console.log('unsupported-message errors from service:', unsupported.length, '| page errors:', errors.length ? errors : 'none');
+  check(unsupported.length === 0, 'no unsupported-message errors from the service');
+  check(errors.length === 0, 'no page errors', errors.join(' | '));
   await browser.close();
+  console.log(failures.length ? `\n${failures.length} FAILED: ${failures.join('; ')}` : '\nALL CHECKS PASSED');
+  process.exit(failures.length ? 1 : 0);
 })().catch(e => { console.error('E2E FAILED', e); process.exit(1); });
