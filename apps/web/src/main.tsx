@@ -14,6 +14,9 @@ import {Groovebox} from './ui/Groovebox.tsx';
 const initialSession=createSession();
 // Keep the existing first synth's default voice, but never seed a song on launch.
 initialSession.tracks[0].patch.engine=1;
+// New projects loop every track over 1 bar (short segments are easier to build up by voice);
+// "make the drums four bars" or the Loop selector lengthens a track. Saved projects keep their length.
+for(const track of initialSession.tracks)track.bars=1;
 const engine=new BrowserEngine(initialSession);
 const agent=new WebSocketAgent();
 const voice=new VoiceInput(engine);
