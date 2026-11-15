@@ -20,11 +20,13 @@ interface Props {
  onErase: (step: number) => void;
  onAudition?: (midi: number, on: boolean) => void;
  label: string;
+ /** The track's loop length in steps (16/32/64): only these steps are shown, zoomed to the full width. */
+ loopSteps?: number;
 }
 export type LiveState = 'live' | 'provisional' | 'submitted';
 type Drag = { kind: 'move' | 'resize'; id: string; startX: number; startY: number; step: number; midi: number; duration: number; dSteps: number; dRows: number };
 
-const ROWS = 25, ROW_H = 14, KEYS_W = 46;
+const ROW_H = 16, KEYS_W = 46, MIN_ROWS = 13, MAX_ROWS = 72;
 /** Live = solid outline, lightly filled and labelled; released = dashed; sent to the engine = dotted and fainter. */
 const LIVE_STYLE: Record<LiveState, React.CSSProperties> = {
  live: { border: `1px solid ${C.accent}`, background: '#f4f4f526', color: C.accent },
@@ -56,7 +58,24 @@ function EdgeMarker({ side, notes, onShow }: { side: 'above' | 'below'; notes: O
  * double-click). Synth tracks are monophonic, so notes a change lands on are replaced, as in the
  * engine. Edits apply through the pattern queue at the next loop.
  */
-export function PianoRoll({ notes, provisional, playhead, disabled, eraseEnabled = true, onEdit, onErase, onAudition, label }: Props) {
+export function PianoRoll({ notes: allNotes, provisional: allProvisional, playhead: rawPlayhead, disabled, eraseEnabled = true, onEdit, onErase, onAudition, label, loopSteps = STEPS }: Props) {
+ // Only the track's loop is shown (zoomed): events beyond it are kept by the engine but not played.
+ const span = Math.max(1, Math.min(STEPS, loopSteps));
+ const notes = useMemo(() => allNotes.filter(n => n.step < span), [allNotes, span]);
+ const provisional = useMemo(() => allProvisional.map(p => ({ ...p, step: p.step % span })), [allProvisional, span]);
+ const playhead = rawPlayhead === null ? null : rawPlayhead % span;
+ // Fill the available height: as many pitch rows as fit (the editor pane is resizable).
+ const box = useRef<HTMLDivElement>(null), toolbar = useRef<HTMLDivElement>(null);
+ const [ROWS, setRows] = useState(25);
+ useEffect(() => {
+  const el = box.current; if (!el || typeof ResizeObserver === 'undefined') return;
+  const observer = new ResizeObserver(([entry]) => {
+   const bar = toolbar.current ? toolbar.current.getBoundingClientRect().height + 6 : 36;
+   const rows = Math.floor((entry.contentRect.height - bar - 2) / ROW_H);
+   setRows(Math.max(MIN_ROWS, Math.min(MAX_ROWS, rows)));
+  });
+  observer.observe(el); return () => observer.disconnect();
+ }, []);
  const [center, setCenter] = useState(() => centerPitch(notes));
  const [length, setLength] = useState(2);
  const [selected, setSelected] = useState<string | null>(null);
@@ -65,7 +84,7 @@ export function PianoRoll({ notes, provisional, playhead, disabled, eraseEnabled
  const hadNotes = useRef(notes.length > 0);
  // Re-center once when a previously empty roll gets its first notes (e.g. after a take).
  useEffect(() => { if (!hadNotes.current && notes.length) { hadNotes.current = true; setCenter(centerPitch(notes)); } }, [notes]);
- const rows = useMemo(() => visibleRows(center, ROWS), [center]);
+ const rows = useMemo(() => visibleRows(center, ROWS), [center, ROWS]);
  const rowOf = (midi: number) => rows.indexOf(midi);
  // Follow sung notes outside the view, by whole octaves. Any manual navigation while a take is on screen
  // pauses following until the live/queued notes are gone, so the roll never fights the Oct buttons.
@@ -95,7 +114,7 @@ export function PianoRoll({ notes, provisional, playhead, disabled, eraseEnabled
  const onGridDown = (e: React.PointerEvent) => {
   if (disabled || e.button !== 0) return;
   const { x, y, w } = local(e);
-  const cell = cellAt(x, y, w, ROW_H, rows);
+  const cell = cellAt(x, y, w, ROW_H, rows, span);
   if (!cell) return;
   setSelected(null);
   onEdit(placeNote(cell.step, cell.midi, length));
@@ -111,7 +130,7 @@ export function PianoRoll({ notes, provisional, playhead, disabled, eraseEnabled
  };
  const onMove = (e: React.PointerEvent) => {
   if (!drag) return;
-  const stepW = grid.current!.getBoundingClientRect().width / STEPS;
+  const stepW = grid.current!.getBoundingClientRect().width / span;
   setDrag({ ...drag, dSteps: Math.round((e.clientX - drag.startX) / stepW), dRows: Math.round((e.clientY - drag.startY) / ROW_H) });
  };
  const onUp = () => {
@@ -124,17 +143,19 @@ export function PianoRoll({ notes, provisional, playhead, disabled, eraseEnabled
  /** Live geometry for a note, including an in-progress drag. */
  const shape = (n: Note) => {
   if (drag?.id !== n.id) return n;
-  return drag.kind === 'move' ? { ...n, step: ((n.step + drag.dSteps) % 64 + 64) % 64, midi: n.midi - drag.dRows } : { ...n, duration: Math.max(1, Math.min(64, n.duration + drag.dSteps)) };
+  return drag.kind === 'move' ? { ...n, step: ((n.step + drag.dSteps) % span + span) % span, midi: n.midi - drag.dRows } : { ...n, duration: Math.max(1, Math.min(span, n.duration + drag.dSteps)) };
  };
  /** A note may wrap the loop edge: render it as up to two segments. */
- const segments = (step: number, duration: number) => step + duration <= STEPS ? [[step, duration]] : [[step, STEPS - step], [0, step + duration - STEPS]];
+ // A full 4-bar loop wraps notes across its end; a shorter loop clips them (the rest is not played).
+ const segments = (step: number, duration: number) => step + duration <= span ? [[step, duration]]
+  : span < STEPS ? [[step, span - step]] : [[step, span - step], [0, step + duration - span]];
  const off = offRange([...provisional.map(p => ({ step: p.step, midi: p.midi, state: p.state, saved: false })), ...notes.map(n => ({ step: n.step, midi: n.midi, state: undefined, saved: true }))], rows);
  const offscreen = off.above.length + off.below.length;
  const offDetail = [off.above.length && `${off.above.length} above`, off.below.length && `${off.below.length} below`].filter(Boolean).join(', ');
  const liveOff = off.above.concat(off.below).some(p => !p.saved);
 
- return <div aria-label={`${label} piano roll`} style={{ userSelect: 'none' }}>
-  <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6, flexWrap: 'wrap' }}>
+ return <div ref={box} aria-label={`${label} piano roll`} style={{ userSelect: 'none', height: '100%', minHeight: 0, overflow: 'hidden' }}>
+  <div ref={toolbar} style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6, flexWrap: 'wrap' }}>
    <button disabled={center >= MAX_CENTER} onClick={() => navigate(center + 12)} aria-label="Octave up">▲ Oct</button>
    <button disabled={center <= MIN_CENTER} onClick={() => navigate(center - 12)} aria-label="Octave down">▼ Oct</button>
    <button onClick={() => navigate(centerPitch(notes.length ? notes : provisional))}>Center</button>
@@ -152,30 +173,30 @@ export function PianoRoll({ notes, provisional, playhead, disabled, eraseEnabled
    <div ref={grid} role="grid" aria-label={`${label} notes`} onPointerDown={onGridDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={() => setDrag(null)}
     style={{ position: 'relative', flex: 1, height: ROWS * ROW_H, cursor: disabled ? 'default' : 'crosshair',
      backgroundImage: [
-      `repeating-linear-gradient(to right, ${C.lineStrong} 0 1px, transparent 1px calc(100% / 4))`,
-      `repeating-linear-gradient(to right, ${C.line} 0 1px, transparent 1px calc(100% / 16))`,
-      `repeating-linear-gradient(to right, #1a1a1d 0 1px, transparent 1px calc(100% / 64))`,
+      `repeating-linear-gradient(to right, ${C.lineStrong} 0 1px, transparent 1px calc(100% / ${span / 16}))`,
+      `repeating-linear-gradient(to right, ${C.line} 0 1px, transparent 1px calc(100% / ${span / 4}))`,
+      `repeating-linear-gradient(to right, #1a1a1d 0 1px, transparent 1px calc(100% / ${span}))`,
      ].join(','), backgroundColor: C.panel }}>
     {rows.map((m, i) => isBlackKey(m) && <div key={m} style={{ position: 'absolute', left: 0, right: 0, top: i * ROW_H, height: ROW_H, background: '#0000002e', pointerEvents: 'none' }} />)}
     {provisional.flatMap((p, i) => rowOf(p.midi) < 0 ? [] : segments(p.step, p.duration).map(([s, d], k) =>
      <button key={`p${i}-${k}`} type="button" data-live={p.state ?? 'provisional'} title={LIVE_TITLE[p.state ?? 'provisional']}
       aria-label={`${eraseEnabled ? 'Erase provisional' : 'Erase unavailable'} ${noteName(p.midi)} step ${s + 1}${p.state === 'live' ? ' (still singing)' : ''}`} disabled={disabled || !eraseEnabled}
       onPointerDown={e => e.stopPropagation()} onClick={e => { e.stopPropagation(); onErase(s); }}
-      style={{ position: 'absolute', left: `${s / STEPS * 100}%`, width: `${d / STEPS * 100}%`, top: rowOf(p.midi) * ROW_H + 1, height: ROW_H - 2, minWidth: 0, padding: '0 0 0 2px', borderRadius: 2, boxSizing: 'border-box', cursor: 'pointer',
+      style={{ position: 'absolute', left: `${s / span * 100}%`, width: `${d / span * 100}%`, top: rowOf(p.midi) * ROW_H + 1, height: ROW_H - 2, minWidth: 0, padding: '0 0 0 2px', borderRadius: 2, boxSizing: 'border-box', cursor: 'pointer',
        overflow: 'hidden', whiteSpace: 'nowrap', textAlign: 'left', fontSize: 9, fontFamily: MONO, lineHeight: `${ROW_H - 4}px`, ...LIVE_STYLE[p.state ?? 'provisional'] }}>{k === 0 ? noteName(p.midi) : ''}</button>))}
     {(['above', 'below'] as const).map(side => off[side].length > 0 && <EdgeMarker key={side} side={side} notes={off[side]}
      onShow={midi => navigate(followCenter(center, midi, ROWS))} />)}
     {/* Chord tones (Note.chord) belong to their root note: drawn with it, moved with it, not separately editable. */}
     {notes.map(shape).flatMap(n => (n.chord ?? []).map(m => m + n.midi - (notes.find(x => x.id === n.id)?.midi ?? n.midi)).filter(m => rowOf(m) >= 0).flatMap(m =>
      segments(n.step, n.duration).map(([s, d], k) => <div key={`${n.id}-c${m}-${k}`} aria-hidden data-chord-tone={noteName(m)}
-      style={{ position: 'absolute', left: `${s / STEPS * 100}%`, width: `${d / STEPS * 100}%`, top: rowOf(m) * ROW_H + 2, height: ROW_H - 4, boxSizing: 'border-box', pointerEvents: 'none',
+      style={{ position: 'absolute', left: `${s / span * 100}%`, width: `${d / span * 100}%`, top: rowOf(m) * ROW_H + 2, height: ROW_H - 4, boxSizing: 'border-box', pointerEvents: 'none',
        background: '#d6d6da40', border: `1px solid ${n.id === selected ? C.accent : C.note}`, borderRadius: 2, fontSize: 8, color: C.text, fontFamily: MONO, overflow: 'hidden', whiteSpace: 'nowrap', paddingLeft: 2, lineHeight: `${ROW_H - 6}px` }}>
        {k === 0 ? noteName(m) : ''}</div>)))}
     {notes.map(shape).flatMap(n => rowOf(n.midi) < 0 ? [] : segments(n.step, n.duration).map(([s, d], k) => {
      const sel = n.id === selected, pending = PatternEditQueue.isPlaceholder(n.id);
      return <div key={`${n.id}-${k}`} role="gridcell" aria-label={`${noteName(n.midi)}${n.chord?.length ? ` chord with ${n.chord.map(noteName).join(' ')}` : ''} step ${n.step + 1} length ${n.duration}`} aria-selected={sel}
-      onPointerDown={e => onNoteDown(e, notes.find(x => x.id === n.id)!, 'move')} onDoubleClick={e => { e.stopPropagation(); if (!disabled && eraseEnabled && !pending) { const { x, y, w } = local(e); const cell = cellAt(x, y, w, ROW_H, rows); if (cell) onErase(cell.step); setSelected(null); } }}
-      style={{ position: 'absolute', left: `${s / STEPS * 100}%`, width: `${d / STEPS * 100}%`, top: rowOf(n.midi) * ROW_H + 1, height: ROW_H - 2, boxSizing: 'border-box',
+      onPointerDown={e => onNoteDown(e, notes.find(x => x.id === n.id)!, 'move')} onDoubleClick={e => { e.stopPropagation(); if (!disabled && eraseEnabled && !pending) { const { x, y, w } = local(e); const cell = cellAt(x, y, w, ROW_H, rows, span); if (cell) onErase(cell.step); setSelected(null); } }}
+      style={{ position: 'absolute', left: `${s / span * 100}%`, width: `${d / span * 100}%`, top: rowOf(n.midi) * ROW_H + 1, height: ROW_H - 2, boxSizing: 'border-box',
        background: pending ? C.pending : sel ? C.noteSelected : C.note, border: `1px solid ${sel ? C.accent : '#0008'}`, borderRadius: 2, cursor: disabled || pending ? 'default' : 'grab',
        fontSize: 9, color: '#111', fontFamily: MONO, overflow: 'hidden', whiteSpace: 'nowrap', paddingLeft: 2 }}>
       {k === 0 ? noteName(n.midi) : ''}
@@ -183,7 +204,7 @@ export function PianoRoll({ notes, provisional, playhead, disabled, eraseEnabled
        style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 6, cursor: disabled ? 'default' : 'ew-resize', background: '#0003' }} />}
      </div>;
     }))}
-    {playhead !== null && <div aria-hidden style={{ position: 'absolute', top: 0, bottom: 0, left: `${playhead / STEPS * 100}%`, width: 2, background: C.accent, opacity: 0.7, pointerEvents: 'none' }} />}
+    {playhead !== null && <div aria-hidden style={{ position: 'absolute', top: 0, bottom: 0, left: `${playhead / span * 100}%`, width: 2, background: C.accent, opacity: 0.7, pointerEvents: 'none' }} />}
    </div>
   </div>
  </div>;

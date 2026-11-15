@@ -7,7 +7,7 @@ import { C } from './theme.ts';
 type Hit = SessionState['tracks'][number]['hits'][number];
 
 /**
- * Drum step lanes: one row of 64 steps per lane. Click a step to toggle it; click a lane name to
+ * Drum step lanes: one row per lane, showing only the track's loop (16/32/64 steps) zoomed to the full width. Click a step to toggle it; click a lane name to
  * select it as the recording lane and hear it.
  */
 export function DrumGrid({ hits, provisional, playhead, lane, disabled, eraseEnabled = true, onEdit, onErase, onSelectLane, onAudition, loopSteps = 64 }: {
@@ -15,17 +15,17 @@ export function DrumGrid({ hits, provisional, playhead, lane, disabled, eraseEna
  eraseEnabled?: boolean;
  onEdit: (op: PatternOp) => void; onErase: (lane: Lane, step: number) => void; onSelectLane: (lane: Lane) => void; onAudition?: (lane: Lane) => void;
 }) {
- return <div aria-label="Drum step sequencer">
-  {LANES.map(({ lane: l, label }) => <div key={l} style={{ display: 'flex', gap: 6, alignItems: 'center', margin: '4px 0' }}>
+ // Lanes share the editor's height (resizable pane), each between 28 and 120 px tall.
+ return <div aria-label="Drum step sequencer" style={{ height: '100%', display: 'flex', flexDirection: 'column', gap: 6, minHeight: 0 }}>
+  {LANES.map(({ lane: l, label }) => <div key={l} style={{ display: 'flex', gap: 6, alignItems: 'stretch', flex: '1 1 0', minHeight: 28, maxHeight: 120 }}>
    <button aria-pressed={lane === l} title="Select as the recording lane and audition" disabled={disabled} style={{ width: 64, flex: 'none' }} onClick={() => { onSelectLane(l); onAudition?.(l); }}>{label}</button>
-   <div role="row" aria-label={`${label} steps`} style={{ display: 'grid', gridTemplateColumns: 'repeat(64, 1fr)', gap: 1, flex: 1, minWidth: 0 }}>
-    {Array.from({ length: 64 }, (_, step) => {
+   <div role="row" aria-label={`${label} steps`} style={{ display: 'grid', gridTemplateColumns: `repeat(${loopSteps}, 1fr)`, gap: 1, flex: 1, minWidth: 0, height: '100%' }}>
+    {Array.from({ length: loopSteps }, (_, step) => {
      const on = hits.some(h => h.lane === l && h.step === step);
-     const pending = provisional.some(p => p.lane === l && p.step === step);
+     const pending = provisional.some(p => p.lane === l && p.step % loopSteps === step);
      return <button key={step} role="gridcell" aria-pressed={on || pending} aria-label={`${pending ? (eraseEnabled ? 'Erase provisional' : 'Erase unavailable for provisional') : on ? (eraseEnabled ? 'Erase' : 'Erase unavailable') : 'Add'} ${label} step ${step + 1}`} disabled={disabled || ((on || pending) && !eraseEnabled)} onClick={() => on || pending ? onErase(l, step) : onEdit(toggleHit(l, step))}
-      style={{ height: 24, padding: 0, minWidth: 0, borderRadius: 2, border: pending ? `1px dashed ${C.pending}` : `1px solid ${playhead === step ? C.accent : 'transparent'}`,
-       background: on ? C.note : step % 16 === 0 ? '#2c2c31' : step % 4 === 0 ? '#232327' : '#1a1a1d',
-       opacity: step < loopSteps ? 1 : 0.25 /* beyond the track's loop length: kept, not played */ }} />;
+      style={{ height: '100%', padding: 0, minWidth: 0, borderRadius: 2, border: pending ? `1px dashed ${C.pending}` : `1px solid ${playhead !== null && playhead % loopSteps === step ? C.accent : 'transparent'}`,
+       background: on ? C.note : step % 16 === 0 ? '#2c2c31' : step % 4 === 0 ? '#232327' : '#1a1a1d' }} />;
     })}
    </div>
   </div>)}
