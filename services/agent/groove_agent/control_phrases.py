@@ -91,6 +91,12 @@ def input_phrase(verb: str, rest: Sequence[str]) -> Optional[Any]:
         return InputAction({"type": "cancel-input-action"}), None
     if verb in ("check", "test", "verify") and any(w in _TIMING_WORDS for w in rest):
         return InputAction({"type": "calibrate-input", "mode": "check-timing"}), None
+    # "run/do/start the calibration", "redo calibration": the noun anywhere after a doing verb.
+    if verb in ("run", "do", "start", "begin", "perform", "redo", "restart", "rerun") and any(w in _CALIBRATION_WORDS for w in rest):
+        noise = any(w in _NOISE_WORDS for w in rest)
+        timing = any(w in _TIMING_WORDS for w in rest)
+        mode = "noise" if noise and not timing else "timing" if timing and not noise else "full"
+        return InputAction({"type": "calibrate-input", "mode": mode}), None
     measuring = verb in ("measure", "remeasure") or verb in _CALIBRATION_WORDS
     if measuring:
         noise = any(w in _NOISE_WORDS for w in rest)

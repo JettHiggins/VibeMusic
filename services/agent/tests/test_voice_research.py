@@ -65,6 +65,7 @@ def test_new_production_messages_are_default_off():
 
 def test_voice_context_is_bound_to_original_track_and_refine_supersedes():
     conn, port = connection()
+    conn.auto_load_sounds = False
     replies = send(conn, utter("sound", "Groove find an electric piano", True))
     assert [r["type"] for r in replies] == ["command-span", "research-context"]
     assert replies[1] == {"type": "research-context", "requestId": "sound", "jobId": "sound:job",
@@ -272,6 +273,7 @@ def test_open_older_wake_is_refused_when_segment_closes_after_ui_request(tmp_pat
 
 
 def test_socket_queues_context_before_immediate_worker_progress(monkeypatch):
+    monkeypatch.setenv("GROOVE_AUTO_LOAD", "0")  # candidate-list flow
     import importlib
     from fastapi.testclient import TestClient
     module = importlib.import_module("groove_agent.app")

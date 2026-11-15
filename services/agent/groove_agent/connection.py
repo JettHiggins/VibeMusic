@@ -16,11 +16,14 @@ import secrets
 from collections import OrderedDict, deque
 from copy import deepcopy
 import json
+import os
+import time
 from dataclasses import dataclass, replace
 from typing import Any, Callable, Deque, Mapping, Optional, Protocol, Sequence, Union
 
 from .intents import (BOUNDARY, MELODIC_TRACKS, WAKE_WORDS, AcceptCandidate, AuditionCandidate, CancelSearch, Command, Ignored, Interpretation,
-                      NotUnderstood, SoundSearch, interpret, tokenize, validate_operation)
+                      MusicTool, NotUnderstood, SoundSearch, interpret, tokenize, validate_operation)
+from .music_tools import ToolRefusal, run_tool
 from .control_phrases import InputAction
 from .speech import ChunkError, StreamTracker, decode_chunk
 from .speech_pipeline import EnergySegmenter, SpeechJob, SpeechWorker
@@ -127,6 +130,10 @@ class _Search:
     description: str
     status: str = "running"
     candidates: Sequence[dict] = ()
+    # Spoken searches load their best match ("find a disco synth and load it"); the other candidates
+    # stay listed to swap. loaded_patch is what Groove last applied, so a later user choice is kept.
+    auto_load: bool = False
+    loaded_patch: Optional[str] = None
 
 
 _WAKE_SPLIT = re.compile(r"(?<=\S)\s+(?=(?:%s)\b)" % "|".join(sorted(WAKE_WORDS)), re.IGNORECASE)
@@ -166,6 +173,8 @@ class Connection:
                  research: Optional[ResearchPort] = None, speech: Optional[SpeechWorker] = None, language=None,
                  voice_research: bool = False) -> None:
         self._voice_research = voice_research
+        # Spoken sound searches load their best match (GROOVE_AUTO_LOAD=0 lists candidates only).
+        self.auto_load_sounds = os.environ.get("GROOVE_AUTO_LOAD", "1").strip() != "0"
         self._closed = False
         self._previews = PreviewRequests()
         self._research_epoch = 0
@@ -610,8 +619,32 @@ class Connection:
             search.status = message["status"]
             if self._voice_research or message["candidates"] or message["status"] != "cancelled":
                 search.candidates = message["candidates"]
-            return self._previews.prune(search.job_id, list(search.candidates))
+            return self._previews.prune(search.job_id, list(search.candidates)) + self._auto_load(search, message)
         return None
+
+    def _auto_load(self, search: "_Search", message: Mapping[str, Any]) -> list[dict]:
+        """Load the best candidate of a spoken search: once retrieval is complete (fast, about a second),
+        and again with the final best when optimization finishes, unless the track's patch was changed
+        by something else in between (a manual pick wins)."""
+        if not self.auto_load_sounds or not search.auto_load or not message["candidates"] or self.session is None or search is not self._latest_search():
+            return []
+        retrieval_done = message["status"] == "complete" or (message["status"] == "running" and len(message["candidates"]) >= CANDIDATES)
+        if not retrieval_done:
+            return []
+        best = message["candidates"][0]
+        best_patch = json.dumps(best["patch"], sort_keys=True)
+        if best_patch == search.loaded_patch:
+            return []
+        track = next(t for t in self.session["tracks"] if t["id"] == search.track_id)
+        current = json.dumps(track["patch"], sort_keys=True)
+        if search.loaded_patch is not None and current != search.loaded_patch:
+            return []  # the user (or another request) chose a different sound meanwhile
+        if self._patch_acceptance_pending():
+            return []
+        search.loaded_patch = best_patch
+        proposal = _Proposal(f"{search.job_id}:load-{message['status']}",
+                             {"type": "apply-patch", "trackId": search.track_id, "patch": best["patch"]}, BOUNDARY["apply-patch"])
+        return [self._issue(proposal, time.monotonic())]
 
     def _latest_search(self, with_candidates: bool = False) -> Optional[_Search]:
         """Newest search; with_candidates skips ones that ended (or were cancelled) before producing any."""
@@ -659,7 +692,7 @@ class Connection:
             out.extend(self._previews.cancel("preview research job was superseded"))
         if voice_request_id is None:
             self._mark_ui_research_intent()
-        self._searches[job_id] = _Search(job_id, track_id, description)
+        self._searches[job_id] = _Search(job_id, track_id, description, auto_load=voice_request_id is not None)
         accepted = True
         self._language_epoch += 1
         while len(self._searches) > 16:
@@ -801,6 +834,32 @@ class Connection:
             return out + [_error(utterance_id, result.reason)]
         return out + self._apply_interpretation(utterance_id, result, now)
 
+    def _run_music_tool(self, utterance_id: str, tool: MusicTool, now: float) -> list[dict]:
+        """Compute a whole-song edit from the current session and issue it as ordinary commands, in order
+        (key setting immediately, pattern edits at the next loop, one at a time)."""
+        if self.session is None:
+            return [_error(utterance_id, "no session snapshot received yet")]
+        try:
+            operations, _label = run_tool(tool.name, tool.args, self.session)
+        except (ToolRefusal, ValueError, KeyError, TypeError, StopIteration) as error:
+            return [_error(utterance_id, str(error) if isinstance(error, ToolRefusal) else "could not apply that edit; nothing changed")]
+        out: list[dict] = []
+        for index, operation in enumerate(operations):
+            command_id = utterance_id if index == 0 else f"{utterance_id}:{index}"
+            try:
+                validate("SessionCommand", {"id": command_id, "expectedRevision": self.revision or 0,
+                                             "boundary": BOUNDARY[operation["type"]], "operation": operation})
+            except ContractError:
+                return out + [_error(utterance_id, "that edit did not fit the song format; nothing changed")]
+            proposal = _Proposal(command_id, operation, BOUNDARY[operation["type"]])
+            if self._must_wait(proposal) or (index and operation["type"] == "edit-pattern"):
+                if len(self._backlog) >= MAX_BACKLOG:
+                    return out + [_error(utterance_id, "too many edits are waiting; try again after the next loop")]
+                self._backlog.append(proposal)
+            else:
+                out.append(self._issue(proposal, now))
+        return out + self._drain(now)
+
     def _capture_signature(self) -> tuple:
         transport = self.transport or {}
         return (transport.get("clockId"), transport.get("recordingState", "recording" if transport.get("recording") else "idle"),
@@ -829,7 +888,7 @@ class Connection:
             return [_error(job.request_id, error)]
         if result is None or isinstance(result, (Ignored, NotUnderstood)):
             return [_error(job.request_id, "language agent could not resolve the request; no change applied")]
-        if not isinstance(result, (Command, SoundSearch, AcceptCandidate, AuditionCandidate, CancelSearch)):
+        if not isinstance(result, (Command, SoundSearch, AcceptCandidate, AuditionCandidate, CancelSearch, MusicTool, InputAction)):
             return [_error(job.request_id, "invalid language proposal; no change applied")]
         if isinstance(result, (AcceptCandidate, AuditionCandidate)) and (type(result.index) is not int or not 1 <= result.index <= CANDIDATES):
             return [_error(job.request_id, "invalid candidate index; no change applied")]
@@ -842,6 +901,8 @@ class Connection:
         out: list[dict] = []
         if isinstance(result, InputAction):
             return self._request_browser_action(utterance_id, dict(result.operation), now)
+        if isinstance(result, MusicTool):
+            return self._run_music_tool(utterance_id, result, now)
         if isinstance(result, Command):
             try:
                 validate("SessionCommand", {"id": utterance_id, "expectedRevision": self.revision,

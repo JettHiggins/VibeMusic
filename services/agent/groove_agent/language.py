@@ -10,13 +10,25 @@ import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Annotated, Any, Callable, Optional
+from typing import Annotated, Any, Callable, Literal, Optional
 
 from pydantic import Field
 
 from .contracts import contracts_dir, validate
 from .intents import (BOUNDARY, AcceptCandidate, AuditionCandidate, CancelSearch, Command, Interpretation,
-                      NotUnderstood, SoundSearch, validate_operation)
+                      MusicTool, NotUnderstood, SoundSearch, validate_operation)
+from .control_phrases import InputAction
+
+MUSIC_TOOLS = ("tidy_timing", "drum_pattern", "transpose", "change_key")
+INPUT_ACTIONS = {"calibrate": {"type": "calibrate-input", "mode": "full"},
+                 "calibrate_noise": {"type": "calibrate-input", "mode": "noise"},
+                 "calibrate_timing": {"type": "calibrate-input", "mode": "timing"},
+                 "check_timing": {"type": "calibrate-input", "mode": "check-timing"},
+                 "cancel_calibration": {"type": "cancel-input-action"},
+                 "noisy_room_profile": {"type": "set-input-profile", "profile": "noisy-room"},
+                 "music_profile": {"type": "set-input-profile", "profile": "music"}}
+_KEY_ROOTS = {"C": 0, "C#": 1, "DB": 1, "D": 2, "D#": 3, "EB": 3, "E": 4, "F": 5, "F#": 6, "GB": 6, "G": 7,
+              "G#": 8, "AB": 8, "A": 9, "A#": 10, "BB": 10, "B": 11}
 
 DEFAULT_MODEL = "inclusionai/ling-3.2-flash:free"
 # Gemini (playtest plan, issue #9): Vertex AI by default because the team's credit is Google Cloud
@@ -107,6 +119,10 @@ def decode_decision(decision: dict) -> Interpretation:
         return SoundSearch(decision["description"], decision.get("refine", False))
     if kind in ("accept", "preview") and type(decision.get("index")) is int and 1 <= decision["index"] <= 10:
         return (AcceptCandidate if kind == "accept" else AuditionCandidate)(decision["index"])
+    if kind == "tool" and decision.get("name") in MUSIC_TOOLS and isinstance(decision.get("args"), dict):
+        return MusicTool(decision["name"], dict(decision["args"]))
+    if kind == "input" and decision.get("action") in INPUT_ACTIONS:
+        return InputAction(dict(INPUT_ACTIONS[decision["action"]]))
     if kind == "cancel":
         return CancelSearch()
     if kind == "refuse":
@@ -220,7 +236,45 @@ def create_graph(model, voice_research: bool = False):
         """Refuse ambiguous or unsupported requests, including requests requiring new interfaces."""
         return json.dumps({"kind": "refuse"})
 
-    tools = [command_tool, search_sound, accept_candidate, cancel_search, refuse_request]
+    @tool(return_direct=True)
+    def tidy_timing(scope: Literal["selected", "all"] = "selected",
+                    grid: Optional[Literal["sixteenth", "eighth", "quarter"]] = None) -> str:
+        """Fix up / clean up / tighten timing: snap notes and drum hits to the beat grid and remove overlaps.
+        scope "all" for the whole beat, "selected" for the current track. grid defaults to eighth notes."""
+        return json.dumps({"kind": "tool", "name": "tidy_timing", "args": {"scope": scope, "grid": grid}})
+
+    @tool(return_direct=True)
+    def drum_pattern(lane: Literal["kick", "snare", "closed-hat"], every: Annotated[int, Field(ge=1, le=16)],
+                     offset: Annotated[int, Field(ge=0, le=15)] = 0) -> str:
+        """Write a regular drum pattern on one lane over the 4-bar loop, replacing that lane only.
+        every: spacing in sixteenth notes (1 sixteenths, 2 eighths = "every other", 4 every beat,
+        16 once per bar); offset: start position in sixteenths (2 with every=4 means off-beats)."""
+        return json.dumps({"kind": "tool", "name": "drum_pattern", "args": {"lane": lane, "every": every, "offset": offset}})
+
+    @tool(return_direct=True)
+    def transpose(semitones: Annotated[int, Field(ge=-24, le=24)], scope: Literal["selected", "all"] = "all") -> str:
+        """Move melody notes up or down by semitones (12 = one octave). Drums are unaffected."""
+        return json.dumps({"kind": "tool", "name": "transpose", "args": {"semitones": semitones, "scope": scope}})
+
+    @tool(return_direct=True)
+    def change_key(root: Literal["C", "C#", "Db", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"],
+                   scale: Literal["major", "minor"], move_notes: bool = True) -> str:
+        """Put the song in a key: set key snapping and move existing melody notes there by scale degree.
+        Also use for a mood or vibe (choose the key yourself: e.g. sad/dark/moody -> a minor key,
+        happy/bright/uplifting -> a major key). move_notes=false only sets the key for new singing."""
+        root_number = _KEY_ROOTS[root.upper()]
+        return json.dumps({"kind": "tool", "name": "change_key",
+                           "args": {"root": root_number, "scale": scale, "move_notes": move_notes}})
+
+    @tool(return_direct=True)
+    def input_action(action: Literal["calibrate", "calibrate_noise", "calibrate_timing", "check_timing",
+                                     "cancel_calibration", "noisy_room_profile", "music_profile"]) -> str:
+        """Run the browser's microphone calibration or change input settings (the browser does the work and
+        reports the real result). calibrate runs the full guided noise + timing calibration."""
+        return json.dumps({"kind": "input", "action": action})
+
+    tools = [command_tool, search_sound, accept_candidate, cancel_search, refuse_request,
+             tidy_timing, drum_pattern, transpose, change_key, input_action]
     if voice_research:
         @tool(return_direct=True)
         def audition_candidate(index: Annotated[int, Field(ge=1, le=10)]) -> str:
@@ -248,7 +302,11 @@ def create_graph(model, voice_research: bool = False):
         "Tempo is 40..240. Sound search/refine/accept preserve music. Unknown/ambiguous requests use refuse_request. "
         "metronome {enabled} and erase-event are immediate. erase-event removes ONE event at one-based bar, beat and "
         "subdivision 1..4: step=(bar-1)*16+(beat-1)*4+(subdivision-1); drum targets need a lane; if bar or beat is "
-        "missing or unclear, use refuse_request rather than guessing a step or track."
+        "missing or unclear, use refuse_request rather than guessing a step or track. "
+        "Whole-song requests use the music tools: timing fixes/clean-up -> tidy_timing; drum patterns such as "
+        "'every other hi-hat' -> drum_pattern; key, mood or vibe changes -> change_key; octave/semitone moves -> "
+        "transpose. A described sound ('a bright disco synth') -> search_sound; Groove loads the best match itself. "
+        "Microphone calibration or input setup -> input_action. "
 
         + ("Audition uses audition_candidate and never applies a patch. It requests preview only, not proof of playback."
            if voice_research else "Audition playback is currently a browser UI action; refuse automatic audition requests.")),
@@ -412,6 +470,19 @@ def provider_status(error: BaseException) -> Optional[int]:
     return None
 
 
+def provider_quota(error: BaseException) -> Optional[str]:
+    """Google's quota id for a 429 (for example a per-minute model quota), when the error carries one."""
+    for item in _chain(error):
+        details = getattr(item, "details", None)
+        if not isinstance(details, dict):
+            continue
+        for entry in (details.get("error") or {}).get("details") or []:
+            for violation in (entry.get("violations") or []) if isinstance(entry, dict) else []:
+                if isinstance(violation, dict) and violation.get("quotaId"):
+                    return str(violation["quotaId"])[:120]
+    return None
+
+
 def _google_retry_delay(error: BaseException) -> Optional[float]:
     for item in _chain(error):
         details = getattr(item, "details", None)
@@ -531,6 +602,11 @@ class LanguageWorker:
             except Exception as error:
                 if self.gate is not None:
                     self.gate.failure(error)
+                # Status and quota id only: provider messages can echo requests or credentials.
+                logging.getLogger("groove_agent").warning(
+                    "language provider error: %s status=%s quota=%s cooldown=%s", type(error).__name__,
+                    provider_status(error), provider_quota(error),
+                    f"{self.gate.blocked():.0f}s" if self.gate is not None and self.gate.blocked() else "none")
                 self.deliver(job, None, safe_language_error(error))
             else:
                 if self.gate is not None:

@@ -51,7 +51,8 @@ def scripted_model(calls):
             return "SCRIPTED offline acceptance fixture"
         def bind_tools(self, tools, **kwargs):
             self._bound = [t.name if hasattr(t, "name") else t.get("name") for t in tools]
-            assert set(self._bound) == {"propose_command", "search_sound", "accept_candidate", "cancel_search", "refuse_request"}
+            assert set(self._bound) == {"propose_command", "search_sound", "accept_candidate", "cancel_search", "refuse_request",
+                                        "tidy_timing", "drum_pattern", "transpose", "change_key", "input_action"}
             return self
         def _generate(self, messages, stop=None, run_manager=None, **kwargs):
             index = self._position
@@ -358,7 +359,8 @@ def test_actual_deepagent_and_openrouter_sdk_round_trip_with_mock_http(monkeypat
         requests.append(payload)
         assert payload["provider"]["max_price"]["prompt"] == "0"
         assert set(t["function"]["name"] for t in payload["tools"]) == {
-            "propose_command", "search_sound", "accept_candidate", "cancel_search", "refuse_request"}
+            "propose_command", "search_sound", "accept_candidate", "cancel_search", "refuse_request",
+            "tidy_timing", "drum_pattern", "transpose", "change_key", "input_action"}
         if len(requests) == 1:
             message = {"role": "assistant", "content": "", "tool_calls": [{"id": "proposal-1", "type": "function",
                 "function": {"name": "propose_command", "arguments": json.dumps({"operation": {"type": "tempo", "bpm": 135}})}}]}

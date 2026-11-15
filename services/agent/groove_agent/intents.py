@@ -17,6 +17,7 @@ from typing import Any, Mapping, Optional, Sequence, Union
 
 from .spoken_numbers import NUMBER_WORDS, find_number
 from .control_phrases import InputAction, input_phrase, key_phrase, rhythm_chord_phrase
+from .music_tools import music_phrase
 
 WAKE_WORDS = frozenset({"groove", "grove"})  # "grove" is a common recognizer spelling
 TEMPO_MIN, TEMPO_MAX, TEMPO_NUDGE = 40, 240, 10
@@ -45,6 +46,8 @@ BOUNDARY = {
     # Playtest controls (PLAYTEST-CONTROLS-CONTRACT.md): recording settings are immediate.
     "set-rhythm-snap": "immediate",
     "set-chord-mode": "immediate",
+    # Whole-pattern edits from Groove music tools: scheduled like hand edits (engine requires a boundary).
+    "edit-pattern": "next-loop",
 }
 
 _LANE_PHRASES = (
@@ -64,6 +67,13 @@ class Command:
     """A recognized command, ready to be wrapped in a SessionCommand."""
     operation: dict
     boundary: str
+
+
+@dataclass(frozen=True)
+class MusicTool:
+    """A whole-song edit (groove_agent.music_tools.run_tool) computed from the session when applied."""
+    name: str
+    args: dict
 
 
 @dataclass(frozen=True)
@@ -98,7 +108,7 @@ class CancelSearch:
     pass
 
 
-Interpretation = Union[Command, Ignored, NotUnderstood, SoundSearch, AcceptCandidate, AuditionCandidate, CancelSearch, InputAction]
+Interpretation = Union[Command, Ignored, NotUnderstood, SoundSearch, AcceptCandidate, AuditionCandidate, CancelSearch, InputAction, MusicTool]
 
 
 def tokenize(text: str) -> list[str]:
@@ -361,6 +371,9 @@ def interpret(text: str, session: Mapping[str, Any], during_recording: bool, tak
     # Exact key and browser-input phrases (deterministic, so they survive provider rate limits).
     control = input_phrase(verb, rest)
     if control is None:
+        tool = music_phrase(tokens, session)
+        if tool is not None:
+            return MusicTool(*tool)
         control = rhythm_chord_phrase(verb, rest)
     if control is None:
         control = key_phrase(verb, rest, session, lambda words: resolve_target(words, session).target)

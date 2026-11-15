@@ -352,6 +352,7 @@ def candidates(job_id, count=3):
 def test_describe_audition_refine_accept_by_voice(session):
     port = FakePort()
     conn = Connection(research=port, voice_research=True)
+    conn.auto_load_sounds = False
     conn.handle({"type": "session", "session": session}, 0)
 
     # Spoken jobs are announced with research-context so the browser shows them (voice research).
