@@ -68,6 +68,13 @@ export const workspaceCss = ` html { color-scheme: dark; }
  .vs-research .vs-generate-button { display: flex; align-items: center; gap: 8px; justify-content: center; min-height: 34px; }
  .vs-research p { overflow-wrap: anywhere; }
  .vs-sound-option { display: grid; gap: 10px; padding: 12px 0; border-bottom: 1px solid ${C.line}; }
+ .vs-transcript { border-top: 1px solid ${C.line}; margin-top: 20px; padding-top: 8px; }
+ .vs-transcript-connection { display: flex; gap: 12px; align-items: center; margin: 4px 0 10px; color: ${C.muted}; font-size: 11px; }
+ .vs-transcript form { display: flex; gap: 8px; }
+ .vs-transcript input { flex: 1; min-width: 0; }
+ .vs-transcript-heard { margin-bottom: 10px; overflow-wrap: anywhere; }
+ .vs-transcript-heard > span { color: ${C.muted}; margin-right: 8px; }
+ .vs-transcript p { overflow-wrap: anywhere; }
  .vs-skip-link { position: fixed; left: 12px; top: -100px; background: ${C.accent}; color: #111; padding: 10px; z-index: 100; }
  .vs-skip-link:focus-visible { top: 12px; }
  @media (max-width: 720px) { .vs-session-popup { position: fixed !important; top: calc(var(--vs-top, 64px) + 8px) !important; right: 12px !important; max-height: calc(100dvh - var(--vs-top, 64px) - 24px); overflow: auto; overscroll-behavior: contain; } .vs-toolbar { padding: 8px; } .vs-toolbar-controls { gap: 2px; } .vs-toolbar-divider { margin: 0 3px; } .vs-voice { width: 150px; } }
@@ -93,7 +100,7 @@ export const workspaceCss = ` html { color-scheme: dark; }
  .vs-grow { flex: 1 1 auto; }
  .vs-readout { display: grid; gap: 6px; min-width: 0; }
  .vs-meter { position: relative; height: 8px; background: ${C.raised}; border-radius: 4px; overflow: hidden; }
- .vs-pitch { display: flex; gap: 14px; align-items: flex-start; padding: 6px 8px; background: ${C.raised}; border-radius: 4px; min-width: 0; }
+ .vs-pitch { display: flex; gap: 14px; align-items: flex-start; padding: 6px 0; min-width: 0; }
  .vs-cell { display: grid; gap: 1px; min-width: 40px; }
  .vs-cell small { color: ${C.faint}; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; }
  .vs-notice { display: grid; gap: 2px; min-width: 0; overflow-wrap: anywhere; }

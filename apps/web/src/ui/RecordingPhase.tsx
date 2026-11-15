@@ -17,8 +17,8 @@ export function RecordingPhaseStrip({ phase, children }: { phase: RecordingPhase
  const armed = phase.state === 'armed', recording = phase.state === 'recording';
  const countdown = armed && phase.beatsToStart !== null ? Math.min(4, phase.beatsToStart) : null;
  const announce = armed ? phase.headline : recording ? 'Recording' : phase.state === 'playing' ? 'Playing' : 'Stopped';
- return <div className="vs-phase" data-phase={phase.state} style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', margin: '0 0 8px', padding: '5px 8px', borderRadius: 4,
-  border: `1px solid ${armed || recording ? C.accent : C.line}`, background: armed ? '#f4f4f514' : 'transparent' }}>
+ return <div className="vs-phase" data-phase={phase.state} style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', margin: '0 0 8px', padding: '5px 0 10px',
+  borderBottom: `1px solid ${armed || recording ? C.accent : C.line}` }}>
   <span style={{ fontFamily: MONO, fontSize: 13, minWidth: 150, color: armed || recording ? C.accent : C.muted, fontWeight: armed ? 700 : 400 }}>
    {recording ? '● ' : ''}{phase.headline}
   </span>

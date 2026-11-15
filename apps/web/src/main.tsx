@@ -9,6 +9,7 @@ import {VoiceInput} from './input/voice-input.ts';
 import {ResearchController} from './integration/research.ts';
 import {ResearchPanel, ResearchProgress} from './integration/ResearchPanel.tsx';
 import {updateHeardSpeech,type HeardSpeech} from './ui/voice-feedback.ts';
+import {TranscriptPanel} from './ui/TranscriptPanel.tsx';
 import {Groovebox} from './ui/Groovebox.tsx';
 const initialSession=createSession();
 // Keep the existing first synth's default voice, but never seed a song on launch.
@@ -46,6 +47,7 @@ function App(){
   setBusy(true);try{const receipt=engine.dispatch({id:crypto.randomUUID(),expectedRevision:session.revision,boundary,operation});if(receipt.type==='ack'&&receipt.status==='rejected'){setBusy(false);setMessage(receipt.reason??'Rejected');}}catch(e){setBusy(false);setMessage(String(e));}
  }
  return <Groovebox engine={engine} voice={voice} session={session} transport={transport} enabled={enabled} busy={busy} message={message} onEnable={enable} dispatch={command}
+  transcript={<TranscriptPanel enabled={enabled} connected={connected} heard={heardSpeech} onConnect={()=>agent.connect()} onSubmit={text=>coordinator.submitTranscript(text)}/>}
   heardSpeech={heardSpeech} activity={<ResearchProgress state={researchState} onCancel={()=>research.cancel()}/>} agentActivityKey={researchState.jobId} agent={<ResearchPanel controller={research} session={session} connected={connected} enabled={enabled} connect={()=>agent.connect()}/>}/>;
 }
 createRoot(document.getElementById('root')!).render(<App/>);

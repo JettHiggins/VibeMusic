@@ -37,6 +37,7 @@ export interface GrooveboxProps {
  agentActivityKey?: string | null;
  heardSpeech?: HeardSpeech | null;
  activity?: ReactNode;
+ transcript?: ReactNode;
 }
 
 /**
@@ -44,7 +45,7 @@ export interface GrooveboxProps {
  * track's editor in the center (drum step lanes or a synth piano roll), and a compact sound/input
  * inspector on the right. No workspace tabs; session operations live in the transport's menu.
  */
-export function Groovebox({ engine, voice, session, transport, enabled, busy, message, onEnable, agent, heardSpeech, activity }: GrooveboxProps) {
+export function Groovebox({ engine, voice, session, transport, enabled, busy, message, onEnable, agent, heardSpeech, activity, transcript }: GrooveboxProps) {
  const [timingOpen, setTimingOpen] = useState(false);
  const previouslyEnabled = useRef(false);
  useEffect(() => { if (enabled && !previouslyEnabled.current) setTimingOpen(true); previouslyEnabled.current = enabled; }, [enabled]);
@@ -148,6 +149,7 @@ export function Groovebox({ engine, voice, session, transport, enabled, busy, me
        provisional={provisional.flatMap(p => p.event.kind === 'note' ? [{ step: p.step, duration: p.duration, midi: snapMidiToScale(p.event.midi, session.pitchSnap), state: p === input.recorder.live ? 'live' as const : p.status }] : [])}
        onAudition={engine.audition ? (midi, on) => engine.audition!({ kind: 'note', trackId: trackId as Exclude<TrackId, 'drums'>, midi, velocity: on ? 0.8 : 0, on }) : undefined} />}
     {showTake && <TakeFeedbackLine take={take} liveName={liveNote} unit={trackId === 'drums' ? 'hit' : 'note'} />}
+    {transcript}
    </main>
    <aside className="vs-right" style={{ ...pane, display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 10, alignContent: 'start' }} aria-label="Inspector">
     <details open>
@@ -164,14 +166,16 @@ export function Groovebox({ engine, voice, session, transport, enabled, busy, me
  </div>;
 }
 
-const pane: React.CSSProperties = { background: C.panel, border: `1px solid ${C.line}`, borderRadius: 6, padding: 12, minWidth: 0 };
+const pane: React.CSSProperties = { padding: 16, minWidth: 0 };
 const layoutCss = `
- .vs-body { display: grid; grid-template-columns: 210px minmax(0, 1fr) 330px; gap: 10px; padding: 10px; align-items: start; }
+ .vs-body { display: grid; grid-template-columns: 210px minmax(0, 1fr) 330px; gap: 0; padding: 0; align-items: start; }
+ .vs-left { border-right: 1px solid ${C.line}; }
+ .vs-right { border-left: 1px solid ${C.line}; }
  /* Long device names, URLs and provider errors wrap inside their pane instead of widening the page. */
  .vs-left, .vs-center, .vs-right { overflow-wrap: anywhere; }
  .vs-right input:not([type=checkbox]):not([type=range]) { max-width: 100%; box-sizing: border-box; }
  /* The inspector scrolls on its own so a tall input section never pushes the editor off screen. */
  @media (min-width: 1101px) { .vs-right { position: sticky; top: calc(var(--vs-top, 52px) + 10px); max-height: calc(100vh - var(--vs-top, 52px) - 20px); overflow-y: auto; overscroll-behavior: contain; } }
- @media (max-width: 1100px) { .vs-body { grid-template-columns: 190px minmax(0, 1fr); } .vs-right { grid-column: 1 / -1; } }
- @media (max-width: 720px) { .vs-body { grid-template-columns: minmax(0, 1fr); } }
+ @media (max-width: 1100px) { .vs-body { grid-template-columns: 190px minmax(0, 1fr); } .vs-right { grid-column: 1 / -1; border-left: none; border-top: 1px solid ${C.line}; } }
+ @media (max-width: 720px) { .vs-left { border-right: none; border-bottom: 1px solid ${C.line}; } .vs-body { grid-template-columns: minmax(0, 1fr); } }
 `;

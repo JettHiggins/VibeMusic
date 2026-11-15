@@ -143,7 +143,7 @@ export function PianoRoll({ notes, provisional, playhead, disabled, eraseEnabled
    <span className="vs-sr">Click to add. Drag to move or resize. Delete or double-click to remove.</span>
    {offscreen > 0 && <span role="status" style={{ color: liveOff ? C.text : C.muted }}>{offscreen} note{offscreen === 1 ? '' : 's'} outside view ({offDetail})</span>}
   </div>
-  <div style={{ display: 'flex', border: `1px solid ${C.line}`, borderRadius: 4, overflow: 'hidden' }}>
+  <div style={{ display: 'flex', border: `1px solid ${C.line}`, borderRadius: 0, overflow: 'hidden' }}>
    <div aria-label="Keyboard" style={{ width: KEYS_W, flex: 'none', borderRight: `1px solid ${C.line}` }}>
     {rows.map(m => <div key={m} onPointerDown={() => onAudition?.(m, true)} onPointerUp={() => onAudition?.(m, false)} onPointerLeave={() => onAudition?.(m, false)}
      style={{ height: ROW_H, boxSizing: 'border-box', fontSize: 9, fontFamily: MONO, paddingLeft: 4, lineHeight: `${ROW_H}px`, cursor: onAudition ? 'pointer' : 'default',

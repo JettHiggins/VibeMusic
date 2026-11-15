@@ -39,12 +39,17 @@ async page => {
  // The countdown remains cancelable without changing the retained calibration.
  if (await dialog.isVisible()) await dialog.getByRole('button', { name: 'Done', exact: true }).click();
  check(await page.locator('summary').filter({ hasText: /^(Dev|Developer|Agent|Diagnostics)$/ }).count() === 0, 'Developer menu remains');
- check(await page.getByLabel('Command transcript', { exact: true }).count() === 0, 'Transcript harness remains');
+ check(await page.getByRole('main', { name: 'Editor' }).getByLabel('Command transcript', { exact: true }).count() === 1, 'Transcript controls are not below the editor');
+ check(await page.locator('.vs-right [aria-label="Transcript"]').count() === 0, 'Transcript is still in the inspector');
  await page.getByRole('button', { name: /^Synth 1 / }).click();
  await page.getByRole('textbox', { name: 'Describe a sound' }).fill('warm electric piano');
  await page.getByRole('button', { name: 'Generate sound', exact: true }).click();
  await page.waitForFunction(() => globalThis.__voicesynth.research.getSnapshot().status === 'running');
  check(!!peer, 'Search did not connect automatically');
+ await page.getByLabel('Command transcript', { exact: true }).fill('Groove, set tempo to 110');
+ await page.getByRole('button', { name: 'Send transcript', exact: true }).click();
+ for (let i = 0; !messages.some(m => m.type === 'utterance' && m.text === 'Groove, set tempo to 110') && i < 50; i++) await page.waitForTimeout(20);
+ check(messages.some(m => m.type === 'utterance' && m.text === 'Groove, set tempo to 110'), 'Transcript was not sent through the existing command service');
  await page.getByText('Generating sound…', { exact: true }).waitFor();
  check(await page.getByRole('progressbar', { name: 'Synth generation progress' }).getAttribute('value') === null, 'Invented a numeric progress value');
  // Wait for request bytes; DOM state updates before WebSocket message delivery.
