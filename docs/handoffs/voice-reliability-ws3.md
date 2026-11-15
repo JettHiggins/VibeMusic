@@ -104,6 +104,36 @@ Jett integrated `366f07e` (protocol) and `4132702` (cooldown). This branch merge
   - Audible preview, applying the patch in the engine and Undo in the browser are not covered by this script.
 - **"Stale service" claim corrected:** the base before `366f07e` had no `browser-status` handler at all, so the earlier "unsupported browser-status" report is explained by the missing handler. A stale service is not established. Check `/healthz` and the process working directory when testing.
 
+## Real browser checks (headless Chromium)
+
+Run on head `c27cfd5`, with the app on 5173 (`--strictPort`) and this service on 8000.
+- **Service:** faster-whisper `base.en`, SLOOP/CLAP research and voice research on.
+- **Browser:** headless Chromium through the real page, coordinator, `BrowserActionRouter`, `VoiceInput` executor, `SpeechSession`, engine and WebSocket.
+- **Microphone:** replaced by quiet synthetic room tone plus injected synthesized speech, the same boundary as `tests/browser/input-action-lifecycle.js`.
+- **Scripts:** `services/agent/scripts/browser/`.
+
+**`executor_research_e2e.js`** (typed transcripts over the real socket):
+- **Calibration:** "calibrate noise" made the service send a `browser-action`.
+  - The executor ran countdown then measuring and measured −86.5 dBFS.
+  - It acknowledged `running`, then `complete` ("Noise floor -86.5 dBFS"), after 6 `browser-status` snapshots.
+  - The input revision went from 0 to 1.
+- **Key:** "key D minor" applied `set-pitch-snap` and changed the session's key.
+- **Sound search:** "make it sound like a warm electric piano" on synth two:
+  - One `research-context` and 11 research updates.
+  - The research panel finished in 63.9 s (warm corpus) with 5 candidates, all with previews. Candidate 2's preview decoded in the page as 3.0 s of audio, peak 0.55.
+- **Accept and undo:** "use number two" applied the patch (the engine patch changed), and "undo" restored it exactly.
+- **Errors:** no "unsupported message" errors from the service, and no page errors.
+
+**`spoken_stream_e2e.js`** (synthesized speech through the browser's own speech stream):
+- **Paused sentence:** "Groove, set the tempo to" ⟨0.9 s⟩ "one forty" gave one `tempo 140` command and no errors.
+- **Stop during a take:** "Groove, stop" with a sung tone starting 0.35 s after it:
+  - `command-span`, then `stop-recording` 0.36 s after the clip ended, while the singing continued.
+  - Applied with playback continuing (`playing: true`, recording idle).
+- **Coverage:** 319 speech-verified updates, with no coverage stall, discontinuity or page errors.
+- **Harness note:** decoding clip audio on the page's main thread during capture caused a "Microphone capture discontinuity" in headless Chromium, so the script pre-decodes its clips. That is a harness constraint, not a service result.
+
+This is synthesized speech, not a human microphone or hearing check.
+
 ## Checks (Windows, Python 3.13)
 
 - **Backend suite:** `pytest -q` → **437 passed, 6 skipped**, now including the 5 real SLOOP engine tests (they previously errored only because the repo root was not on the import path).
