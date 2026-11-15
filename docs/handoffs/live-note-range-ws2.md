@@ -1,6 +1,6 @@
 # WS2 handoff: low/high live-note range visibility
 
-Branch `ws2/live-note-range` from `origin/engine-integration` at `447541f`. Presentation only: `apps/web/src/ui/PianoRoll.tsx`, `piano-roll-geometry.ts` and one prop in `Groovebox.tsx`. It does not change capture, YIN, the recorder, key mapping, contracts or what gets saved.
+Branch `ws2/live-note-range` from `origin/engine-integration` at `447541f`. Pull request: JettHiggins/VoiceSynthesizer#44. Implementation commit: `4715bf7`. Presentation only: `apps/web/src/ui/PianoRoll.tsx`, `piano-roll-geometry.ts` and one prop in `Groovebox.tsx`. It does not change capture, YIN, the recorder, key mapping, contracts or what gets saved.
 
 ## Before
 
