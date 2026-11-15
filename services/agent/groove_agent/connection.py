@@ -12,6 +12,7 @@ it only reads the revision to fill `expectedRevision`.
 from __future__ import annotations
 
 import re
+import secrets
 from collections import OrderedDict, deque
 from copy import deepcopy
 import json
@@ -20,6 +21,7 @@ from typing import Any, Callable, Deque, Mapping, Optional, Protocol, Sequence, 
 
 from .intents import (BOUNDARY, MELODIC_TRACKS, WAKE_WORDS, AcceptCandidate, AuditionCandidate, CancelSearch, Command, Ignored, Interpretation,
                       NotUnderstood, SoundSearch, interpret, tokenize, validate_operation)
+from .control_phrases import InputAction
 from .speech import ChunkError, StreamTracker, decode_chunk
 from .speech_pipeline import EnergySegmenter, SpeechJob, SpeechWorker
 from .speech_pipeline import Transcript
@@ -39,6 +41,12 @@ REMEMBERED_UTTERANCES = 256
 WAKE_JOIN_SECONDS = 2.0
 # Without a configured recognizer, speech-audio is validated and dropped and speech-verified is
 # never sent: nothing was classified.
+# Browser input actions (MUSICAL-CONTROL-CONTRACT.md): a request the browser never starts is given up
+# quickly; a started calibration (warning, countdown, practice, measuring) may take a while.
+BROWSER_ACTION_START_TIMEOUT_S = 15.0
+BROWSER_ACTION_RUN_TIMEOUT_S = 180.0
+_INPUT_ACTION_KIND = {"calibrate-input": "calibration", "cancel-input-action": "cancel",
+                      "set-input-profile": "input profile change", "set-input-offset": "input offset change"}
 SPEECH_UNAVAILABLE = {"type": "speech-status", "available": False, "provider": "none",
                       "reason": "no speech recognizer configured; speech-verified is not sent; hold speech-dependent commits"}
 
@@ -62,6 +70,7 @@ class _SpeechStream:
     verified: int = -1
     failed: bool = False
     held_wake: Optional[tuple] = None  # (job, text): a bare wake word waiting for its command
+    input_key: Optional[tuple] = None  # browser (clockId, inputRevision) when the stream began
 
 
 @dataclass
@@ -77,6 +86,14 @@ class _InFlight:
     command_id: str
     sent_at: float
     status: str = "sent"  # sent -> queued -> (removed on applied/rejected)
+
+
+@dataclass
+class _BrowserRequest:
+    utterance_id: str
+    action: dict
+    sent_at: float
+    status: str = "sent"  # sent -> running -> (removed on a terminal acknowledgment)
 
 
 class ResearchPort(Protocol):
@@ -145,6 +162,12 @@ class Connection:
         self._utterances: "OrderedDict[str, None]" = OrderedDict()
         self._speech_streams = StreamTracker()
         self._windows: list[_Window] = []
+        # Latest browser-status (input executor capability/configuration) and our own pending
+        # browser-action requests. IDs carry a per-connection nonce so they stay fresh across
+        # reconnects (the browser keeps a per-page ID ledger).
+        self.browser_status: Optional[dict] = None
+        self._browser_requests: "OrderedDict[str, _BrowserRequest]" = OrderedDict()
+        self._nonce = secrets.token_hex(4)
 
     # -- inbound -----------------------------------------------------------------
 
@@ -174,6 +197,10 @@ class Connection:
             return self._previews.acknowledge(dict(message), now) if self._voice_research else [_error(message["id"], "voice preview is not enabled")]
         if kind == "speech-audio":
             return self._on_speech_audio(message, now)
+        if kind == "browser-status":
+            return self._on_browser_status(message)
+        if kind == "browser-action-ack":
+            return self._on_browser_ack(message)
         if kind == "cancel-job":
             search = self._searches.get(message["jobId"])
             if search is not None and search.status == "cancelled":
@@ -221,7 +248,8 @@ class Connection:
             del self._received_capture[next(iter(self._received_capture))]
         state = self._speech_state.get(stream_id)
         if state is None:
-            state = self._speech_state[stream_id] = _SpeechStream(EnergySegmenter(chunk.sample_rate), deque())
+            state = self._speech_state[stream_id] = _SpeechStream(EnergySegmenter(chunk.sample_rate), deque(),
+                                                                  input_key=self._input_key())
             while len(self._speech_state) > 16:
                 self._speech_state.popitem(last=False)
         if state.failed:
@@ -371,6 +399,12 @@ class Connection:
             if now - queued_at >= self._ack_timeout_s:
                 del self._external_queued[command_id]
                 out.append(_error(command_id, "queued browser edit has no final acknowledgment"))
+        for action_id, request in list(self._browser_requests.items()):
+            limit = BROWSER_ACTION_START_TIMEOUT_S if request.status == "sent" else BROWSER_ACTION_RUN_TIMEOUT_S
+            if now - request.sent_at >= limit:
+                del self._browser_requests[action_id]
+                kind = _INPUT_ACTION_KIND[request.action["operation"]["type"]]
+                out.append(_error(request.utterance_id, f"the browser did not finish the {kind}; no result was received"))
         for command_id, flight in list(self._in_flight.items()):
             if now - flight.sent_at >= self._ack_timeout_s:
                 del self._in_flight[command_id]
@@ -557,6 +591,13 @@ class Connection:
             # Familiar commands and explicit parser refusals never wait on a provider. Only
             # unknown addressed speech takes the optional bounded async interpretation path.
             if self._language is not None and result.reason == "command not recognized":
+                unavailable = getattr(self._language, "unavailable", None)
+                blocked = unavailable() if unavailable is not None else None
+                if blocked is not None:
+                    return out + [_error(utterance_id, blocked)]  # cooldown: no provider call at all
+                normalized = " ".join(tokenize(message["text"]))
+                if any(" ".join(tokenize(job.text)) == normalized for job, _ in self._language_pending.values()):
+                    return out + [_error(utterance_id, "the same request is already being interpreted")]
                 if len(self._language_pending) >= 5:
                     return out + [_error(utterance_id, "language queue is full; try again shortly")]
                 latest = self._latest_search(with_candidates=not self._voice_research)
@@ -586,7 +627,7 @@ class Connection:
     def _language_token(self) -> tuple:
         latest = self._latest_search(with_candidates=not self._voice_research)
         candidates = tuple((item["id"], json.dumps(item["patch"], sort_keys=True)) for item in latest.candidates) if latest else ()
-        return (self._language_epoch, self.revision, self._capture_signature(),
+        return (self._language_epoch, self.revision, self._capture_signature(), self._input_key(),
                 latest.job_id if latest else None, candidates)
 
     def language_result(self, job: LanguageJob, result: Optional[Interpretation], error: Optional[str], now: float) -> list[dict]:
@@ -612,6 +653,8 @@ class Connection:
 
     def _apply_interpretation(self, utterance_id: str, result: Interpretation, now: float) -> list[dict]:
         out: list[dict] = []
+        if isinstance(result, InputAction):
+            return self._request_browser_action(utterance_id, dict(result.operation), now)
         if isinstance(result, Command):
             try:
                 validate("SessionCommand", {"id": utterance_id, "expectedRevision": self.revision,
@@ -717,8 +760,91 @@ class Connection:
         out.extend(self._drain(now))
         return out
 
+    # -- browser input executor --------------------------------------------------
+
+    def _input_key(self) -> Optional[tuple]:
+        status = self.browser_status
+        return None if status is None else (status["clockId"], status["inputRevision"])
+
+    def _on_browser_status(self, message: Mapping[str, Any]) -> list[dict]:
+        """Track the executor's advertised capability and input configuration.
+
+        A new clock or input revision (device, profile, calibration, offset) retires older speech
+        streams and invalidates pending model decisions: the browser restarts speech on the new
+        input path, and nothing recognized on the old one may act or be verified afterwards."""
+        previous = self.browser_status
+        if self.transport is not None and message["clockId"] != self.transport["clockId"]:
+            return []  # status for another audio clock: not the current input
+        if (previous is not None and previous["clockId"] == message["clockId"]
+                and message["inputRevision"] < previous["inputRevision"]):
+            return []  # stale snapshot delivered late; revisions never move backwards on one clock
+        before = self._input_key()
+        self.browser_status = dict(message)
+        if before is not None and before != self._input_key():
+            self._language_epoch += 1
+            for state in self._speech_state.values():
+                if state.input_key is not None and state.input_key != self._input_key():
+                    state.failed = True  # its audio came from the previous input configuration
+                    state.pending.clear()
+                    state.held_wake = None
+        return []
+
+    def _on_browser_ack(self, message: Mapping[str, Any]) -> list[dict]:
+        """Only acknowledgments for our own requests on the same clock count; others are ignored."""
+        request = self._browser_requests.get(message["id"])
+        if request is None or request.action["clockId"] != message["clockId"]:
+            return []
+        status = message["status"]
+        if status == "running":
+            request.status = "running"
+            return []
+        del self._browser_requests[message["id"]]
+        kind = _INPUT_ACTION_KIND[request.action["operation"]["type"]]
+        reason = message.get("reason")
+        if status == "rejected":
+            return [_error(request.utterance_id, f"{kind} was rejected: {reason or 'no reason given'}")]
+        if status == "cancelled":
+            return [_error(request.utterance_id, f"{kind} was cancelled" + (f": {reason}" if reason else ""))]
+        return []  # complete: the browser shows the real result in its own status
+
+    def _request_browser_action(self, utterance_id: str, operation: dict, now: float) -> list[dict]:
+        status = self.browser_status
+        transport = self.transport or {}
+        if status is None or not status["available"] or (transport and status["clockId"] != transport.get("clockId")):
+            return [_error(utterance_id, "browser input controls are not available yet; use the on-screen input controls")]
+        active = status["activeAction"]
+        if operation["type"] == "cancel-input-action":
+            if active is None:
+                return [_error(utterance_id, "no input calibration or change is running")]
+            operation = {"type": "cancel-input-action", "actionId": active["id"]}
+        else:
+            if active is not None or any(r.action["operation"]["type"] != "cancel-input-action"
+                                         for r in self._browser_requests.values()):
+                return [_error(utterance_id, "an input action is already running; say cancel calibration first")]
+            if transport.get("recordingState") in ("armed", "recording") or transport.get("recording"):
+                return [_error(utterance_id, "stop recording before changing input settings")]
+            if operation["type"] == "calibrate-input":
+                if transport.get("playing"):
+                    return [_error(utterance_id, "stop playback first, then calibrate")]
+                if status["microphone"] == "off":
+                    return [_error(utterance_id, "turn the microphone on before calibrating")]
+        action = {"type": "browser-action", "id": f"{utterance_id}:input-{self._nonce}", "clockId": status["clockId"],
+                  "expectedInputRevision": status["inputRevision"], "operation": operation}
+        try:
+            validate("ServerMessage", action)
+        except ContractError:
+            return [_error(utterance_id, "invalid input action; nothing was changed")]
+        if action["id"] in self._browser_requests:
+            return []
+        self._browser_requests[action["id"]] = _BrowserRequest(utterance_id, action, now)
+        while len(self._browser_requests) > 64:
+            self._browser_requests.popitem(last=False)
+        self._language_epoch += 1
+        return [action]
+
     def close(self) -> None:
         self._closed = True
+        self._browser_requests.clear()
         self._language_pending.clear()
         self._speech_state.clear()
         self._previews.clear()

@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from typing import Any, Mapping, Optional, Sequence, Union
 
 from .spoken_numbers import find_number
+from .control_phrases import InputAction, input_phrase, key_phrase
 
 WAKE_WORDS = frozenset({"groove", "grove"})  # "grove" is a common recognizer spelling
 TEMPO_MIN, TEMPO_MAX, TEMPO_NUDGE = 40, 240, 10
@@ -37,6 +38,10 @@ BOUNDARY = {
     # Playtest repair (docs/PLAYTEST-REPAIR-CONTRACT.md): both are immediate-only.
     "metronome": "immediate",
     "erase-event": "immediate",
+    # Musical controls (MUSICAL-CONTROL-CONTRACT.md): the key setting is immediate; rewriting a
+    # track's existing notes is explicit and next-loop.
+    "set-pitch-snap": "immediate",
+    "snap-notes": "next-loop",
 }
 
 _LANE_PHRASES = (
@@ -90,7 +95,7 @@ class CancelSearch:
     pass
 
 
-Interpretation = Union[Command, Ignored, NotUnderstood, SoundSearch, AcceptCandidate, AuditionCandidate, CancelSearch]
+Interpretation = Union[Command, Ignored, NotUnderstood, SoundSearch, AcceptCandidate, AuditionCandidate, CancelSearch, InputAction]
 
 
 def tokenize(text: str) -> list[str]:
@@ -323,6 +328,8 @@ def interpret(text: str, session: Mapping[str, Any], during_recording: bool, tak
     `recording_target`: the take that was capturing when this was said; erase defaults to it
     before the ordinary selection (PLAYTEST-REPAIR-CONTRACT.md).
     """
+    # "F#" and "-20 ms" lose their symbols in tokenize; keep them as words.
+    text = re.sub(r"(?<![\w.])-(?=\d)", " minus ", text).replace("#", " sharp ")
     tokens = tokenize(text)
     while tokens and tokens[0] in _POLITE:
         tokens = tokens[1:]
@@ -344,6 +351,16 @@ def interpret(text: str, session: Mapping[str, Any], during_recording: bool, tak
     metronome = _metronome(tokens)
     if metronome is not None:
         return metronome
+
+    # Exact key and browser-input phrases (deterministic, so they survive provider rate limits).
+    control = input_phrase(verb, rest)
+    if control is None:
+        control = key_phrase(verb, rest, session, lambda words: resolve_target(words, session).target)
+    if control is not None:
+        value, refusal = control
+        if value is None:
+            return NotUnderstood(refusal)
+        return value if isinstance(value, InputAction) else _command(value)
 
     if verb in _ERASE_VERBS and any(token in _POSITION_WORDS for token in rest):
         return _erase_event(rest, session, recording_target)
