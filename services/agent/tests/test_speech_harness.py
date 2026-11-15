@@ -211,11 +211,19 @@ def test_speech_without_the_wake_phrase_during_recording_is_performance(take):
     assert max(r["throughFrame"] for r in marks(replies)) > frame_at(2.7)
 
 
-def test_outside_recording_plain_speech_is_a_command_without_a_span(take):
-    worker = ScriptedWorker(["play"])
+def test_outside_recording_addressed_speech_is_a_command_without_a_span(take):
+    worker = ScriptedWorker(["Groove, play"])
     replies = flat(stream(connect(worker, recording=False), worker, chunks_from_wav(take)))
     assert not [r for r in replies if r["type"] == "command-span"]
     assert [r["command"]["operation"] for r in replies if r["type"] == "command"] == [{"type": "play", "playing": True}]
+
+
+def test_always_on_microphone_ignores_unaddressed_speech_even_outside_a_take(take):
+    # Hands-free is the default: conversation ("play", "wow") must not act without "Groove".
+    worker = ScriptedWorker(["play"])
+    replies = flat(stream(connect(worker, recording=False), worker, chunks_from_wav(take)))
+    assert not [r for r in replies if r["type"] in ("command", "command-span", "error")]
+    assert [(r["outcome"], r.get("detail")) for r in replies if r["type"] == "speech-transcript"] == [("ignored", "not addressed to Groove")]
 
 
 def test_ws1_gap_then_new_stream_on_the_same_clock_never_verifies_pre_gap_or_missing_audio(take):
@@ -383,7 +391,7 @@ def test_a_command_inside_the_current_take_still_applies_after_a_slow_transcript
 
 def test_stop_recording_spoken_during_count_in_keeps_its_armed_context(tmp_path):
     take = synth_take(tmp_path / "countin.wav", hits=(), speech=(1.0, 1.6), seconds=3.0)
-    worker = ScriptedWorker(["stop recording"])
+    worker = ScriptedWorker(["Groove, stop recording"])
     connection = connect(worker, recording=False)
     connection.handle(transport_message("armed", TAKE_START), 0.0)
     stream(connection, worker, chunks_from_wav(take), transcribe_each_chunk=False)

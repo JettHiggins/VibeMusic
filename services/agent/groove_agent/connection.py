@@ -146,6 +146,12 @@ def split_commands(text: str) -> list[str]:
     return [piece.strip() for piece in _WAKE_SPLIT.split(text) if piece.strip()]
 
 
+def _addressed(text: str) -> bool:
+    """The transcript starts with the wake word (after politeness words): "Groove, ..." / "Hey Grove ..."."""
+    tokens = [t for t in tokenize(text) if t not in ("hey", "ok", "okay", "please", "so", "um", "uh")]
+    return bool(tokens) and tokens[0] in WAKE_WORDS
+
+
 def _bare_wake(text: str) -> bool:
     """The transcript is only the wake word ("Groove." / "Grove"), with nothing after it."""
     tokens = tokenize(text)
@@ -176,6 +182,9 @@ class Connection:
         self._voice_research = voice_research
         # Spoken sound searches load their best match (GROOVE_AUTO_LOAD=0 lists candidates only).
         self.auto_load_sounds = os.environ.get("GROOVE_AUTO_LOAD", "1").strip() != "0"
+        # Microphone speech must start with the wake word even outside a take (hands-free is on by default,
+        # so conversation must not act). GROOVE_SPEECH_WAKE=take restores "only during takes".
+        self.speech_requires_wake = os.environ.get("GROOVE_SPEECH_WAKE", "always").strip() != "take"
         self._closed = False
         self._previews = PreviewRequests()
         self._research_epoch = 0
@@ -344,7 +353,8 @@ class Connection:
                           and not (tokens and all(token in SUNG_SYLLABLES for token in tokens)))
             if continuing:
                 state.refused_through = job.segment.last_frame
-                out.extend(self._refused_span(job))
+                # Never acted on alone. During a take it is not cut out either: it may be singing, and a
+                # lost melody is worse than a few words of a refused request left in the take.
                 out.append(self._transcript(job, text, [], outcome="refused", detail="part of a request that was too long"))
                 return out + self._advance_speech(job.stream_id, job.clock_id, now)
             state.refused_through = None
@@ -360,6 +370,10 @@ class Connection:
                 text = joined
             else:
                 out.extend(self._speech_utterance(held_job, held_text, now))
+        if text and state.held_wake is None and self.speech_requires_wake and not _addressed(text):
+            # Always-on microphone: only speech that starts with "Groove" can act (typed text is exempt).
+            out.append(self._transcript(job, text, [], outcome="ignored", detail="not addressed to Groove"))
+            text = ""
         if text:
             if self._unfinished(job, text):
                 state.held_wake = (job, text)
@@ -474,6 +488,8 @@ class Connection:
         # _advance_speech then refuses it if the sentence is open or transcribing, or acts on it if
         # the sentence has ended (WS1 late-result review).
         result = self._parses(job, text)
+        if isinstance(result, Ignored):
+            return False  # singing/performance (not addressed to Groove) is never held, refused or cut
         if isinstance(result, Command) and result.operation["type"] in ("stop-recording", "play"):
             return False
         return job.segment.cut or isinstance(result, (NotUnderstood, SoundSearch))

@@ -286,7 +286,8 @@ def test_a_refused_long_request_in_a_take_is_excluded_and_its_continuation_never
     replies = flat(stream(connection, worker, chunks_from_wav(take)))
     assert commands(replies) == []
     spans = [r for r in replies if r["type"] == "command-span"]
-    assert spans and spans[0]["startFrame"] <= frame_at(1.05) and max(s["endFrame"] for s in spans) >= frame_at(9.0)
+    # Only the addressed (held) part is cut from the take; what follows may be singing and stays.
+    assert len(spans) == 1 and spans[0]["startFrame"] <= frame_at(1.05) and spans[0]["endFrame"] < frame_at(6.0)
 
 
 def test_a_failed_probe_frees_its_slot_so_a_later_dip_can_still_stop(tmp_path):
@@ -409,7 +410,8 @@ def test_every_recognized_segment_is_reported_with_what_was_done(tmp_path):
 def test_refusals_ignored_singing_and_model_requests_are_reported(tmp_path):
     _, _, replies = run(tmp_path, ["Groove, stop", "la la la"], recording=True, speech=(2.0, 2.6), more=((3.6, 4.2),),
                         seconds=5.5)
-    assert transcripts(replies) == [("Groove, stop", "command", "stop-recording"), ("la la la", "ignored", None)]
+    assert transcripts(replies) == [("Groove, stop", "command", "stop-recording"),
+                                    ("la la la", "ignored", "not addressed to Groove")]
     _, _, replies = run(tmp_path, ["Groove, tempo 999"], recording=False, speech=(2.0, 2.8), seconds=5.5)
     assert transcripts(replies)[-1] == ("Groove, tempo 999", "refused", "tempo must be between 40 and 240 BPM")
     connection, _, replies = run(tmp_path, ["Groove, make the bass line bouncy"], recording=False, speech=(2.0, 2.8),
@@ -420,3 +422,15 @@ def test_refusals_ignored_singing_and_model_requests_are_reported(tmp_path):
 def test_a_spoken_sound_request_is_reported_as_research(tmp_path):
     _, _, log = research_run(tmp_path, ["Groove, find a warm piano"], speech=(1.0, 2.2), seconds=5.0)
     assert transcripts(flat(log))[-1] == ("Groove, find a warm piano", "research", "searching: warm piano")
+
+
+
+def test_long_unaddressed_singing_cut_at_4_seconds_is_never_held_refused_or_excluded(tmp_path):
+    # Playtest 2026-11-15: a sung 'Dada, Dada, ...' melody hit the 4 s cut, was held as an unfinished
+    # request, refused as too long, and its command-span erased the melody from the take.
+    worker = ScriptedWorker(["Dada, dada, dada, dada, dada, dada", "dada, dada, dada", "oh no no no"])
+    connection = connect(worker, recording=True)
+    take = synth_take(tmp_path / "melody.wav", hits=(), speech=(1, 9.5), seconds=12)
+    replies = flat(stream(connection, worker, chunks_from_wav(take)))
+    assert not [r for r in replies if r["type"] in ("command-span", "command", "error")]
+    assert {r["outcome"] for r in replies if r["type"] == "speech-transcript"} == {"ignored"}
