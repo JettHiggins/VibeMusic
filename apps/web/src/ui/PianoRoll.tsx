@@ -1,15 +1,18 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { SessionState } from '@voicesynth/contracts';
 import { PatternEditQueue, moveNote, placeNote, resizeNote, type PatternOp } from './pattern-edit.ts';
-import { STEPS, cellAt, centerPitch, isBlackKey, visibleRows } from './piano-roll-geometry.ts';
+import { MAX_CENTER, MIN_CENTER, STEPS, cellAt, centerPitch, followCenter, isBlackKey, offRange, visibleRows } from './piano-roll-geometry.ts';
 import { noteName } from './labels.ts';
 import { C, MONO } from './theme.ts';
 
 type Note = SessionState['tracks'][number]['notes'][number];
 interface Props {
  notes: Note[];
- /** Recorded notes not yet confirmed by the engine (shown dashed). */
- provisional: { step: number; duration: number; midi: number }[];
+ /**
+  * Recorded notes not yet confirmed by the engine. `live` is the note still being sung (view-only,
+  * growing); `provisional` was released and waits for the loop; `submitted` was sent to the engine.
+  */
+ provisional: { step: number; duration: number; midi: number; state?: LiveState }[];
  playhead: number | null;
  disabled: boolean;
  eraseEnabled?: boolean;
@@ -18,9 +21,34 @@ interface Props {
  onAudition?: (midi: number, on: boolean) => void;
  label: string;
 }
+export type LiveState = 'live' | 'provisional' | 'submitted';
 type Drag = { kind: 'move' | 'resize'; id: string; startX: number; startY: number; step: number; midi: number; duration: number; dSteps: number; dRows: number };
 
 const ROWS = 25, ROW_H = 14, KEYS_W = 46;
+/** Live = solid outline, lightly filled and labelled; released = dashed; sent to the engine = dotted and fainter. */
+const LIVE_STYLE: Record<LiveState, React.CSSProperties> = {
+ live: { border: `1px solid ${C.accent}`, background: '#f4f4f526', color: C.accent },
+ provisional: { border: `1px dashed ${C.pending}`, background: 'transparent', color: C.pending },
+ submitted: { border: `1px dotted ${C.faint}`, background: 'transparent', color: C.faint },
+};
+const LIVE_TITLE: Record<LiveState, string> = { live: 'Still singing (not saved yet)', provisional: 'Heard; saved at the loop boundary', submitted: 'Sent to the engine; waiting to be saved' };
+
+type OffNote = { step: number; midi: number; saved: boolean; state?: LiveState };
+/**
+ * Edge marker for notes outside the visible pitch range: placed at the nearest unsaved (else saved) note's
+ * step on the top or bottom edge and naming it, so a low or high sung note is never silently invisible.
+ */
+function EdgeMarker({ side, notes, onShow }: { side: 'above' | 'below'; notes: OffNote[]; onShow: (midi: number) => void }) {
+ const nearest = notes.find(n => !n.saved) ?? notes[0], live = notes.some(n => !n.saved);
+ const more = notes.length > 1 ? ` +${notes.length - 1}` : '';
+ const count = `${notes.length} note${notes.length === 1 ? '' : 's'}`;
+ return <button type="button" data-edge={side} onPointerDown={e => e.stopPropagation()} onClick={e => { e.stopPropagation(); onShow(nearest.midi); }}
+  aria-label={`Show ${noteName(nearest.midi)} (${count} ${side} view)`} title={`${count} ${side} the visible range; click to show`}
+  style={{ position: 'absolute', zIndex: 2, [side === 'above' ? 'top' : 'bottom']: 1, left: `min(${nearest.step / STEPS * 100}%, calc(100% - 64px))`, padding: '0 4px', height: ROW_H - 2, lineHeight: `${ROW_H - 4}px`,
+   fontSize: 9, fontFamily: MONO, whiteSpace: 'nowrap', borderRadius: 2, border: `1px ${live ? 'solid' : 'dashed'} ${live ? C.accent : C.muted}`, background: C.raised, color: live ? C.accent : C.muted }}>
+  {side === 'above' ? '↑' : '↓'} {noteName(nearest.midi)}{more}
+ </button>;
+}
 
 /**
  * Editable synth piano roll: keyboard/pitch axis, four-bar timeline on a sixteenth grid, playhead,
@@ -39,6 +67,15 @@ export function PianoRoll({ notes, provisional, playhead, disabled, eraseEnabled
  useEffect(() => { if (!hadNotes.current && notes.length) { hadNotes.current = true; setCenter(centerPitch(notes)); } }, [notes]);
  const rows = useMemo(() => visibleRows(center, ROWS), [center]);
  const rowOf = (midi: number) => rows.indexOf(midi);
+ // Follow sung notes outside the view, by whole octaves. Any manual navigation while a take is on screen
+ // pauses following until the live/queued notes are gone, so the roll never fights the Oct buttons.
+ const manual = useRef(false);
+ const followed = provisional.find(p => p.state === 'live') ?? provisional[provisional.length - 1];
+ useEffect(() => { if (!provisional.length) manual.current = false; }, [provisional.length]);
+ useEffect(() => {
+  if (followed && !manual.current && rowOf(followed.midi) < 0) setCenter(c => followCenter(c, followed.midi, ROWS));
+ }, [followed?.midi, followed?.step]); // eslint-disable-line react-hooks/exhaustive-deps
+ const navigate = (next: number) => { if (provisional.length) manual.current = true; setCenter(Math.max(MIN_CENTER, Math.min(MAX_CENTER, next))); };
  const audition = (midi: number) => { if (!onAudition) return; onAudition(midi, true); setTimeout(() => onAudition(midi, false), 180); };
 
  useEffect(() => {
@@ -91,15 +128,20 @@ export function PianoRoll({ notes, provisional, playhead, disabled, eraseEnabled
  };
  /** A note may wrap the loop edge: render it as up to two segments. */
  const segments = (step: number, duration: number) => step + duration <= STEPS ? [[step, duration]] : [[step, STEPS - step], [0, step + duration - STEPS]];
- const offscreen = notes.filter(n => rowOf(n.midi) < 0).length;
+ const off = offRange([...provisional.map(p => ({ step: p.step, midi: p.midi, state: p.state, saved: false })), ...notes.map(n => ({ step: n.step, midi: n.midi, state: undefined, saved: true }))], rows);
+ const offscreen = off.above.length + off.below.length;
+ const offDetail = [off.above.length && `${off.above.length} above`, off.below.length && `${off.below.length} below`].filter(Boolean).join(', ');
+ const liveOff = off.above.concat(off.below).some(p => !p.saved);
 
  return <div aria-label={`${label} piano roll`} style={{ userSelect: 'none' }}>
   <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6, flexWrap: 'wrap' }}>
-   <button disabled={center >= 115} onClick={() => setCenter(c => Math.min(115, c + 12))} aria-label="Octave up">▲ Oct</button>
-   <button disabled={center <= 12} onClick={() => setCenter(c => Math.max(12, c - 12))} aria-label="Octave down">▼ Oct</button>
-   <button onClick={() => setCenter(centerPitch(notes))}>Center</button>
+   <button disabled={center >= MAX_CENTER} onClick={() => navigate(center + 12)} aria-label="Octave up">▲ Oct</button>
+   <button disabled={center <= MIN_CENTER} onClick={() => navigate(center - 12)} aria-label="Octave down">▼ Oct</button>
+   <button onClick={() => navigate(centerPitch(notes.length ? notes : provisional))}>Center</button>
+   <span style={{ color: C.muted, fontFamily: MONO }} aria-label="Visible range">{noteName(rows[rows.length - 1])}–{noteName(rows[0])}</span>
    <label>Length <select value={length} onChange={e => setLength(Number(e.target.value))}>{[1, 2, 4, 8, 16].map(l => <option key={l} value={l}>{l === 1 ? '1/16' : l === 2 ? '1/8' : l === 4 ? '1/4' : l === 8 ? '1/2' : '1 bar'}</option>)}</select></label>
-   <span style={{ color: C.muted }}>Click to add · drag to move · drag the right edge to resize · Delete or double-click to remove{offscreen ? ` · ${offscreen} note(s) outside view` : ''}</span>
+   <span style={{ color: C.muted }}>Click to add · drag to move · drag the right edge to resize · Delete or double-click to remove</span>
+   {offscreen > 0 && <span role="status" style={{ color: liveOff ? C.text : C.muted }}>{offscreen} note{offscreen === 1 ? '' : 's'} outside view ({offDetail})</span>}
   </div>
   <div style={{ display: 'flex', border: `1px solid ${C.line}`, borderRadius: 4, overflow: 'hidden' }}>
    <div aria-label="Keyboard" style={{ width: KEYS_W, flex: 'none', borderRight: `1px solid ${C.line}` }}>
@@ -116,9 +158,13 @@ export function PianoRoll({ notes, provisional, playhead, disabled, eraseEnabled
      ].join(','), backgroundColor: C.panel }}>
     {rows.map((m, i) => isBlackKey(m) && <div key={m} style={{ position: 'absolute', left: 0, right: 0, top: i * ROW_H, height: ROW_H, background: '#0000002e', pointerEvents: 'none' }} />)}
     {provisional.flatMap((p, i) => rowOf(p.midi) < 0 ? [] : segments(p.step, p.duration).map(([s, d], k) =>
-     <button key={`p${i}-${k}`} type="button" aria-label={`${eraseEnabled ? 'Erase provisional' : 'Erase unavailable'} ${noteName(p.midi)} step ${s + 1}`} disabled={disabled || !eraseEnabled}
+     <button key={`p${i}-${k}`} type="button" data-live={p.state ?? 'provisional'} title={LIVE_TITLE[p.state ?? 'provisional']}
+      aria-label={`${eraseEnabled ? 'Erase provisional' : 'Erase unavailable'} ${noteName(p.midi)} step ${s + 1}${p.state === 'live' ? ' (still singing)' : ''}`} disabled={disabled || !eraseEnabled}
       onPointerDown={e => e.stopPropagation()} onClick={e => { e.stopPropagation(); onErase(s); }}
-      style={{ position: 'absolute', left: `${s / STEPS * 100}%`, width: `${d / STEPS * 100}%`, top: rowOf(p.midi) * ROW_H + 1, height: ROW_H - 2, minWidth: 0, padding: 0, border: `1px dashed ${C.pending}`, borderRadius: 2, boxSizing: 'border-box', background: 'transparent', cursor: 'pointer' }} />))}
+      style={{ position: 'absolute', left: `${s / STEPS * 100}%`, width: `${d / STEPS * 100}%`, top: rowOf(p.midi) * ROW_H + 1, height: ROW_H - 2, minWidth: 0, padding: '0 0 0 2px', borderRadius: 2, boxSizing: 'border-box', cursor: 'pointer',
+       overflow: 'hidden', whiteSpace: 'nowrap', textAlign: 'left', fontSize: 9, fontFamily: MONO, lineHeight: `${ROW_H - 4}px`, ...LIVE_STYLE[p.state ?? 'provisional'] }}>{k === 0 ? noteName(p.midi) : ''}</button>))}
+    {(['above', 'below'] as const).map(side => off[side].length > 0 && <EdgeMarker key={side} side={side} notes={off[side]}
+     onShow={midi => navigate(followCenter(center, midi, ROWS))} />)}
     {notes.map(shape).flatMap(n => rowOf(n.midi) < 0 ? [] : segments(n.step, n.duration).map(([s, d], k) => {
      const sel = n.id === selected, pending = PatternEditQueue.isPlaceholder(n.id);
      return <div key={`${n.id}-${k}`} role="gridcell" aria-label={`${noteName(n.midi)} step ${n.step + 1} length ${n.duration}`} aria-selected={sel}
