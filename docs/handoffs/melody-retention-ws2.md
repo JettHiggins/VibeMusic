@@ -71,3 +71,32 @@ Unchanged: live range following and manual Oct, live erase, Clear and Undo, the 
 - No per-drop reason exists for command-span, confidence or outside-window drops. If WS1's retention trace publishes bounded reason metadata, the take line can show it in place of the bare "not kept" count.
 - Once WS1 merges the rhythm-snap/next-bar contract, add one compact snap selector and a start-option choice beside the phase strip. That is not started, to avoid a competing interface.
 - Next: WS1 runs `ws2-recording-phase.js` in the harness. Then a human check of downbeat entry and take wording in manual and speech mode.
+
+## Follow-up: recording grid and chord controls (merged playtest contract)
+
+Branch `ws2/rhythm-chord-controls`, stacked on #47 plus `engine-integration` `7830a7b` (contract PR #45). Implementation commit: `0fb0722`.
+
+- **Grid and Chord controls:** compact **Grid** (1/16, 1/8, 1/4) and **Chord** (Off, Triad) selects at the end of the phase strip. They send `set-rhythm-snap` and `set-chord-mode` with boundary `immediate`.
+- **Values shown:** the selects show `SessionState.rhythmSnap` and `chordMode`, or the contract defaults (sixteenth, off) when those are missing. If an engine rejects the operation, the select stays on the real value and the status line shows the rejection.
+- **Explanations:**
+  - **Grid:** the tooltip and accessible description explain the trade-off: "quick pairs kept", or "quicker notes merge onto the same beat".
+  - **Grid change during a take:** the strip shows "This take keeps 1/4; 1/8 applies from the next take". This uses the grid in force when the take started, as the contract specifies.
+  - **Chord:** disabled for drums. Its hint follows the key: "C major triads", or major triads when no key is set.
+- **Piano roll:** draws `Note.chord` tones with their root note (translucent, outlined, labelled, not separately editable). The root's accessible name says "C4 chord with E4 G4". Moving a chord note moves its tones, and tones pushed outside MIDI 0–127 are omitted, as `triadFor` does.
+- **Not built: a next-bar start option.** The merged contract doesn't define one; it has only rhythm snap, chord mode and transcript. Count-in preparation is covered by the phase strip.
+- **Not built: speech transcript display.** It needs `speech-transcript` handled in `voice-input.ts`, which WS1 owns this round. Once WS1 exposes the latest transcript in `VoiceInputState`, the UI can show it.
+
+**Checks:**
+- `npm test`: 286 run, 285 pass, 1 optional skip. New: `tests/ws2-rhythm-chord-controls.test.ts`.
+- `npm run check` and `npm run build` pass.
+
+**Real browser:**
+- **On current `engine-integration`:** choosing 1/8 reports "set-rhythm-snap not applied: Operation not supported by this engine build", and the select stays at 1/16. That is the truthful result.
+- **With WS1's `ws1/playtest-engine` (`c7946a4`) merged temporarily in the working tree, not committed, then aborted:**
+  - Key C major, Grid 1/4 and Chord Triad applied.
+  - A test-signal take committed `[20,4,C4,[E4,G4]]`, `[24,4,D4,[F4,A4]]` and `[28,4,E4,[G4,B4]]`.
+  - The roll drew all six chord tones.
+  - Switching to 1/8 mid-take showed the next-take notice.
+- Synthetic evidence only.
+
+**Next:** merge WS1's engine branch, then run the same check on the integrated build and a physical singing check of 1/8 and 1/4.
