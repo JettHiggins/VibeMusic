@@ -56,11 +56,9 @@ function check(ok, what, detail = '') {
     navigator.mediaDevices.getUserMedia = async () => dst.stream;
     await voice.enableMicrophone();
   }, CLIPS);
-  const connect = page.getByRole('button', { name: 'Connect agent', exact: true });
-  if (!(await connect.isVisible().catch(() => false))) await page.locator('summary', { hasText: /agent/i }).first().click();
-  await connect.click({ timeout: 10000 });
-  await page.waitForTimeout(1000);
+  // Hands-free connects the local service itself (the app's default flow); no Connect button needed.
   await page.evaluate(() => globalThis.__voicesynth.voice.enableHandsFree());
+  await page.waitForTimeout(1000);
 
   const speechState = () => page.evaluate(() => globalThis.__voicesynth.voice.getState().speech);
   const transport = () => page.evaluate(() => globalThis.__latest.transport);

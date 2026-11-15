@@ -418,3 +418,19 @@ test('clear after stop resets the retained window too',()=>{
  recorder.addOnsets([hit(4)],0,CLOCK,engine.frame);
  assert.equal(engine.sent.length,0);
 });
+
+test('losing speech keeps notes it had already verified and still commits them (playtest: melodies vanished)', () => {
+ // A batch lead of 1 s means nothing submits until the loop boundary is near.
+ const { engine, recorder, advance, hit } = setup('speech', 1);
+ recorder.setSpeechAvailable(true);
+ advance(20 * STEP);
+ recorder.addOnsets([hit(2), hit(6), hit(15)], 0, CLOCK, engine.frame);
+ recorder.verifyThrough(CLOCK, START + 10 * STEP); // hits at 2 and 6 classified; 15 not yet
+ assert.equal(engine.sent.length, 0, 'far from the boundary: verified hits wait');
+ recorder.setSpeechAvailable(false); // e.g. a capture gap or a dropped service connection
+ assert.equal(recorder.status().provisional.length, 2, 'verified hits survive; only the unverified one is dropped');
+ advance(43 * STEP); // reach the batch lead before the loop boundary
+ const op = engine.sent[0]?.operation;
+ assert.ok(op?.type === 'commit-performance', 'verified hits still commit while speech is down');
+ if (op?.type === 'commit-performance') assert.equal(op.events.length, 2);
+});
