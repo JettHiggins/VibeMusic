@@ -7,6 +7,7 @@ messages. Renders are serialized across jobs so one request cannot starve anothe
 from __future__ import annotations
 
 import hashlib
+import secrets
 import json
 import os
 import threading
@@ -17,12 +18,12 @@ from typing import Callable, Optional, Sequence
 
 import numpy as np
 
-from .audio import DEFAULT_RECIPE, Embedder, Renderer, RenderRecipe, render_problem, wav_bytes
+from .audio import DEFAULT_RECIPE, Embedder, Renderer, RenderRecipe, render_problem, unit, wav_bytes
 from .corpus import Cancelled, Corpus, Entry
 from .retrieval import RETRIEVAL_VERSION, Ranking, RetrievalIndex, TextCache
 
 TEXT_CACHE = "text-embeddings.npz"  # beside the corpus; keyed by embedder identity
-from .search import MAX_VARIATIONS, Scored, evolve
+from .search import CANDIDATES, MAX_VARIATIONS, Scored, diverse, evolve
 from .space import MetadataError, ParameterSpace
 
 Emit = Callable[[dict], None]
@@ -43,6 +44,7 @@ class ResearchBackend:
     variations_per_preset: int = 0
     budget: int = MAX_VARIATIONS
     corpus_seed: int = 0
+    search_seed: Optional[int] = None  # fixed only for reproducible tests/evaluation; None = random per search
     corpus: Optional[Corpus] = None
     corpus_dir: Optional[Path] = None  # where a freshly built corpus is saved for the next start
     _index: Optional[RetrievalIndex] = field(default=None, repr=False)
@@ -195,25 +197,35 @@ class ResearchPort:
                         continue
                     audio = backend.renderer.render(patch, backend.recipe)
                     if render_problem(audio) is None:
-                        score = ranking.score(patch, backend.embedder.embed_audio(audio, backend.renderer.sample_rate))
-                        item = Scored(patch, score, "carried over from the previous search", audio)
+                        embedding = unit(backend.embedder.embed_audio(audio, backend.renderer.sample_rate))
+                        score = ranking.score(patch, embedding)
+                        item = Scored(patch, score, "carried over from the previous search", audio, embedding)
                         carried.setdefault(item.key(), item)
                 pool = list(carried.values())
                 if not pool:
-                    for entry, score in backend.top(ranking, 5):
+                    # Choose diverse corpus hits from a wider shortlist (embeddings only), then render
+                    # them one by one and show each as soon as it is ready.
+                    shortlist = [Scored(entry.patch, score, f"retrieved: {entry.label}", entry.audio,
+                                        unit(np.asarray(entry.embedding, dtype=np.float32)))
+                                 for entry, score in backend.top(ranking, CANDIDATES * 3)]
+                    for item in diverse(shortlist, CANDIDATES):
                         if job.cancel.is_set():
                             raise Cancelled()
                         # Disk corpora keep embeddings/patches, not float audio in RAM.
                         # Re-render selected hits so cached candidates still have real previews.
-                        audio = entry.audio if entry.audio is not None else backend.renderer.render(entry.patch, backend.recipe)
+                        audio = item.audio if item.audio is not None else backend.renderer.render(item.patch, backend.recipe)
                         if render_problem(audio) is None:
-                            pool.append(Scored(entry.patch, score, f"retrieved: {entry.label}", audio))
+                            item.audio = audio
+                            pool.append(item)
+                            self._message(job, "running", RETRIEVAL_PROGRESS * len(pool) / CANDIDATES,
+                                          sorted(pool, key=lambda s: (-s.score, s.key())))
                 if not pool:
                     self._message(job, "failed", 0.0, [], "no usable patches: every render was silent or clipping")
                     return
                 pool.sort(key=lambda s: (-s.score, s.key()))
-                self._message(job, "running", RETRIEVAL_PROGRESS, pool[:5])
-                seed = int.from_bytes(hashlib.sha256(description.encode("utf-8")).digest()[:4], "big")
+                self._message(job, "running", RETRIEVAL_PROGRESS, diverse(pool, CANDIDATES))
+                # A fresh seed per search, so asking again explores new variations (shown in provenance).
+                seed = backend.search_seed if backend.search_seed is not None else secrets.randbits(32)
                 result = evolve(pool, backend.space, backend.renderer, backend.embedder, ranking.query, backend.recipe,
                                 seed=seed, budget=backend.budget, cancelled=job.cancel.is_set,
                                 progress=lambda done, total, best: self._message(

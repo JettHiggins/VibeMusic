@@ -28,6 +28,7 @@ from .speech_pipeline import Transcript
 from .speech_alignment import SUNG_SYLLABLES, locate_command
 from .preview import PreviewRequests
 from .research.service import NOT_CONFIGURED
+from .research.search import CANDIDATES
 
 from .language import LanguageJob
 from .contracts import ContractError, validate
@@ -790,7 +791,7 @@ class Connection:
                 research = ({"jobId": latest.job_id, "trackId": latest.track_id, "description": latest.description,
                              "status": latest.status, "candidates": [
                                  {"index": i + 1, "id": item["id"], "provenance": item.get("provenance", "")}
-                                 for i, item in enumerate(latest.candidates[:5])]} if latest else {})
+                                 for i, item in enumerate(latest.candidates[:CANDIDATES])]} if latest else {})
                 job = LanguageJob(utterance_id, message["text"], deepcopy(self.session), during_recording, armed, research)
                 self._language_pending[utterance_id] = (job, self._language_token())
                 if not self._language.submit(job):
@@ -830,7 +831,7 @@ class Connection:
             return [_error(job.request_id, "language agent could not resolve the request; no change applied")]
         if not isinstance(result, (Command, SoundSearch, AcceptCandidate, AuditionCandidate, CancelSearch)):
             return [_error(job.request_id, "invalid language proposal; no change applied")]
-        if isinstance(result, (AcceptCandidate, AuditionCandidate)) and (type(result.index) is not int or not 1 <= result.index <= 5):
+        if isinstance(result, (AcceptCandidate, AuditionCandidate)) and (type(result.index) is not int or not 1 <= result.index <= CANDIDATES):
             return [_error(job.request_id, "invalid candidate index; no change applied")]
         if isinstance(result, SoundSearch) and (not isinstance(result.description, str)
                                                or not 0 < len(result.description.strip()) <= 500):

@@ -102,7 +102,7 @@ def decode_decision(decision: dict) -> Interpretation:
         if type(decision.get("refine", False)) is not bool:
             raise ValueError("invalid refine flag")
         return SoundSearch(decision["description"], decision.get("refine", False))
-    if kind in ("accept", "preview") and type(decision.get("index")) is int and 1 <= decision["index"] <= 5:
+    if kind in ("accept", "preview") and type(decision.get("index")) is int and 1 <= decision["index"] <= 10:
         return (AcceptCandidate if kind == "accept" else AuditionCandidate)(decision["index"])
     if kind == "cancel":
         return CancelSearch()
@@ -148,7 +148,7 @@ def create_graph(model, voice_research: bool = False):
         return json.dumps({"kind": "search", "description": description, "refine": refine})
 
     @tool(return_direct=True)
-    def accept_candidate(index: Annotated[int, Field(ge=1, le=5)]) -> str:
+    def accept_candidate(index: Annotated[int, Field(ge=1, le=10)]) -> str:
         """Accept a numbered candidate from the latest known research list, 1-based."""
         return json.dumps({"kind": "accept", "index": index})
 
@@ -165,7 +165,7 @@ def create_graph(model, voice_research: bool = False):
     tools = [command_tool, search_sound, accept_candidate, cancel_search, refuse_request]
     if voice_research:
         @tool(return_direct=True)
-        def audition_candidate(index: Annotated[int, Field(ge=1, le=5)]) -> str:
+        def audition_candidate(index: Annotated[int, Field(ge=1, le=10)]) -> str:
             """Request non-mutating playback of one current candidate's existing preview; success requires browser acknowledgment."""
             return json.dumps({"kind": "preview", "index": index})
         tools.append(audition_candidate)
