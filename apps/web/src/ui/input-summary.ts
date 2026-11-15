@@ -2,6 +2,7 @@ import { snapMidiToScale, type PitchSnap } from '@voicesynth/contracts';
 import type { VoiceInputState } from '../input/voice-input.ts';
 import { noteName } from './labels.ts';
 import { keyLabel } from './pitch-snap-ui.ts';
+import { waitingLabel } from './recording-phase.ts';
 
 export type Tone = 'ok' | 'warn' | 'alert' | 'muted';
 export interface InputNotice { id: string; tone: Tone; text: string; action?: 'setup' }
@@ -70,12 +71,15 @@ export function summarizeInput(state: VoiceInputState, melodic: boolean, pitchSn
  };
 }
 
-/** Compact take counters; null when there is nothing to report. */
+/**
+ * Compact counters since the microphone started (the editor shows the current take); null when there is
+ * nothing to report. Uses the same words as the editor's take line and the recorder's verification mode.
+ */
 export function takeLine(state: VoiceInputState, melodic: boolean): string | null {
  const heard = state.recorder.provisional.filter(p => p.status === 'provisional').length;
  const queued = state.recorder.provisional.filter(p => p.status === 'submitted').length;
  const { committed, dropped } = state.recorder;
  if (!heard && !queued && !committed && !dropped && !state.recorder.capturing) return null;
  const unit = melodic ? 'note' : 'hit';
- return `${heard} ${unit}${heard === 1 ? '' : 's'} heard · ${queued} queued · ${committed} committed${dropped ? ` · ${dropped} ignored` : ''}`;
+ return `Since mic on: ${heard} ${unit}${heard === 1 ? '' : 's'} ${waitingLabel(state.recorder.mode)} · ${queued} sent · ${committed} saved${dropped ? ` · ${dropped} not kept` : ''}`;
 }

@@ -22,6 +22,7 @@ export const MONO = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
 export const workspaceCss = `
  html, body { background: ${C.bg}; margin: 0; color: ${C.text}; }
  .vs { font-family: system-ui, sans-serif; font-size: 13px; color: ${C.text}; }
+ .vs-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
  .vs button { background: ${C.raised}; color: ${C.text}; border: 1px solid ${C.lineStrong}; border-radius: 4px; padding: 4px 9px; font: inherit; cursor: pointer; }
  .vs button:hover:not(:disabled) { border-color: ${C.muted}; }
  .vs button:disabled { opacity: .4; cursor: default; }
