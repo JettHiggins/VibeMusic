@@ -20,7 +20,8 @@ from .intents import (BOUNDARY, AcceptCandidate, AuditionCandidate, CancelSearch
 from .control_phrases import InputAction
 from .intents import Plan
 
-MUSIC_TOOLS = ("tidy_timing", "drum_pattern", "drum_steps", "transpose", "change_key", "set_volume", "adjust_sound")
+MUSIC_TOOLS = ("tidy_timing", "drum_pattern", "drum_steps", "transpose", "change_key", "set_volume", "adjust_sound",
+               "edit_notes")
 MAX_DECISIONS = 6
 INPUT_ACTIONS = {"calibrate": {"type": "calibrate-input", "mode": "full"},
                  "calibrate_noise": {"type": "calibrate-input", "mode": "noise"},
@@ -172,6 +173,20 @@ def model_operation_schema() -> dict:
             "description": "Fill only the fields that this operation type uses (see the system prompt rules)."}
 
 
+from pydantic import BaseModel
+
+
+class NoteEdit(BaseModel):
+    """One individual-note edit for the edit_notes tool (module level so tool annotations resolve)."""
+    index: Annotated[int, Field(ge=1, le=64, description="note number n from the song view (time order)")]
+    move_to_step: Optional[Annotated[int, Field(ge=0, le=63)]] = None
+    shift: Optional[Annotated[int, Field(ge=-63, le=63)]] = None
+    length: Optional[Annotated[int, Field(ge=1, le=64)]] = None
+    stretch: Optional[Annotated[float, Field(gt=0, le=8)]] = None
+    semitones: Optional[Annotated[int, Field(ge=-36, le=36)]] = None
+    delete: bool = False
+
+
 SYSTEM_PROMPT = (
     "You are Groove, the voice assistant of a 4-bar browser groovebox (3 synth tracks + drums). "
     "Turn the user's request into tool calls that change the song. Call ALL tools needed in ONE response "
@@ -186,6 +201,7 @@ SYSTEM_PROMPT = (
     "DRUMS: use drum_steps with the exact steps you computed from the song's current hits "
     "(mode replace/add/remove). 'Delete every third snare' = remove the 3rd, 6th, ... of the current snare "
     "steps in order. Use drum_pattern only for plain regular spacing. Never clear a lane unless asked to clear it.\n"
+    "NOTES: melody notes are listed with a number n. For specific notes (the second note, the last note, the note in bar 3, each note) use edit_notes: move_to_step, shift, length, stretch, semitones, delete. 'Line up each note with the start of a bar' = move note 1 to step 0, note 2 to 16, note 3 to 32, note 4 to 48.\n"
     "MELODY: tidy_timing to fix/clean up/tighten timing (scope all for the whole beat); transpose for "
     "octave/semitone moves; change_key to put the song in a key or a mood (pick the key yourself: sad, dark, "
     "moody -> minor; happy, bright, uplifting -> major).\n"
@@ -311,6 +327,15 @@ def create_graph(model, voice_research: bool = False):
                            "args": {"root": root_number, "scale": scale, "move_notes": move_notes}})
 
     @tool(return_direct=True)
+    def edit_notes(track: Literal["synth-1", "synth-2", "synth-3"],
+                   edits: Annotated[list[NoteEdit], Field(min_length=1, max_length=64)]) -> str:
+        """Edit INDIVIDUAL notes of a synth track, by their number n in the song view (1 = first in time).
+        Per note: move_to_step (start position 0..63), shift (steps, + later), length (steps), stretch
+        (factor, 2 = twice as long), semitones (+12 = an octave up), delete. Edited notes win overlaps."""
+        return json.dumps({"kind": "tool", "name": "edit_notes",
+                           "args": {"track": track, "edits": [e.model_dump(exclude_none=True) for e in edits]}})
+
+    @tool(return_direct=True)
     def set_volume(track: Literal["synth-1", "synth-2", "synth-3", "drums"],
                    level: Optional[Annotated[int, Field(ge=0, le=100)]] = None,
                    change: Optional[Annotated[int, Field(ge=-100, le=100)]] = None) -> str:
@@ -340,7 +365,8 @@ def create_graph(model, voice_research: bool = False):
         return json.dumps({"kind": "input", "action": action})
 
     tools = [command_tool, search_sound, accept_candidate, cancel_search, refuse_request,
-             tidy_timing, drum_pattern, drum_steps, transpose, change_key, set_volume, adjust_sound, input_action]
+             tidy_timing, drum_pattern, drum_steps, transpose, change_key, set_volume, adjust_sound, edit_notes,
+             input_action]
     if voice_research:
         @tool(return_direct=True)
         def audition_candidate(index: Annotated[int, Field(ge=1, le=10)]) -> str:

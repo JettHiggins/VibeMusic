@@ -273,6 +273,10 @@ def run_tool(name: str, args: Mapping[str, Any], session: Mapping[str, Any]) -> 
         track = args.get("track") or session["selected"]["trackId"]
         changes = dict(args.get("changes") or {})
         return adjust_sound(session, track, changes, bool(args.get("absolute", False))), f"{track}: " + ", ".join(changes)
+    if name == "edit_notes":
+        track = args.get("track") or session["selected"]["trackId"]
+        edits = list(args.get("edits") or [])
+        return edit_notes(session, track, edits), f"{track}: edited {len(edits)} note{'s' if len(edits) != 1 else ''}"
     if name == "change_key":
         root, scale = int(args.get("root", -1)), args.get("scale")
         operations = change_key(session, root, scale, bool(args.get("move_notes", True)))
@@ -350,9 +354,9 @@ def song_summary(session: Mapping[str, Any]) -> dict:
     melody = {}
     for track_id in MELODIC:
         track = _track(session, track_id)
-        melody[track_id] = [{"step": n["step"], "len": n["duration"], "note": pitch_name(n["midi"]),
+        melody[track_id] = [{"n": i + 1, "step": n["step"], "len": n["duration"], "note": pitch_name(n["midi"]),
                              **({"chord": [pitch_name(p) for p in n["chord"]]} if n.get("chord") else {})}
-                            for n in sorted(track["notes"], key=lambda n: n["step"])]
+                            for i, n in enumerate(sorted(track["notes"], key=lambda n: (n["step"], n["id"])))]
     drums = _track(session, "drums")
     return {
         "grid": "4 bars x 4 beats x 4 sixteenths = steps 0..63; step = (bar-1)*16 + (beat-1)*4 + (sixteenth-1)",
@@ -431,3 +435,73 @@ def adjust_sound(session: Mapping[str, Any], track: str, changes: Mapping[str, f
         raise ToolRefusal("that control is already at its limit")
     patch["parameters"] = parameters
     return [{"type": "apply-patch", "trackId": track, "patch": patch}]
+
+
+# -- individual notes ------------------------------------------------------------------------------
+
+def _trim_around(notes: list, occupied: set) -> list:
+    """Older notes lose only the cells a new/edited note occupies (split or shortened), like over-recording."""
+    out = []
+    for note in notes:
+        runs, run = [], []
+        for i in range(note["duration"]):
+            cell = (note["step"] + i) % 64
+            if cell in occupied:
+                if run:
+                    runs.append(run)
+                run = []
+            else:
+                run.append(cell)
+        if run:
+            runs.append(run)
+        if len(runs) == 1 and len(runs[0]) == note["duration"]:
+            out.append(note)
+            continue
+        for index, cells in enumerate(runs):
+            out.append(dict(note, id=note["id"] if index == 0 else f"{note['id']}:s{index}", step=cells[0], duration=len(cells)))
+    return out
+
+
+def edit_notes(session: Mapping[str, Any], track: str, edits: Sequence[Mapping[str, Any]]) -> list[dict]:
+    """Edit individual notes of a synth track. Notes are numbered 1..N in time order (as in the song view).
+    Each edit: index, and any of move_to_step (0..63), shift (steps), length (steps), stretch (factor),
+    semitones (+12 = up an octave), delete. Edited notes win overlaps; other notes are trimmed around them."""
+    if track not in MELODIC:
+        raise ToolRefusal("note editing works on the three synth tracks")
+    ordered = sorted(_track(session, track)["notes"], key=lambda n: (n["step"], n["id"]))
+    if not ordered:
+        raise ToolRefusal("that track has no notes yet")
+    changed: dict[str, Optional[dict]] = {}
+    for edit in edits:
+        index = int(edit.get("index", 0))
+        if not 1 <= index <= len(ordered):
+            raise ToolRefusal(f"there are only {len(ordered)} notes on that track")
+        note = dict(changed.get(ordered[index - 1]["id"]) or ordered[index - 1])
+        if edit.get("delete"):
+            changed[note["id"]] = None
+            continue
+        if edit.get("move_to_step") is not None:
+            note["step"] = int(edit["move_to_step"]) % 64
+        if edit.get("shift"):
+            note["step"] = (note["step"] + int(edit["shift"])) % 64
+        if edit.get("length") is not None:
+            note["duration"] = int(edit["length"])
+        if edit.get("stretch") is not None:
+            note["duration"] = int(round(note["duration"] * float(edit["stretch"])))
+        note["duration"] = max(1, min(64, note["duration"]))
+        if edit.get("semitones"):
+            shift = int(edit["semitones"])
+            note["midi"] = min(127, max(0, note["midi"] + shift))
+            if note.get("chord"):
+                note["chord"] = [min(127, max(0, p + shift)) for p in note["chord"]]
+        changed[note["id"]] = note
+    untouched = [n for n in ordered if n["id"] not in changed]
+    result = untouched
+    for note in (n for n in changed.values() if n is not None):
+        cells = {(note["step"] + i) % 64 for i in range(note["duration"])}
+        result = _trim_around(result, cells) + [note]
+    result.sort(key=lambda n: n["step"])
+    track_data = _track(session, track)
+    if not _changed(track_data, result, track_data["hits"]):
+        raise ToolRefusal("those notes already look like that")
+    return [_edit(track_data, result, track_data["hits"])]

@@ -62,6 +62,14 @@ CASES = [
     ("Groove, hi-hats on the off beats and a snare on two and four",
      lambda s, r: lane(s, "closed-hat")[:4] == [2, 6, 10, 14] and lane(s, "snare")[:2] == [4, 12]),
     ("Groove, what's the weather like today", lambda s, r: all(isinstance(x, NotUnderstood) for x in r)),
+    # Individual notes (playtest: "line up the start of each note with the start of a bar").
+    ("Groove, line up the start of each note with the start of a bar",
+     lambda s, r: sorted(n["step"] for n in track(s, "synth-1")["notes"]) == [0, 16, 32, 48]),
+    ("Groove, make the second note an octave higher",
+     lambda s, r: [n["midi"] for n in sorted(track(s, "synth-1")["notes"], key=lambda n: n["step"])] == [60, 76, 67, 65]),
+    ("Groove, stretch the last note so it lasts a whole bar",
+     lambda s, r: sorted(track(s, "synth-1")["notes"], key=lambda n: n["step"])[-1]["duration"] == 16),
+    ("Groove, delete the third note", lambda s, r: sorted(n["midi"] for n in track(s, "synth-1")["notes"]) == [60, 64, 65]),
 ]
 
 
