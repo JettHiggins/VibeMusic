@@ -66,16 +66,47 @@ Only `services/agent/**` and this file changed. There are no contract, frontend,
 - **What's not held:**
   - Complete commands (`Groove stop`) run at once.
   - A new addressed command is never merged into a held fragment.
-- **During a take:** a refused fragment joins the next segment only when the result is a real command, so singing that follows stays in the take. A held sentence is capped at 12 s.
+- **During a take:** a refused fragment joins the next segment only when the result is a real command, so singing that follows stays in the take. Holds are bounded by the browser's coverage limit (see the WS1 review section below).
 - **Early stop:** previously, singing that resumed within the 0.6 s hangover after `Groove stop` merged into the same segment, so the stop waited for a pause or the 4 s cap.
   - Now, during a take or count-in, a 0.25 s dip inside a still-open speech segment sends the speech so far as a probe to the recognizer (`SpeechJob.probe`, `EnergySegmenter.probes`).
   - Only an exact single `stop-recording` result acts. The open segment is then split at the stop (`split_after`), so the stop isn't repeated and the singing stays in the take. Any other probe result is ignored, and the full segment decides as before.
   - At most one probe is in flight per stream. Probes only run with workers that declare `supports_probe` (the real `ThreadedSpeechWorker`), never outside a take.
 - **Stop:** `stops` and `stopped` now parse as stop. `Groove stop` during a take remains `stop-recording`, so playback continues. Capture-clock window classification is unchanged.
 
+## WS1 review follow-up (docs/reviews/PR43-SENTENCE-REVIEW.md)
+
+Jett integrated `366f07e` (protocol) and `4132702` (cooldown). This branch merges current engine-integration and adds:
+
+- **Valid prefixes are held (`a9ae8a8`):**
+  - A segment cut at the 4 s cap is held even when its prefix already parses. Jett's reproduction ("make it sound like a warm piano" plus "with a soft attack") now starts one search for "warm piano with a soft attack", only after the whole sentence.
+  - Open-ended sound descriptions wait for their continuation after an ordinary pause too.
+  - Stop commands are never held, even inside a cut segment (priority stop).
+  - Sung continuations ("la la") are never joined into a request.
+  - A complete request starts exactly once, after the 2 s wait.
+- **Browser coverage limit:** the browser's `SpeechSession` fails a stream whose speech-verified lags received audio by more than 8 s. The old 12 s sentence cap could exceed that.
+  - Holds are now released once the audio received since the sentence began exceeds `HOLD_LAG_BUDGET_SECONDS = 6.5`. Releasing frees coverage immediately.
+  - The worst case in the long-hold stream test is exactly 6.50 s. No browser limit was raised and no unclassified audio was verified.
+  - A long sentence under that budget completes without a stall. A longer one is acted on as heard, not stalled.
+  - Not yet run against the real browser `SpeechSession`; it needs the app running.
+- **Valid prefixes that still run at once:** a complete command whose words could continue, such as `Groove record` before `synth two`, still executes immediately. Holding every complete command would delay stop, record and select by 2 s. Only sound descriptions, cut segments and unparsed text wait.
+- **Spoken instrument requests were never visible (`bec6a8f`)** — root cause found:
+  - The browser shows research only for jobs it requested itself or that a `research-context` announced (`apps/web/src/integration/research.ts`).
+  - The service sends `research-context` only with `GROOVE_VOICE_RESEARCH=1`. With it off, "make it sound like ..." started a job the UI ignored.
+  - With research unconfigured, the failure came back as a `research` message for that unknown job, also ignored.
+
+  Spoken searches now either run announced, or are refused to the utterance with the exact reason and setting.
+- **SLOOP research could not start from the documented command:** `uvicorn --app-dir services/agent` doesn't put the repo root on `sys.path`, so `GROOVE_RESEARCH=sloop` could not import `tools/sloop_renderer`. The adapter now adds the root itself. `tests/test_sloop.py` passes without `PYTHONPATH`.
+- **Spoken search on the real stack** (`scripts/spoken_search_check.py`, synthesized speech, no browser), with `GROOVE_RESEARCH=sloop GROOVE_EMBEDDER=clap`, local faster-whisper `base.en` and voice research on:
+  - Heard "Groove, make it sound like a warm electric piano." and sent `research-context` "warm electric piano".
+  - Real SLOOP/CLAP research finished after **143.0 s** (cold: the saved corpus didn't match this engine build and was rebuilt), with 11 progress updates and 5 evolved candidates, each with a rendered preview WAV (264,644 bytes).
+  - Spoken "use number two" became `apply-patch`, and spoken "undo" became `undo`.
+  - The rebuilt corpus is saved under `artifacts/corpus/clap` (ignored), so later starts with this engine build are warm.
+  - Audible preview, applying the patch in the engine and Undo in the browser are not covered by this script.
+- **"Stale service" claim corrected:** the base before `366f07e` had no `browser-status` handler at all, so the earlier "unsupported browser-status" report is explained by the missing handler. A stale service is not established. Check `/healthz` and the process working directory when testing.
+
 ## Checks (Windows, Python 3.13)
 
-- **Backend suite:** `pytest -q --deselect tests/test_sloop.py` → **425 passed, 6 skipped**. The 4 `test_sloop` errors were already present: this laptop has no native SLOOP module built.
+- **Backend suite:** `pytest -q` → **437 passed, 6 skipped** (now including the 5 real SLOOP tests). The 4 `test_sloop` errors were already present: this laptop has no native SLOOP module built.
 - **New test files:**
   - `test_browser_protocol.py` (15 tests, including a real FastAPI WebSocket session)
   - `test_provider_resilience.py` (13 tests: scripted 402/429/Retry-After/timeouts, a worker storm test, and a real WebSocket degrade test)
@@ -103,4 +134,4 @@ Only `services/agent/**` and this file changed. There are no contract, frontend,
 - **Delayed refusals:** a refused or unknown sentence now reports up to 2 s later, while it waits for a continuation.
 - **Speech that ends the stream:** a sentence held when a stream ends (mic off) is dropped with that stream, as bare wake words already were.
 - **Model-side tools not added:** Deep Agents has no browser-action or key tools yet. Exact phrases cover the bounded set, and the model can already propose `set-pitch-snap` or `snap-notes`, because it reads the operations from the SessionCommand schema.
-- **Physical microphone checks still needed:** Groove stop with playback continuing, pauses, calibration via voice against the real executor, and a 429 seen in the UI. Before testing, confirm the laptop service runs this commit: `/healthz` and the process working directory. A stale service is the likely source of the earlier "unsupported browser-status" report.
+- **Physical microphone checks still needed:** Groove stop with playback continuing, pauses, calibration via voice against the real executor, and a 429 seen in the UI. Before testing, confirm the laptop service runs this commit: `/healthz` and the process working directory. (The earlier "unsupported browser-status" report is explained by the missing handler before `366f07e`; a stale service was not established.)
