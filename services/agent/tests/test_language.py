@@ -176,7 +176,7 @@ def test_language_inference_never_holds_classified_coverage_of_excluded_command_
     worker = ScriptedWorker(["Groove transform this into glassy bells"])
     connection = connect(worker)
     connection._language = PendingLanguage()
-    replies = flat(stream(connection, worker, chunks_from_wav(synth_take(tmp_path / "unknown.wav"))))
+    replies = flat(stream(connection, worker, chunks_from_wav(synth_take(tmp_path / "unknown.wav", seconds=5.5))))
     span = next(r for r in replies if r["type"] == "command-span")
     covering = next(i for i, r in enumerate(replies) if r["type"] == "speech-verified" and r["throughFrame"] >= span["endFrame"])
     assert replies.index(span) < covering and len(connection._language.jobs) == 1
