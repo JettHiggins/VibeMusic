@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from typing import Any, Mapping, Optional, Sequence, Union
 
 from .spoken_numbers import find_number
-from .control_phrases import InputAction, input_phrase, key_phrase
+from .control_phrases import InputAction, input_phrase, key_phrase, rhythm_chord_phrase
 
 WAKE_WORDS = frozenset({"groove", "grove"})  # "grove" is a common recognizer spelling
 TEMPO_MIN, TEMPO_MAX, TEMPO_NUDGE = 40, 240, 10
@@ -42,6 +42,9 @@ BOUNDARY = {
     # track's existing notes is explicit and next-loop.
     "set-pitch-snap": "immediate",
     "snap-notes": "next-loop",
+    # Playtest controls (PLAYTEST-CONTROLS-CONTRACT.md): recording settings are immediate.
+    "set-rhythm-snap": "immediate",
+    "set-chord-mode": "immediate",
 }
 
 _LANE_PHRASES = (
@@ -354,6 +357,8 @@ def interpret(text: str, session: Mapping[str, Any], during_recording: bool, tak
 
     # Exact key and browser-input phrases (deterministic, so they survive provider rate limits).
     control = input_phrase(verb, rest)
+    if control is None:
+        control = rhythm_chord_phrase(verb, rest)
     if control is None:
         control = key_phrase(verb, rest, session, lambda words: resolve_target(words, session).target)
     if control is not None:

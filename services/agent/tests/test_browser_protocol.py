@@ -185,3 +185,27 @@ def test_key_phrases_are_exact_immediate_commands_and_snap_needs_a_key():
     for text in ("key D minor", "turn key snapping off", "snap the existing notes on synth one"):
         result = interpret(text, session, False)
         validate("SessionCommand", {"id": "x", "expectedRevision": 0, "boundary": result.boundary, "operation": result.operation})
+
+
+@pytest.mark.parametrize("text, operation", [
+    ("Groove, quarter notes", {"type": "set-rhythm-snap", "grid": "quarter"}),
+    ("snap to eighth notes", {"type": "set-rhythm-snap", "grid": "eighth"}),
+    ("set the grid to sixteenth", {"type": "set-rhythm-snap", "grid": "sixteenth"}),
+    ("chords on", {"type": "set-chord-mode", "mode": "triad"}),
+    ("turn chords off", {"type": "set-chord-mode", "mode": "off"}),
+])
+def test_rhythm_and_chord_phrases_are_exact_immediate_commands(text, operation):
+    session = load_fixture("SessionState")
+    result = interpret(text, session, False)
+    assert result == Command(operation, "immediate")
+    validate("SessionCommand", {"id": "x", "expectedRevision": 0, "boundary": result.boundary, "operation": result.operation})
+
+
+def test_rhythm_phrases_do_not_capture_existing_commands():
+    session = load_fixture("SessionState")
+    session["selected"] = {"trackId": "synth-2"}
+    session["pitchSnap"] = {"root": 0, "scale": "major"}
+    assert interpret("snap the notes on synth three", session, False).operation == {"type": "snap-notes", "trackId": "synth-3"}
+    assert interpret("erase bar 2 beat 3", session, False).operation["type"] == "erase-event"
+    assert interpret("Groove stop", session, True).operation == {"type": "stop-recording"}
+    assert "one rhythm" in interpret("quarter and eighth notes", session, False).reason
