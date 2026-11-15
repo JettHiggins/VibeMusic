@@ -19,6 +19,9 @@ from .intents import (BOUNDARY, AcceptCandidate, AuditionCandidate, CancelSearch
                       NotUnderstood, SoundSearch, validate_operation)
 
 DEFAULT_MODEL = "inclusionai/ling-3.2-flash:free"
+# Gemini (playtest plan, issue #9): Vertex AI by default because the team's credit is Google Cloud
+# credit, which funds Vertex but not the AI Studio Developer API. Released, low-cost Flash-Lite.
+DEFAULT_GEMINI_MODEL = "gemini-3.1-flash-lite"
 
 
 def load_backend_env() -> None:
@@ -36,14 +39,39 @@ class LanguageConfig:
     timeout_s: float = 8.0
     max_tokens: int = 512
     voice_research: bool = False
+    provider: str = "openrouter"  # openrouter | gemini
+    vertex: bool = True  # gemini only: Vertex AI (Google Cloud billing) or the AI Studio Developer API
+    project: str = ""  # gemini on Vertex: Google Cloud project id
+    location: str = "global"
+    credentials_file: str = field(default="", repr=False)  # gemini on Vertex: service-account JSON path
 
     def __post_init__(self) -> None:
-        if self.model != "openrouter/free" and not re.fullmatch(r"[\w.-]+/[\w.-]+:free", self.model):
-            raise ValueError("GROOVE_LLM_MODEL must be a :free model or openrouter/free; paid fallback is disabled")
-        if not self.api_key:
-            raise ValueError("backend OPENROUTER_API_KEY is required when GROOVE_LLM=openrouter")
+        if self.provider == "openrouter":
+            if self.model != "openrouter/free" and not re.fullmatch(r"[\w.-]+/[\w.-]+:free", self.model):
+                raise ValueError("GROOVE_LLM_MODEL must be a :free model or openrouter/free; paid fallback is disabled")
+            if not self.api_key:
+                raise ValueError("backend OPENROUTER_API_KEY is required when GROOVE_LLM=openrouter")
+        elif self.provider == "gemini":
+            if not re.fullmatch(r"gemini-[\w.-]+", self.model):
+                raise ValueError("GROOVE_LLM_MODEL must be a Gemini model id such as gemini-3.1-flash-lite")
+            if self.vertex:
+                if not self.project:
+                    raise ValueError("GOOGLE_CLOUD_PROJECT is required for Gemini on Vertex AI")
+                if not self.api_key and not self.credentials_file:
+                    raise ValueError("Gemini on Vertex AI needs GOOGLE_API_KEY (a key restricted to the Vertex AI API) "
+                                     "or GOOGLE_APPLICATION_CREDENTIALS (a service-account file outside the repo)")
+            elif not self.api_key:
+                raise ValueError("GOOGLE_API_KEY is required for the Gemini Developer API")
+        else:
+            raise ValueError("GROOVE_LLM must be unset, openrouter or gemini")
         if not 0.1 <= self.timeout_s <= 30 or not 64 <= self.max_tokens <= 2048:
             raise ValueError("language timeout must be 0.1..30 s and output tokens 64..2048")
+
+    @property
+    def label(self) -> str:
+        if self.provider == "gemini":
+            return f"gemini/deepagents ({self.model}, {'vertex' if self.vertex else 'developer api'})"
+        return "openrouter/deepagents (free-only)"
 
 
 @dataclass(frozen=True)
@@ -175,6 +203,8 @@ class DeepLanguage:
     def __init__(self, config: LanguageConfig, model=None) -> None:
         self.config = config
         self.gate = ProviderGate()  # one per process: shared by every connection's worker
+        if model is None and config.provider == "gemini":
+            model = gemini_model(config)
         if model is None:
             from langchain_openrouter import ChatOpenRouter
             from openrouter import OpenRouter
@@ -223,17 +253,46 @@ class DeepLanguage:
         return decisions[0]
 
 
+def gemini_model(config: LanguageConfig):
+    """LangChain chat model for Gemini with the same bounds as OpenRouter: no SDK retries (the shared
+    ProviderGate handles 429 cooldown), a wall timeout, temperature 0 and capped output."""
+    from langchain_google_genai import ChatGoogleGenerativeAI
+    options: dict = {"model": config.model, "temperature": 0, "max_output_tokens": config.max_tokens,
+                     "timeout": config.timeout_s, "max_retries": 0}
+    if config.vertex:
+        options.update(vertexai=True, project=config.project, location=config.location)
+        if config.credentials_file:
+            from google.oauth2 import service_account
+            options["credentials"] = service_account.Credentials.from_service_account_file(
+                config.credentials_file, scopes=["https://www.googleapis.com/auth/cloud-platform"])
+    if config.api_key:
+        options["google_api_key"] = config.api_key
+    return ChatGoogleGenerativeAI(**options)
+
+
 def language_from_env() -> Optional[DeepLanguage]:
     mode = os.environ.get("GROOVE_LLM", "").strip().lower()
     if not mode:
         return None
-    if mode != "openrouter":
-        raise ValueError("GROOVE_LLM must be unset or openrouter")
-    config = LanguageConfig(model=os.environ.get("GROOVE_LLM_MODEL", DEFAULT_MODEL),
-                            api_key=os.environ.get("OPENROUTER_API_KEY", ""),
-                            timeout_s=float(os.environ.get("GROOVE_LLM_TIMEOUT", "8")),
-                            max_tokens=int(os.environ.get("GROOVE_LLM_MAX_TOKENS", "512")),
-                            voice_research=voice_research_enabled())
+    common = dict(timeout_s=float(os.environ.get("GROOVE_LLM_TIMEOUT", "8")),
+                  max_tokens=int(os.environ.get("GROOVE_LLM_MAX_TOKENS", "512")),
+                  voice_research=voice_research_enabled())
+    if mode == "openrouter":
+        config = LanguageConfig(model=os.environ.get("GROOVE_LLM_MODEL", DEFAULT_MODEL),
+                                api_key=os.environ.get("OPENROUTER_API_KEY", "").strip(), **common)
+    elif mode == "gemini":
+        backend = os.environ.get("GROOVE_GEMINI_BACKEND", "vertex").strip().lower()
+        if backend not in ("vertex", "developer"):
+            raise ValueError("GROOVE_GEMINI_BACKEND must be vertex or developer")
+        config = LanguageConfig(provider="gemini", vertex=backend == "vertex",
+                                model=os.environ.get("GROOVE_LLM_MODEL", DEFAULT_GEMINI_MODEL).strip(),
+                                api_key=os.environ.get("GOOGLE_API_KEY", "").strip(),
+                                project=os.environ.get("GOOGLE_CLOUD_PROJECT", "").strip(),
+                                location=os.environ.get("GOOGLE_CLOUD_LOCATION", "global").strip() or "global",
+                                credentials_file=os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "").strip(),
+                                **common)
+    else:
+        raise ValueError("GROOVE_LLM must be unset, openrouter or gemini")
     return DeepLanguage(config)
 
 
@@ -248,7 +307,7 @@ def safe_language_error(error: Exception) -> str:
     """Provider exceptions may contain credentials/requests. Never forward their text."""
     if isinstance(error, (TimeoutError, asyncio.TimeoutError)):
         return "language request timed out; no change applied"
-    status = getattr(error, "status_code", None)
+    status = provider_status(error)
     if status in (402, 429):
         return ("language provider quota/rate limit reached; no change applied. "
                 "Exact commands still work, for example: Groove stop, Groove tempo 120, Groove undo")
@@ -266,7 +325,44 @@ TIMEOUT_COOLDOWN_S = 10.0  # after TIMEOUT_STREAK consecutive timeouts
 TIMEOUT_STREAK = 2
 
 
+def _chain(error: BaseException) -> list:
+    seen, out = set(), []
+    while error is not None and id(error) not in seen and len(out) < 6:
+        seen.add(id(error))
+        out.append(error)
+        error = error.__cause__ or error.__context__
+    return out
+
+
+def provider_status(error: BaseException) -> Optional[int]:
+    """HTTP-style status from OpenRouter (status_code) or Google (code), anywhere in the cause chain."""
+    for item in _chain(error):
+        for attr in ("status_code", "code"):
+            value = getattr(item, attr, None)
+            if isinstance(value, int) and 100 <= value <= 599:
+                return value
+    return None
+
+
+def _google_retry_delay(error: BaseException) -> Optional[float]:
+    for item in _chain(error):
+        details = getattr(item, "details", None)
+        if not isinstance(details, dict):
+            continue
+        for entry in (details.get("error") or {}).get("details") or []:
+            delay = entry.get("retryDelay") if isinstance(entry, dict) else None
+            if isinstance(delay, str) and delay.endswith("s"):
+                try:
+                    return float(delay[:-1])
+                except ValueError:
+                    pass
+    return None
+
+
 def _retry_after(error: Exception) -> Optional[float]:
+    google = _google_retry_delay(error)
+    if google is not None:
+        return google
     for holder in (error, getattr(error, "response", None), getattr(error, "raw_response", None)):
         headers = getattr(holder, "headers", None)
         if headers is None:
@@ -323,7 +419,7 @@ class ProviderGate:
                     self._reason = "is not responding"
                 return
             self._timeouts = 0
-            if getattr(error, "status_code", None) not in (402, 429):
+            if provider_status(error) not in (402, 429):
                 return
             hinted = _retry_after(error)
             delay = (min(BACKOFF_MAX_S, max(1.0, hinted)) if hinted is not None
