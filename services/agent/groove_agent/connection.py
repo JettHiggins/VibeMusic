@@ -27,6 +27,7 @@ from .speech_pipeline import EnergySegmenter, SpeechJob, SpeechWorker
 from .speech_pipeline import Transcript
 from .speech_alignment import SUNG_SYLLABLES, locate_command
 from .preview import PreviewRequests
+from .research.service import NOT_CONFIGURED
 
 from .language import LanguageJob
 from .contracts import ContractError, validate
@@ -574,8 +575,7 @@ class Connection:
             # The browser only displays research for jobs it knows: its own requests, or ones
             # announced by research-context (voice research). Never start a spoken job it would
             # silently ignore; say why instead.
-            reason = ("sound search is not configured on this service (GROOVE_RESEARCH); no sound was searched"
-                      if self._research is None else
+            reason = (f"{NOT_CONFIGURED}; no sound was searched" if self._research is None else
                       "spoken sound search is off on this service (start it with GROOVE_VOICE_RESEARCH=1); "
                       "use the Sound panel to search, no sound was searched")
             return [_error(voice_request_id, reason)]

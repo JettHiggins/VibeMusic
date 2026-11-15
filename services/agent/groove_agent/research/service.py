@@ -26,8 +26,10 @@ from .search import MAX_VARIATIONS, Scored, evolve
 from .space import MetadataError, ParameterSpace
 
 Emit = Callable[[dict], None]
-NOT_CONFIGURED = ("sound research is not configured: it needs the offline SLOOP renderer from Workstream 1 "
-                  "and an embedding model")
+# Setup guidance, not an implementation gap: the SLOOP renderer and CLAP embedder are integrated.
+NOT_CONFIGURED = ("sound research is not configured on this service: restart it with GROOVE_RESEARCH=sloop "
+                  "GROOVE_EMBEDDER=clap (it uses the engine build in apps/web/public/engine and the cached CLAP "
+                  "model; the first search after an engine change builds the sound corpus, which takes minutes)")
 MAX_PREVIEWS = 200
 RETRIEVAL_PROGRESS = 0.2
 
@@ -240,7 +242,8 @@ def backend_from_env(root: Path) -> Optional[ResearchBackend]:
     engine_dir = Path(os.environ.get("GROOVE_ENGINE_DIR", root / "apps" / "web" / "public" / "engine"))
     path = Path(os.environ.get("GROOVE_ENGINE_METADATA", engine_dir / "metadata.json"))
     if not path.exists():
-        raise RuntimeError(f"engine metadata not found at {path}; build it with scripts/build-engine.py")
+        raise RuntimeError(f"engine metadata not found at {path}; build it with scripts/build-engine.py "
+                           "or copy the CI sloop-browser-engine artifact there")
     revision = os.environ.get("GROOVE_ENGINE_REVISION", "bac9c05ea7627449405aa10e48da21d75b6c8c56")
     try:
         space = ParameterSpace(json.loads(path.read_text(encoding="utf-8")), revision)
@@ -250,7 +253,8 @@ def backend_from_env(root: Path) -> Optional[ResearchBackend]:
         return ResearchBackend(space, MockRenderer(space), MockEmbedder())
     from .sloop import SloopRenderer
     if not (engine_dir / "voicesynth.wasm").exists():
-        raise RuntimeError(f"engine WASM not found in {engine_dir}; build it with scripts/build-engine.py")
+        raise RuntimeError(f"engine WASM not found in {engine_dir}; build it with scripts/build-engine.py "
+                           "or copy the CI sloop-browser-engine artifact there")
     renderer = SloopRenderer.from_directory(engine_dir, revision)
     embedder_name = os.environ.get("GROOVE_EMBEDDER", "").strip().lower()
     if embedder_name == "clap":
