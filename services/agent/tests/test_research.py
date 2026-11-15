@@ -507,3 +507,24 @@ def test_ambiguous_accepts_refuse_instead_of_applying_candidate_one(session, tex
 def test_track_selection_phrases_are_unchanged(session):
     assert interpret("switch to synth two", session, False).operation == {"type": "select", "target": {"trackId": "synth-2"}}
     assert interpret("change to snare", session, False).operation["target"] == {"trackId": "drums", "lane": "snare"}
+
+
+def test_final_candidates_always_keep_matching_real_presets():
+    from groove_agent.research.service import PRESETS_KEPT, blend
+    from groove_agent.research.search import Scored
+    presets = [Scored({"preset": i}, 1.0 - i * 0.01, f"retrieved: preset {i}") for i in range(8)]
+    evolved = [Scored({"evolved": i}, 2.0 - i * 0.01, "evolved, seed 1, generation 3") for i in range(20)]
+    chosen = blend(presets, evolved)
+    assert len(chosen) == CANDIDATES
+    assert sum(item.origin.startswith("retrieved") for item in chosen) == PRESETS_KEPT
+    assert [item.score for item in chosen] == sorted((item.score for item in chosen), reverse=True)
+
+
+def test_auto_load_prefers_a_real_preset_unless_an_evolved_variant_is_clearly_better():
+    from groove_agent.connection import _preferred_candidate
+    preset = {"id": "p", "score": 3.9, "provenance": "retrieved: E-Piano"}
+    close = {"id": "e", "score": 4.1, "provenance": "evolved, seed 1"}
+    clear = {"id": "e2", "score": 4.5, "provenance": "evolved, seed 1"}
+    assert _preferred_candidate([close, preset])["id"] == "p"
+    assert _preferred_candidate([clear, preset])["id"] == "e2"
+    assert _preferred_candidate([close])["id"] == "e"  # no preset listed

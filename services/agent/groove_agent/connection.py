@@ -146,6 +146,19 @@ def split_commands(text: str) -> list[str]:
     return [piece.strip() for piece in _WAKE_SPLIT.split(text) if piece.strip()]
 
 
+# Auto-load keeps a real factory preset unless an evolved variant scores clearly better (playtest:
+# evolved mutations were often crushed/noisy while scoring well).
+AUTO_LOAD_MARGIN = 0.3
+
+
+def _preferred_candidate(candidates: Sequence[dict]) -> dict:
+    best = candidates[0]
+    preset = next((c for c in candidates if str(c.get("provenance", "")).startswith("retrieved")), None)
+    if preset is not None and best is not preset and best["score"] < preset["score"] + AUTO_LOAD_MARGIN:
+        return preset
+    return best
+
+
 def _addressed(text: str) -> bool:
     """The transcript starts with the wake word (after politeness words): "Groove, ..." / "Hey Grove ..."."""
     tokens = [t for t in tokenize(text) if t not in ("hey", "ok", "okay", "please", "so", "um", "uh")]
@@ -657,7 +670,7 @@ class Connection:
         else:
             return []
         search.load_stage = stage
-        best = message["candidates"][0]
+        best = _preferred_candidate(message["candidates"])
         best_patch = json.dumps(best["patch"], sort_keys=True)
         if best_patch == search.loaded_patch:
             return []
