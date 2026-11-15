@@ -38,7 +38,7 @@ def test_a_research_messages_keep_the_current_wire_shape():
 
 
 def test_b_audition_is_preview_only_accept_applies_and_undo_restores():
-    conn = Connection(research=FakePort())
+    conn = Connection(research=FakePort(), voice_research=True)
     conn.handle({"type": "session", "session": session()}, 0)
     conn.handle(utter("u1", "make it sound like a glassy bell"), 0)
     # Candidates arrive and are auditioned through previewUrl: nothing is proposed.

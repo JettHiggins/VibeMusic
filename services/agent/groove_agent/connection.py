@@ -443,6 +443,15 @@ class Connection:
 
     def _start_search(self, job_id: str, track_id: str, description: str, seeds: Optional[Sequence[dict]],
                       voice_request_id: Optional[str] = None) -> list[dict]:
+        if voice_request_id is not None and (self._research is None or not self._voice_research):
+            # The browser only displays research for jobs it knows: its own requests, or ones
+            # announced by research-context (voice research). Never start a spoken job it would
+            # silently ignore; say why instead.
+            reason = ("sound search is not configured on this service (GROOVE_RESEARCH); no sound was searched"
+                      if self._research is None else
+                      "spoken sound search is off on this service (start it with GROOVE_VOICE_RESEARCH=1); "
+                      "use the Sound panel to search, no sound was searched")
+            return [_error(voice_request_id, reason)]
         accepted = False
         def failed(reason: str) -> list[dict]:
             if self._voice_research and voice_request_id is not None and not accepted:
