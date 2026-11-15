@@ -143,6 +143,19 @@ def _bare_wake(text: str) -> bool:
     return len(tokens) == 1 and tokens[0] in WAKE_WORDS
 
 
+def _describe(message: Mapping[str, Any]) -> str:
+    """Short human label for an issued action (transcript detail), without patches or note lists."""
+    if message["type"] == "browser-action":
+        operation = message["operation"]
+    elif message["type"] == "candidate-preview":
+        return "preview candidate"
+    else:
+        operation = message["command"]["operation"]
+    shown = {k: v for k, v in operation.items() if k not in ("type", "patch", "notes", "hits", "session", "events")}
+    values = " ".join(str(v if not isinstance(v, dict) else " ".join(str(x) for x in v.values())) for v in shown.values())
+    return f"{operation['type']} {values}".strip()
+
+
 def _error(request_id: str, message: str) -> dict:
     return {"type": "error", "requestId": request_id, "message": message}
 
@@ -321,6 +334,7 @@ class Connection:
             if continuing:
                 state.refused_through = job.segment.last_frame
                 out.extend(self._refused_span(job))
+                out.append(self._transcript(job, text, [], outcome="refused", detail="part of a request that was too long"))
                 return out + self._advance_speech(job.stream_id, job.clock_id, now)
             state.refused_through = None
         held = state.held_wake
@@ -338,12 +352,46 @@ class Connection:
         if text:
             if self._unfinished(job, text):
                 state.held_wake = (job, text)
+                out.append(self._transcript(job, text, [], outcome="held", detail="waiting for the rest of the sentence"))
             else:
                 out.extend(self._speech_utterance(job, text, now))
         out.extend(self._advance_speech(job.stream_id, job.clock_id, now))
         return out
 
     def _speech_utterance(self, job: SpeechJob, text: str, now: float, end: Optional[int] = None) -> list[dict]:
+        """Act on one recognized segment, then report what was heard and done (speech-transcript)."""
+        out = self._speech_commands(job, text, now, end)
+        return out + [self._transcript(job, text, out, end)]
+
+    def _transcript(self, job: SpeechJob, text: str, out: Sequence[dict], end: Optional[int] = None,
+                    outcome: Optional[str] = None, detail: Optional[str] = None) -> dict:
+        """Display-only record of one segment (PLAYTEST-CONTROLS-CONTRACT.md): never a command or coverage."""
+        if outcome is None:
+            mine = [m for m in out if str(m.get("requestId") or m.get("utteranceId") or "").startswith(job.job_id)
+                    or str((m.get("command") or {}).get("id", "")).startswith(job.job_id)
+                    or str(m.get("id", "")).startswith(job.job_id)]
+            commands = [m for m in mine if m["type"] in ("command", "browser-action", "candidate-preview")]
+            research = [m for m in mine if m["type"] == "research-context"]
+            errors = [m for m in mine if m["type"] == "error"]
+            if research:
+                outcome, detail = "research", f"searching: {research[0]['description']}"
+            elif commands:
+                outcome, detail = "command", "; ".join(_describe(m) for m in commands)
+            elif errors:
+                outcome, detail = "refused", errors[0]["message"]
+            elif job.job_id in self._language_pending:
+                outcome, detail = "interpreting", "sent to the language model"
+            else:
+                outcome = "ignored"
+        message = {"type": "speech-transcript", "utteranceId": job.job_id, "streamId": job.stream_id,
+                   "clockId": job.clock_id, "startFrame": job.segment.start_frame,
+                   "endFrame": max(job.segment.start_frame, job.segment.last_frame if end is None else end),
+                   "text": (text or "")[:1000], "outcome": outcome}
+        if detail:
+            message["detail"] = detail[:300]
+        return message
+
+    def _speech_commands(self, job: SpeechJob, text: str, now: float, end: Optional[int] = None) -> list[dict]:
         """Every command in the segment, in spoken order; the segment's span is sent once, first."""
         segment = job.segment
         context_start = job.context_start_frame if job.context_start_frame is not None else segment.start_frame
@@ -457,6 +505,7 @@ class Connection:
             out.extend(self._refused_span(held_job))
             out.append(_error(held_job.job_id, "that request was too long to hold while listening; nothing was changed. "
                                                f"Say it again as one sentence of under {HOLD_LAG_BUDGET_SECONDS - 1:g} seconds"))
+            out.append(self._transcript(held_job, held_text, out, outcome="refused", detail=out[-1]["message"]))
         elif state.held_wake is not None and not state.pending and (
                 decided >= state.held_wake[0].segment.last_frame + self._wake_join_frames()
                 # At the budget with nothing open or transcribing, the sentence has ended: act on it.
