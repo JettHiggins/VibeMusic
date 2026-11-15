@@ -342,16 +342,17 @@ def candidates(job_id, count=3):
 
 def test_describe_audition_refine_accept_by_voice(session):
     port = FakePort()
-    conn = Connection(research=port)
+    conn = Connection(research=port, voice_research=True)
     conn.handle({"type": "session", "session": session}, 0)
 
-    assert conn.handle(utter("u1", "make it sound like an 80s electric piano"), 0) == []
+    # Spoken jobs are announced with research-context so the browser shows them (voice research).
+    assert [m["type"] for m in conn.handle(utter("u1", "make it sound like an 80s electric piano"), 0)] == ["research-context"]
     assert port.started == [("u1:job", "80s electric piano", None)]
     assert conn.handle(utter("u2", "accept"), 0)[0]["type"] == "error"  # nothing to accept yet
 
     conn.observe_research({"type": "research", "jobId": "u1:job", "status": "complete", "progress": 1,
                            "candidates": candidates("u1:job")})
-    assert conn.handle(utter("u3", "make it brighter"), 0) == []
+    assert [m["type"] for m in conn.handle(utter("u3", "make it brighter"), 0)] == ["research-context"]
     job, description, seeds = port.started[1]
     assert (job, description) == ("u3:job", "80s electric piano, brighter")
     assert seeds == [c["patch"] for c in candidates("u1:job")]
@@ -367,36 +368,37 @@ def test_describe_audition_refine_accept_by_voice(session):
 
     # A new job cannot replace a patch acceptance whose authoritative ack is pending.
     blocked = conn.handle(utter("u7", "make it darker"), 0)
-    assert blocked[0]["status"] == "failed" and "pending" in blocked[0]["error"]
+    assert blocked[0]["type"] == "error" and "pending" in blocked[0]["message"]
     out = conn.handle(utter("u8", "use the first one"), 0)
     assert out == []  # queued behind the unacknowledged apply-patch from u4
     assert conn.handle({"type": "ack", "commandId": "u4:cmd", "status": "applied", "revision": 1}, 0)[0]["command"][
         "operation"]["patch"] == candidates("u3:job")[0]["patch"]
     conn.handle({"type": "ack", "commandId": "u8:cmd", "status": "applied", "revision": 2}, 0)
-    # Legacy/default-off producers still retain previous candidates if a later empty
-    # refinement is cancelled. The enabled context consumer instead clears its display.
-    assert conn.handle(utter("u9", "make it darker"), 0) == []
+    # Spoken searches are always announced (voice research), and the browser's context consumer
+    # clears its display when a later refinement is cancelled empty: accepting must not reach back
+    # to candidates the user no longer sees.
+    assert [m["type"] for m in conn.handle(utter("u9", "make it darker"), 0)] == ["research-context"]
     conn.observe_research({"type": "research", "jobId": "u9:job", "status": "cancelled", "progress": 0, "candidates": []})
-    assert conn.handle(utter("u10", "use the first one"), 0)[0]["command"]["operation"]["patch"] == candidates("u3:job")[0]["patch"]
+    assert conn.handle(utter("u10", "use the first one"), 0)[0]["type"] == "error"
 
 
 def test_sound_search_needs_a_synth_track_and_a_backend(session):
     session["selected"] = {"trackId": "drums", "lane": "kick"}
-    conn = Connection(research=FakePort())
+    conn = Connection(research=FakePort(), voice_research=True)
     conn.handle({"type": "session", "session": session}, 0)
     out = conn.handle(utter("u1", "i want a warm pad"), 0)
-    assert out[0]["type"] == "research" and out[0]["status"] == "failed" and "synth" in out[0]["error"]
+    assert out[0]["type"] == "error" and "synth" in out[0]["message"]  # spoken: refused to the utterance
     out = Connection().handle({"type": "sound-request", "id": "j", "trackId": "synth-1", "description": "pad"}, 0)
     assert out[0]["status"] == "failed"
 
 
 def test_sound_talk_during_recording_needs_the_wake_word(session):
     port = FakePort()
-    conn = Connection(research=port)
+    conn = Connection(research=port, voice_research=True)
     conn.handle({"type": "session", "session": session}, 0)
     assert conn.handle(utter("u1", "i want a warm pad", recording=True), 0) == [] and port.started == []
     out = conn.handle(utter("u2", "groove i want a warm pad", recording=True), 0)
-    assert [m["type"] for m in out] == ["command-span"] and port.started[0][1] == "warm pad"
+    assert [m["type"] for m in out] == ["command-span", "research-context"] and port.started[0][1] == "warm pad"
 
 
 # -- over the socket -----------------------------------------------------------------------

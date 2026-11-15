@@ -54,9 +54,10 @@ def preview_ack(request="p:preview", job="ui", candidate="patch-2", status="star
 
 def test_new_production_messages_are_default_off():
     conn, port = connection(False)
-    assert send(conn, utter("sound", "find an electric piano")) == []
-    assert port.jobs[0][0] == "sound:job"
-    complete(conn, "sound:job")
+    # With voice research off a spoken search is refused visibly instead of starting a job the
+    # browser would never display (it only shows research-context-announced or its own jobs).
+    [refusal] = send(conn, utter("sound", "find an electric piano"))
+    assert refusal["type"] == "error" and "GROOVE_VOICE_RESEARCH=1" in refusal["message"] and port.jobs == []
     result = send(conn, utter("p", "Groove audition candidate two", True))
     assert [r["type"] for r in result] == ["command-span", "error"]
     assert "not enabled" in result[-1]["message"]
