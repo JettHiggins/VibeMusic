@@ -2,6 +2,10 @@
 
 Current scope: VOICE-RELIABILITY-ROUND.md. Read STATUS.md and issue #9 now; this replaces the older frozen-test and workstream instructions. All three work packages start independently against published interfaces. Preserve work and use current origin/engine-integration.
 
+## Live preview priority
+
+Jett explicitly selected live piano-roll preview first. Follow the latest section in VOICE-RELIABILITY-ROUND.md: implement streaming held-note view data and minimal Groovebox wiring, with immediate appearance/growth and correct reset/exclusion behavior; no live synth audition or premature commits. This takes priority over further threshold tuning. Coordinate low/high note range handling with WS2 using the published optional local fields.
+
 ## Copyable goal
 
 ```text

@@ -8,6 +8,10 @@ The musical-controls interim test is complete. Jett reports intermittent hands-f
 
 Jett added a top product priority: spoken instrument requests have never fetched a sound or visibly launched research. WS3 must trace and fix the real speech-to-search path now; typed research success from prior integration does not close this failure. Supported descriptions should route to real local research without needing LLM quota. WS1 will verify integrated patch/preview behavior and WS2 keeps real progress/failures visible.
 
+## Latest interaction priority: live piano-roll preview
+
+Jett explicitly chose **live piano-roll preview first**. Implement immediate held-note appearance/growth before release or phrase completion; no live synth-monitoring change in this step. Current analysis is streaming but only completed notes reach the roll. The optional local preview seam and ownership are published in VOICE-RELIABILITY-ROUND.md. WS1 owns worker/controller/recorder and minimal Groovebox composition; WS2 owns visibility/range and provisional styling. Keep real commit/speech safety and SessionState/wire shapes unchanged. WS3 continues the actual spoken instrument and sentence corrections independently.
+
 ## Current assignments — start all three independently
 
 | Stream | Owns this round | Next deliverable |

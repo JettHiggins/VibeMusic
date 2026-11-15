@@ -2,6 +2,10 @@
 
 Current scope: VOICE-RELIABILITY-ROUND.md. Read STATUS.md and issue #9 now; this replaces the older frozen-test and workstream instructions. All three work packages start independently against published interfaces. Preserve work and use current origin/engine-integration.
 
+## Live preview visibility follow-up
+
+Jett selected live piano-roll preview first. WS1 is implementing the optional local held-note preview and minimal Groovebox composition described in VOICE-RELIABILITY-ROUND.md. Own piano-roll range/visibility and provisional presentation so low/high live notes appear immediately rather than only after a committed note triggers recentering; preserve deliberate manual navigation. Continue existing UI fixes independently. No new backend messages or live synth audio change.
+
 ## Copyable goal
 
 ```text
