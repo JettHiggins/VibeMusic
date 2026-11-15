@@ -104,3 +104,49 @@ test('p95 pitch analysis per 1024-frame block stays below the 50 ms target', () 
  times.sort((a, b) => a - b);
  assert.ok(times[Math.floor(times.length * 0.95)] < 50, `p95 ${times[Math.floor(times.length * 0.95)]}`);
 });
+
+test('125 ms adjacent sung notes remain distinct with accurate short-note durations', () => {
+ const phrase: Sung[] = [60,62,64,65,67,65,64,62].map((midi,i)=>({midi,start:.2+i*.125,end:.2+(i+1)*.125}));
+ const {notes}=analyse(sing(phrase,1.5));
+ assert.deepEqual(notes.map(n=>n.midi),phrase.map(n=>n.midi));
+ notes.forEach((n,i)=>assert.ok(Math.abs(ms(n.endFrame-n.startFrame)-125)<35,`note ${i}: ${ms(n.endFrame-n.startFrame)} ms`));
+});
+
+test('a confident full-bar hum survives gentle level dips without fragmenting or shortening', () => {
+ const hop=256,seg=new NoteSegmenter({sampleRate:SR,hop,noiseFloorDb:-60});
+ const frames:PitchFrame[]=Array.from({length:Math.round(2*SR/hop)},(_,i)=>({frame:i*hop,f0:midiHz(60),clarity:.98,rmsDb:i<8?-32:-40+8*Math.cos(2*Math.PI*i*hop/SR*1.5)}));
+ const notes=[...seg.push(frames),...seg.flush(2*SR)];
+ assert.equal(notes.length,1,`continuous periodic hum fragmented: ${JSON.stringify(notes.map(n=>[ms(n.startFrame),ms(n.endFrame)]))}`);
+ assert.ok(ms(notes[0].endFrame-notes[0].startFrame)>1940,'held hum should occupy the full bar');
+});
+
+test('real pitch extraction retains a softening two-second hum and releases at real silence', () => {
+ const audio=sing([{midi:60,start:.1,end:2.1,db:-30}],2.4,-80);
+ for(let i=Math.round(.1*SR);i<Math.round(2.1*SR);i++)audio[i]*=10**((-6+6*Math.cos(2*Math.PI*(i/SR-.1)*1.5))/20);
+ const {notes}=analyse(audio);
+ assert.equal(notes.length,1,JSON.stringify(notes));
+ assert.equal(notes[0].midi,60);
+ assert.ok(Math.abs(ms(notes[0].startFrame)-100)<25);
+ assert.ok(Math.abs(ms(notes[0].endFrame)-2100)<35,'real silence should end the note without a stuck tail');
+});
+
+test('the lower held-note threshold never opens a new note from quiet periodic room input', () => {
+ const seg=new NoteSegmenter({sampleRate:SR,hop:256,noiseFloorDb:-60});
+ const frames:PitchFrame[]=Array.from({length:120},(_,i)=>({frame:i*256,f0:midiHz(60),clarity:.99,rmsDb:-49}));
+ assert.deepEqual([...seg.push(frames),...seg.flush(120*256)],[]);
+});
+
+test('quiet clear humming retains a short adjacent phrase above the room-noise floor', () => {
+ const phrase:Sung[]=[60,62,64,65].map((midi,i)=>({midi,start:.15+i*.125,end:.15+(i+1)*.125,db:-42}));
+ const {notes,frames}=analyse(sing(phrase,.9,-60));
+ const periodic=frames.filter(f=>f.f0&&f.clarity>.9);
+ assert.ok(periodic.length>20,'fixture must contain a detectable periodic hum');
+ assert.deepEqual(notes.map(n=>n.midi),phrase.map(n=>n.midi),`clear humming: ${periodic.length} voiced frames, max clarity ${Math.max(...periodic.map(f=>f.clarity)).toFixed(3)}, peak level ${Math.max(...periodic.map(f=>f.rmsDb)).toFixed(1)} dBFS`);
+});
+
+
+test('uncertain quiet periodic input still needs the original acquisition margin', () => {
+ const seg=new NoteSegmenter({sampleRate:SR,hop:256,noiseFloorDb:-60});
+ const frames:PitchFrame[]=Array.from({length:120},(_,i)=>({frame:i*256,f0:midiHz(60),clarity:.85,rmsDb:-47}));
+ assert.deepEqual([...seg.push(frames),...seg.flush(120*256)],[]);
+});
