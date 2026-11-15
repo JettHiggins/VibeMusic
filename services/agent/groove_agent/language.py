@@ -55,11 +55,14 @@ class LanguageConfig:
             if not re.fullmatch(r"gemini-[\w.-]+", self.model):
                 raise ValueError("GROOVE_LLM_MODEL must be a Gemini model id such as gemini-3.1-flash-lite")
             if self.vertex:
-                if not self.project:
-                    raise ValueError("GOOGLE_CLOUD_PROJECT is required for Gemini on Vertex AI")
+                # Vertex AI is now "Gemini Enterprise Agent Platform"; its API ("Agent Platform API") is still
+                # aiplatform.googleapis.com. An API key restricted to it works alone (express mode); a
+                # service-account file also needs the project id.
                 if not self.api_key and not self.credentials_file:
-                    raise ValueError("Gemini on Vertex AI needs GOOGLE_API_KEY (a key restricted to the Vertex AI API) "
-                                     "or GOOGLE_APPLICATION_CREDENTIALS (a service-account file outside the repo)")
+                    raise ValueError("Gemini on Vertex AI needs GOOGLE_API_KEY (a key restricted to the Agent Platform / "
+                                     "Vertex AI API) or GOOGLE_APPLICATION_CREDENTIALS (a service-account file outside the repo)")
+                if self.credentials_file and not self.project:
+                    raise ValueError("GOOGLE_CLOUD_PROJECT is required with a service-account file")
             elif not self.api_key:
                 raise ValueError("GOOGLE_API_KEY is required for the Gemini Developer API")
         else:
@@ -260,7 +263,9 @@ def gemini_model(config: LanguageConfig):
     options: dict = {"model": config.model, "temperature": 0, "max_output_tokens": config.max_tokens,
                      "timeout": config.timeout_s, "max_retries": 0}
     if config.vertex:
-        options.update(vertexai=True, project=config.project, location=config.location)
+        options["vertexai"] = True
+        if config.project:
+            options.update(project=config.project, location=config.location)
         if config.credentials_file:
             from google.oauth2 import service_account
             options["credentials"] = service_account.Credentials.from_service_account_file(

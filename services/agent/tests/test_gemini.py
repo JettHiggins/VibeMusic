@@ -22,8 +22,10 @@ def env(monkeypatch, **values):
 
 
 def test_vertex_config_requires_a_project_and_credentials_and_hides_the_key():
+    # An Agent Platform (Vertex) API key works alone; a service-account file needs the project.
+    assert LanguageConfig(provider="gemini", model=DEFAULT_GEMINI_MODEL, api_key=FAKE_KEY).vertex
     with pytest.raises(ValueError, match="GOOGLE_CLOUD_PROJECT"):
-        LanguageConfig(provider="gemini", model=DEFAULT_GEMINI_MODEL, api_key=FAKE_KEY)
+        LanguageConfig(provider="gemini", model=DEFAULT_GEMINI_MODEL, credentials_file="C:/keys/sa.json")
     with pytest.raises(ValueError, match="Vertex AI needs"):
         LanguageConfig(provider="gemini", model=DEFAULT_GEMINI_MODEL, project="demo-project")
     with pytest.raises(ValueError, match="Gemini model id"):
@@ -120,3 +122,15 @@ def test_health_reports_the_actual_provider(monkeypatch):
     monkeypatch.setattr(module, "language", type("L", (), {"config": config, "gate": ProviderGate()})())
     label = TestClient(module.app).get("/healthz").json()["language"]
     assert label == "gemini/deepagents (gemini-3.1-flash-lite, vertex)" and FAKE_KEY not in label
+
+
+def test_a_vertex_api_key_alone_uses_the_agent_platform_endpoint(monkeypatch):
+    pytest.importorskip("langchain_google_genai")
+    import groove_agent.language as module
+    built = []
+    monkeypatch.setattr(module, "create_graph", lambda model, **_: built.append(model))
+    env(monkeypatch, GROOVE_LLM="gemini", GOOGLE_API_KEY=FAKE_KEY)
+    language_from_env()
+    model = built[0]
+    assert model.vertexai is True and model.project is None
+    assert str(model.client._api_client._http_options.base_url).startswith("https://aiplatform.googleapis.com/")
