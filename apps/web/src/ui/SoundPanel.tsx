@@ -15,8 +15,8 @@ export function SoundPanel({ engine, metadata, session, trackId, enabled }: { en
  const [drag, setDrag] = useState<Record<number, number>>({});
  useEffect(() => setDrag({}), [trackId, patch.engine, patch.preset]);
 
- if (trackId === 'drums') return <p style={small}>The drum kit is fixed for now: custom drum sounds need a drum-kit contract from Workstream 1. Click a lane name in the step sequencer to audition it.</p>;
- if (!metadata) return <p style={small}>Enable audio to load the SLOOP engines.</p>;
+ if (trackId === 'drums') return <p style={small}>Fixed drum kit</p>;
+ if (!metadata) return <p style={small}>Enable audio to choose a sound.</p>;
  const engineMeta = metadata.engines[patch.engine];
  const controls = patchControls(patch, metadata);
  const play = (on: boolean) => engine.audition?.({ kind: 'note', trackId, midi: 60, velocity: on ? 0.8 : 0, on });
@@ -29,10 +29,10 @@ export function SoundPanel({ engine, metadata, session, trackId, enabled }: { en
    <label>Preset <select disabled={!enabled} value={patch.preset} onChange={e => queue.set(trackId, withEngine(patch, patch.engine, Number(e.target.value)))}>
     {engineMeta.presets.map((p, i) => <option key={i} value={i}>{p.name}</option>)}
    </select></label>
-   <button disabled={!enabled || !engine.audition} onPointerDown={() => play(true)} onPointerUp={() => play(false)} onPointerLeave={() => play(false)}>Hold to audition</button>
+   <button disabled={!enabled || !engine.audition} onPointerDown={() => play(true)} onPointerUp={() => play(false)} onPointerLeave={() => play(false)} onPointerCancel={() => play(false)} onKeyDown={e => { if ((e.key === ' ' || e.key === 'Enter') && !e.repeat) { e.preventDefault(); play(true); } }} onKeyUp={e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); play(false); } }} onBlur={() => play(false)}>Audition</button>
    {queue.pending(trackId) && <span style={small}>Applying sound…</span>}
   </div>
-  {usesPackedVoice(patch, metadata) && <p style={small}>FM6 voices use packed factory data, so their parameters aren't editable here yet. Choose a preset, or switch engine to shape the sound.</p>}
+  {usesPackedVoice(patch, metadata) && <p style={small}>Preset controls only</p>}
   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(118px, 1fr))', gap: 8 }}>
    {controls.map(c => {
     const value = drag[c.id] ?? c.value;

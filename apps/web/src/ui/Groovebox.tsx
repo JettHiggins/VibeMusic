@@ -16,6 +16,8 @@ import { snapMidiToScale } from '@voicesynth/contracts';
 import { currentTake, emptyTracker, recordingPhase, trackTake, type TakeTracker } from './recording-phase.ts';
 import { RecordingPhaseStrip, TakeFeedbackLine, TakeSettings } from './RecordingPhase.tsx';
 import { GRID_OPTIONS, chordBlocked, chordHint, chordOf, gridHint, rhythmOf } from './recording-settings.ts';
+import { VoiceIndicator, type HeardSpeech } from './VoiceIndicator.tsx';
+import { TimingSetup } from './TimingSetup.tsx';
 import { C, workspaceCss } from './theme.ts';
 
 export interface GrooveboxProps {
@@ -33,6 +35,8 @@ export interface GrooveboxProps {
  agent: ReactNode;
  /** Reveal voice-started results without requiring a click during performance. */
  agentActivityKey?: string | null;
+ heardSpeech?: HeardSpeech | null;
+ activity?: ReactNode;
 }
 
 /**
@@ -40,8 +44,10 @@ export interface GrooveboxProps {
  * track's editor in the center (drum step lanes or a synth piano roll), and a compact sound/input
  * inspector on the right. No workspace tabs; session operations live in the transport's menu.
  */
-export function Groovebox({ engine, voice, session, transport, enabled, busy, message, onEnable, agent, agentActivityKey }: GrooveboxProps) {
- const agentDetails = useRef<HTMLDetailsElement>(null);
+export function Groovebox({ engine, voice, session, transport, enabled, busy, message, onEnable, agent, heardSpeech, activity }: GrooveboxProps) {
+ const [timingOpen, setTimingOpen] = useState(false);
+ const previouslyEnabled = useRef(false);
+ useEffect(() => { if (enabled && !previouslyEnabled.current) setTimingOpen(true); previouslyEnabled.current = enabled; }, [enabled]);
  const root = useRef<HTMLDivElement>(null);
  // The transport bar can wrap; keep the sticky inspector just below its actual height.
  useEffect(() => {
@@ -51,7 +57,7 @@ export function Groovebox({ engine, voice, session, transport, enabled, busy, me
   const observer = new ResizeObserver(sync); observer.observe(bar); sync();
   return () => observer.disconnect();
  }, []);
- useEffect(() => { if (agentActivityKey && agentDetails.current) agentDetails.current.open = true; }, [agentActivityKey]);
+
  const client = useMemo(() => new CommandClient({ getSession: () => engine.getSession(), dispatch: c => engine.dispatch(voice.prepareCommand(c)) }), [engine, voice]);
  const patterns = useMemo(() => new PatternEditQueue({ dispatch: c => engine.dispatch(c), newId: () => crypto.randomUUID() }), [engine]);
  const [result, setResult] = useState<CommandResult | null>(null);
@@ -77,7 +83,7 @@ export function Groovebox({ engine, voice, session, transport, enabled, busy, me
  }, [voice, patterns]);
  // main.tsx echoes every ack into `message` ("applied", "rejected: …"); the command client already
  // reports those in plain language. Other messages (engine/asset errors, readiness) replace older results.
- const engineMessage = /^(queued|applied|rejected)(:|$)/.test(message) ? null : message;
+ const engineMessage = /^(queued|applied|rejected)(:|$)/.test(message) || message === 'SLOOP audio ready.' ? null : message;
  useEffect(() => { if (engineMessage) setResult(null); }, [engineMessage]);
 
  const send = (operation: SessionCommand['operation'], boundary: SessionCommand['boundary'] = 'immediate') => {
@@ -111,15 +117,20 @@ export function Groovebox({ engine, voice, session, transport, enabled, busy, me
 
  return <div ref={root} className="vs" style={{ minHeight: '100vh', background: C.bg }}>
   <style>{workspaceCss + layoutCss}</style>
+  <a href="#editor" className="vs-skip-link">Skip to editor</a>
+  <h1 className="vs-sr">VoiceSynthesizer</h1>
   <TransportBar session={session} transport={transport} enabled={enabled} busy={busy} onEnable={onEnable} send={send} target={target}
    canRecord={micReady&&speechReady} recordHint={!speechReady ? 'Speech recognition unavailable; retry or explicitly select manual mode' : !micReady ? 'Enable the microphone in the Input inspector first' : uncalibrated ? input.readiness.advice : null}
-   status={status} statusError={!!patterns.lastError || !!result?.error} />
+   status={status} statusError={!!patterns.lastError || !!result?.error || !!engineMessage}
+   voiceControl={<VoiceIndicator voice={voice} input={input} enabled={enabled} heard={heardSpeech?.clockId === transport?.clockId ? heardSpeech : null} />} onTiming={() => setTimingOpen(true)} />
+  {activity}
+  <TimingSetup open={timingOpen} onClose={() => setTimingOpen(false)} voice={voice} input={input} playing={!!transport?.playing} />
   <div className="vs-body">
    <aside className="vs-left" style={pane}>
     <TrackList session={session} metadata={engine.metadata} selected={trackId} enabled={enabled} locked={rec !== 'idle'} onSelect={selectTrack} send={send} />
    </aside>
-   <main className="vs-center" style={pane} aria-label="Editor">
-    <h2>{TRACK_LABEL[trackId]}{trackId === 'drums' ? ' · step sequencer' : ' · piano roll'}{view.pending ? ' · edits apply at the next loop' : ''}</h2>
+   <main id="editor" tabIndex={-1} className="vs-center" style={pane} aria-label="Editor">
+    <h2>{TRACK_LABEL[trackId]}{view.pending ? ' · Saving…' : ''}</h2>
     <RecordingPhaseStrip phase={phase}>
      <TakeSettings grid={grid} chord={chord} options={GRID_OPTIONS} enabled={enabled}
       gridHint={gridHint(grid, takeGrid)} chordHint={chordHint(chord, session.pitchSnap)} chordBlocked={chordBlocked(trackId, enabled)}
@@ -147,10 +158,7 @@ export function Groovebox({ engine, voice, session, transport, enabled, busy, me
      <summary>Sound</summary>
      <SoundPanel engine={engine} metadata={engine.metadata} session={session} trackId={trackId} enabled={enabled} />
     </details>
-    <details ref={agentDetails}>
-     <summary>Agent</summary>
-     {agent}
-    </details>
+    {agent}
    </aside>
   </div>
  </div>;

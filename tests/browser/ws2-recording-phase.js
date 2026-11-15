@@ -5,6 +5,7 @@ async page=>{
  const base=page.url().split('/').slice(0,3).join('/');
  await page.goto(base);
  await page.getByRole('button',{name:'Enable audio',exact:true}).click();
+ await page.getByRole('button',{name:'Not now',exact:true}).click();
  await page.waitForFunction(()=>globalThis.__voicesynth.engine.metadata!==null);
  await page.getByRole('button',{name:/^Synth 1 /}).click();
  return await page.evaluate(async()=>{
@@ -27,7 +28,7 @@ async page=>{
   while(context.currentTime<when+3.8){const t=context.currentTime-when;
    if(!undone&&t>2){undone=true;await page_undo();}
    const s=line();if(s!==last){lines.push(s);last=s;}await wait(30);}
-  async function page_undo(){[...document.querySelectorAll('header button')].find(b=>b.textContent==='Undo').click();}
+  async function page_undo(){document.querySelector('header button[aria-label="Undo"]').click();}
   if(!lines.some(l=>l.startsWith('Hearing C4')))throw new Error('Live note not reported: '+JSON.stringify(lines));
   if(!lines.some(l=>/waiting to be sent/.test(l)))throw new Error('Waiting notes not reported: '+JSON.stringify(lines));
   if(!lines.some(l=>/Undo\/Clear restarted capture/.test(l)))throw new Error('Undo restart not explained: '+JSON.stringify(lines));

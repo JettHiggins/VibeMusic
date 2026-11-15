@@ -3,6 +3,7 @@ async page=>{
  for(const action of ['Undo','Clear Synth 1']){
   await page.goto(base);
   await page.getByRole('button',{name:'Enable audio',exact:true}).click();
+ await page.getByRole('button',{name:'Not now',exact:true}).click();
   await page.waitForFunction(()=>globalThis.__voicesynth.engine.metadata!==null);
   await page.getByRole('button',{name:/^Synth 1 /}).click();
   await page.waitForFunction(()=>globalThis.__voicesynth.engine.getSession().revision>=1);

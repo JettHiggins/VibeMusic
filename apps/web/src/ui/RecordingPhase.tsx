@@ -29,7 +29,7 @@ export function RecordingPhaseStrip({ phase, children }: { phase: RecordingPhase
   <span aria-hidden style={{ display: 'flex', gap: 3, alignItems: 'center' }} title="Bars in the loop">
    {[1, 2, 3, 4].map(b => <span key={b} data-bar={b} style={{ ...cell(!armed && phase.bar === b, false, armed && phase.start?.bar === b), width: 22, height: 8 }} />)}
   </span>
-  <span style={{ color: C.muted, flex: '1 1 180px', minWidth: 0 }}>{phase.detail}</span>
+  <span className="vs-sr">{phase.detail}</span>
   {children}
   <span role="status" aria-live="polite" className="vs-sr">{announce}</span>
  </div>;

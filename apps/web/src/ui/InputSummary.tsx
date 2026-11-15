@@ -26,7 +26,7 @@ export function InputReadout({ summary, melodic }: { summary: InputSummary; melo
    <span className="vs-cell" style={{ flex: '1 1 0', minWidth: 0 }}><small>State</small><span style={{ color: toneColor(pitch.tone) }}>{pitch.gate}</span>{pitch.detail && <small style={{ color: C.muted }}>{pitch.detail}</small>}</span>
   </div>}
   {summary.hit && <div style={{ color: C.muted }} aria-label="Last hit">{summary.hit}</div>}
-  {melodic && <div style={{ color: C.muted }} aria-label="Active key">Key <span style={{ color: summary.key === 'Off' ? C.muted : C.text }}>{summary.key}</span>{summary.key === 'Off' ? ' · notes keep their sung pitch' : ' · out-of-key notes map to the nearest scale note'}</div>}
+  {melodic && <div style={{ color: C.muted }} aria-label="Active key">Key <span style={{ color: summary.key === 'Off' ? C.muted : C.text }}>{summary.key}</span></div>}
  </div>;
 }
 

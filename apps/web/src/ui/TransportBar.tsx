@@ -1,43 +1,43 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { SessionCommand, SessionState, Transport } from '@voicesynth/contracts';
 import { playheadStep, targetLabel, type Target } from './labels.ts';
 import { SessionPanel } from './SessionPanel.tsx';
-import { C, MONO } from './theme.ts';
+import { Icon } from './Icon.tsx';
+import { C } from './theme.ts';
 
 type Send = (operation: SessionCommand['operation'], boundary?: SessionCommand['boundary']) => void;
 
-/** Persistent top bar: transport, recording, tempo, position, edit actions, status and the session menu. */
-export function TransportBar({ session, transport, enabled, busy, onEnable, send, target, canRecord, recordHint, status, statusError }: {
+export function TransportBar({ session, transport, enabled, busy, onEnable, send, target, canRecord, recordHint, status, statusError, voiceControl, onTiming }: {
  session: SessionState; transport: Transport | null; enabled: boolean; busy: boolean; onEnable: () => void; send: Send;
- target: Target; canRecord: boolean; recordHint: string | null; status: string; statusError: boolean;
+ target: Target; canRecord: boolean; recordHint: string | null; status: string; statusError: boolean; voiceControl?: ReactNode; onTiming?: () => void;
 }) {
  const rec = transport?.recordingState ?? 'idle';
  const pos = playheadStep(transport, session.tempo);
- const pending = transport?.pendingCommandIds.length ?? 0;
  const metronomeEnabled = transport?.metronomeEnabled ?? true;
  const metronomeSupported = transport?.metronomeEnabled !== undefined;
- return <header aria-label="Transport" style={{ position: 'sticky', top: 0, zIndex: 30, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '8px 12px', background: C.panel, borderBottom: `1px solid ${C.line}` }}>
-  <strong style={{ letterSpacing: '.2em', fontSize: 12 }}>VOICESYNTH</strong>
-  {!enabled && <button onClick={onEnable} disabled={busy} style={{ background: C.accent, color: '#111' }}>Enable audio</button>}
-  <button disabled={!enabled} onClick={() => send({ type: 'play', playing: !transport?.playing })} aria-label={transport?.playing ? 'Stop playback' : 'Play'}>{transport?.playing ? '■ Stop' : '▶ Play'}</button>
-  {rec === 'idle'
-   ? <button className="rec" disabled={!enabled || !canRecord} title={recordHint ?? undefined} onClick={() => send({ type: 'record', target }, 'next-beat')}>● Rec {targetLabel(target)}</button>
-   : <button className="rec on" disabled={!enabled} onClick={() => send({ type: 'stop-recording' })}>■ Stop rec</button>}
-  <span style={{ fontFamily: MONO, color: rec === 'idle' ? C.faint : C.rec }}>{rec === 'recording' ? '● REC' : rec === 'armed' ? (transport?.countInBeatsRemaining === undefined ? 'NEXT BEAT' : `COUNT-IN ${transport.countInBeatsRemaining}`) : 'REC OFF'}</span>
-  <button aria-label="Metronome" aria-pressed={metronomeEnabled} disabled={!enabled || !metronomeSupported} title={metronomeSupported ? undefined : 'Waiting for the engine update'} onClick={() => send({ type: 'metronome', enabled: !metronomeEnabled }, 'immediate')}>Metronome {metronomeSupported ? (metronomeEnabled ? 'On' : 'Off') : 'Unavailable'}</button>
-  <span style={{ width: 1, height: 20, background: C.line }} />
-  <button disabled={!enabled} onClick={() => send({ type: 'undo' }, 'immediate')}>Undo</button>
-  <button disabled={!enabled} onClick={() => send({ type: 'clear', target }, 'immediate')}>Clear {targetLabel(target)}</button>
-  <span style={{ width: 1, height: 20, background: C.line }} />
-  <button disabled={!enabled || rec === 'recording' || session.tempo <= 40} aria-label="Tempo down" onClick={() => send({ type: 'tempo', bpm: Math.max(40, session.tempo - 1) }, 'next-loop')}>−</button>
-  <span style={{ fontFamily: MONO, fontSize: 15 }} aria-label="Tempo">{session.tempo}<span style={{ fontSize: 10, color: C.muted }}> BPM</span></span>
-  <button disabled={!enabled || rec === 'recording' || session.tempo >= 240} aria-label="Tempo up" onClick={() => send({ type: 'tempo', bpm: Math.min(240, session.tempo + 1) }, 'next-loop')}>+</button>
-  <span style={{ fontFamily: MONO, fontSize: 15, minWidth: 44 }} aria-label="Bar and beat">{pos ? `${pos.bar}.${pos.beat}` : '-.-'}</span>
-  {/* One fixed-height line: changing status text must never re-wrap the bar and shift the editor under the pointer. */}
-  <span role="status" title={status} style={{ flex: '1 1 160px', minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontFamily: MONO, fontSize: 11, color: statusError ? C.warn : C.muted }}>
-   {pending > 0 && <span style={{ color: C.warn }} title="Pending recording or musical changes">{pending} pending change(s) · </span>}{status}
-  </span>
-  <SessionMenu session={session} transport={transport} enabled={enabled} send={send} />
+ return <header aria-label="Transport" className="vs-toolbar">
+  <div className="vs-toolbar-controls">
+   {!enabled && <button className="vs-icon-button vs-primary" onClick={onEnable} disabled={busy} aria-label="Enable audio" title="Enable audio"><Icon name="audio" /></button>}
+   <button className="vs-icon-button" disabled={!enabled} onClick={() => send({ type: 'play', playing: !transport?.playing })} aria-label={transport?.playing ? 'Stop playback' : 'Play'} title={transport?.playing ? 'Stop playback' : 'Play'}><Icon name={transport?.playing ? 'stop' : 'play'} /></button>
+   <button className={`vs-icon-button rec${rec !== 'idle' ? ' on' : ''}`} disabled={!enabled || (rec === 'idle' && !canRecord)} title={rec === 'idle' ? recordHint ?? `Record ${targetLabel(target)}` : 'Stop recording'}
+    aria-label={rec === 'idle' ? `Record ${targetLabel(target)}` : 'Stop recording'} aria-pressed={rec !== 'idle'} onClick={() => rec === 'idle' ? send({ type: 'record', target }, 'next-beat') : send({ type: 'stop-recording' })}><Icon name={rec === 'idle' ? 'record' : 'stop'} /></button>
+   <button className="vs-icon-button" aria-label="Metronome" aria-pressed={metronomeEnabled} disabled={!enabled || !metronomeSupported} title="Metronome" onClick={() => send({ type: 'metronome', enabled: !metronomeEnabled })}><Icon name="metronome" /></button>
+   <span className="vs-toolbar-divider" aria-hidden="true" />
+   <button className="vs-icon-button" disabled={!enabled} aria-label="Undo" title="Undo" onClick={() => send({ type: 'undo' })}><Icon name="undo" /></button>
+   <button className="vs-icon-button" disabled={!enabled} aria-label={`Clear ${targetLabel(target)}`} title={`Clear ${targetLabel(target)} · Undo to restore`} onClick={() => send({ type: 'clear', target })}><Icon name="clear" /></button>
+   <span className="vs-toolbar-divider" aria-hidden="true" />
+   <div className="vs-tempo">
+    <button className="vs-icon-button" disabled={!enabled || rec === 'recording' || session.tempo <= 40} aria-label="Tempo down" title="Slower" onClick={() => send({ type: 'tempo', bpm: Math.max(40, session.tempo - 1) }, 'next-loop')}>−</button>
+    <span aria-label="Tempo">{session.tempo}<small>BPM</small></span>
+    <button className="vs-icon-button" disabled={!enabled || rec === 'recording' || session.tempo >= 240} aria-label="Tempo up" title="Faster" onClick={() => send({ type: 'tempo', bpm: Math.min(240, session.tempo + 1) }, 'next-loop')}>+</button>
+   </div>
+   <span className="vs-position" aria-label="Bar and beat">{pos ? `${pos.bar}.${pos.beat}` : '1.1'}</span>
+   <span className="vs-toolbar-divider" aria-hidden="true" />
+   {voiceControl}
+   <button className="vs-icon-button" aria-label="Timing test" title="Timing test" disabled={!enabled} onClick={onTiming}><Icon name="timing" /></button>
+   <SessionMenu session={session} transport={transport} enabled={enabled} send={send} />
+  </div>
+  {statusError && status && <div className="vs-toolbar-error" role="alert">{status}</div>}
  </header>;
 }
 
@@ -48,13 +48,13 @@ function SessionMenu({ session, transport, enabled, send }: { session: SessionSt
  useEffect(() => {
   if (!open) return;
   const close = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
-  const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+  const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') { setOpen(false); ref.current?.querySelector('button')?.focus(); } };
   window.addEventListener('mousedown', close); window.addEventListener('keydown', esc);
   return () => { window.removeEventListener('mousedown', close); window.removeEventListener('keydown', esc); };
  }, [open]);
  return <div ref={ref} style={{ position: 'relative' }}>
-  <button aria-expanded={open} aria-haspopup="dialog" onClick={() => setOpen(o => !o)}>Session ▾</button>
-  {open && <div role="dialog" aria-label="Session" style={{ position: 'absolute', right: 0, top: '110%', zIndex: 10, width: 360, background: C.raised, border: `1px solid ${C.lineStrong}`, borderRadius: 6, padding: 12, boxShadow: '0 8px 24px #000a' }}>
+  <button className="vs-icon-button" aria-label="Session" title="Project" aria-expanded={open} aria-haspopup="dialog" onClick={() => setOpen(o => !o)}><Icon name="folder" /></button>
+  {open && <div className="vs-session-popup" role="dialog" aria-label="Session" style={{ position: 'absolute', right: 0, top: '110%', zIndex: 10, width: 'min(360px, calc(100vw - 32px))', background: C.raised, border: `1px solid ${C.lineStrong}`, borderRadius: 6, padding: 12, boxShadow: '0 8px 24px #000a' }}>
    <SessionPanel session={session} transport={transport} enabled={enabled} dispatch={send} />
   </div>}
  </div>;

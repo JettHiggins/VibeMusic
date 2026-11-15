@@ -22,10 +22,8 @@ async page=>{
  });
  await page.goto('http://127.0.0.1:5173');
  await page.getByRole('button',{name:'Enable audio',exact:true}).click();
- await page.locator('summary').filter({hasText:/^Agent$/}).click();
- await page.getByRole('button',{name:'Connect agent',exact:true}).click();
- await page.getByText('Agent connected',{exact:true}).waitFor();
- await page.locator('summary').filter({hasText:/^Agent$/}).click();
+ await page.getByRole('button',{name:'Not now',exact:true}).click();
+ await page.evaluate(()=>globalThis.__voicesynth.coordinator.agent.connect());
  await page.waitForFunction(()=>globalThis.__voicesynth.research!==undefined);
  await page.evaluate(()=>{globalThis.__previewOff=globalThis.__voicesynth.engine.subscribe(m=>{if(m.type==='transport')globalThis.__previewTransport=m.transport;});});
  await page.getByRole('button',{name:'Play',exact:true}).click();
@@ -33,7 +31,7 @@ async page=>{
  const text=async value=>await page.evaluate(text=>globalThis.__voicesynth.coordinator.submitTranscript(text),value);
  await text('fixture-search');
  const panel=page.getByRole('region',{name:'Sound research'});
- await panel.getByText('Voice-started fixture piano',{exact:true}).waitFor();
+ await page.getByText('Voice-started fixture piano',{exact:true}).waitFor();
  await panel.getByRole('button',{name:'Preview candidate 1',exact:true}).waitFor();
  const before=await page.evaluate(()=>structuredClone(globalThis.__voicesynth.engine.getSession()));
  await text('fixture-preview');
