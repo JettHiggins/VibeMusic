@@ -52,7 +52,7 @@ def scripted_model(calls):
         def bind_tools(self, tools, **kwargs):
             self._bound = [t.name if hasattr(t, "name") else t.get("name") for t in tools]
             assert set(self._bound) == {"propose_command", "search_sound", "accept_candidate", "cancel_search", "refuse_request",
-                                        "tidy_timing", "drum_pattern", "transpose", "change_key", "input_action"}
+                                        "tidy_timing", "drum_pattern", "drum_steps", "transpose", "change_key", "input_action"}
             return self
         def _generate(self, messages, stop=None, run_manager=None, **kwargs):
             index = self._position
@@ -85,10 +85,18 @@ def test_builtin_tools_cannot_execute_even_if_the_model_invents_a_call(name, arg
         infer([[{"name": name, "args": args, "id": "bad"}]])
 
 
-def test_multiple_proposals_are_rejected_without_partial_application():
+def test_several_actions_in_one_request_are_kept_in_order():
+    # 2026-11-15: one request may need several actions ("kick on every beat and hats on the off-beats").
+    from groove_agent.intents import Plan
+    result = infer([[{"name": "propose_command", "args": {"operation": {"type": "undo"}}, "id": "a"},
+                     {"name": "propose_command", "args": {"operation": {"type": "clear", "target": {"trackId": "synth-1"}}}, "id": "b"}]])
+    assert isinstance(result, Plan) and [s.operation["type"] for s in result.steps] == ["undo", "clear"]
+
+
+def test_a_refusal_mixed_with_actions_is_rejected_without_partial_application():
     with pytest.raises(ValueError):
         infer([[{"name": "propose_command", "args": {"operation": {"type": "undo"}}, "id": "a"},
-                {"name": "propose_command", "args": {"operation": {"type": "clear", "target": {"trackId": "synth-1"}}}, "id": "b"}]])
+                {"name": "refuse_request", "args": {}, "id": "b"}]])
 
 
 
@@ -360,7 +368,7 @@ def test_actual_deepagent_and_openrouter_sdk_round_trip_with_mock_http(monkeypat
         assert payload["provider"]["max_price"]["prompt"] == "0"
         assert set(t["function"]["name"] for t in payload["tools"]) == {
             "propose_command", "search_sound", "accept_candidate", "cancel_search", "refuse_request",
-            "tidy_timing", "drum_pattern", "transpose", "change_key", "input_action"}
+            "tidy_timing", "drum_pattern", "drum_steps", "transpose", "change_key", "input_action"}
         if len(requests) == 1:
             message = {"role": "assistant", "content": "", "tool_calls": [{"id": "proposal-1", "type": "function",
                 "function": {"name": "propose_command", "arguments": json.dumps({"operation": {"type": "tempo", "bpm": 135}})}}]}

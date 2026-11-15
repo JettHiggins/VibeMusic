@@ -262,8 +262,93 @@ def run_tool(name: str, args: Mapping[str, Any], session: Mapping[str, Any]) -> 
         semitones = int(args.get("semitones", 0))
         ids = None if scope == "all" else [scope if scope in MELODIC else selected]
         return transpose(session, semitones, ids), f"transposed {semitones:+d} semitones"
+    if name == "drum_steps":
+        lane, mode = args.get("lane"), args.get("mode", "replace")
+        steps = list(args.get("steps") or [])
+        return drum_steps(session, lane, steps, mode), f"{lane}: {mode} {len(steps)} hits"
     if name == "change_key":
         root, scale = int(args.get("root", -1)), args.get("scale")
         operations = change_key(session, root, scale, bool(args.get("move_notes", True)))
         return operations, f"key {key_name(root, scale)}" + (" (notes moved)" if len(operations) > 1 else "")
     raise ToolRefusal("unknown music tool")
+
+
+def drum_steps(session: Mapping[str, Any], lane: str, steps: Sequence[int], mode: str = "replace",
+               velocity: float = 0.8) -> list[dict]:
+    """Exact drum edit on one lane: replace the lane with `steps`, add them, or remove them.
+    Steps are sixteenth positions 0..63 over the 4-bar loop: (bar-1)*16 + (beat-1)*4 + (sixteenth-1)."""
+    if lane not in LANES:
+        raise ToolRefusal("say kick, snare or hats")
+    if mode not in ("replace", "add", "remove"):
+        raise ToolRefusal("drum edit must replace, add or remove")
+    wanted = sorted({int(step) for step in steps})
+    if any(not 0 <= step <= 63 for step in wanted):
+        raise ToolRefusal("drum positions must be inside the 4-bar loop")
+    drums = _track(session, "drums")
+    others = [h for h in drums["hits"] if h["lane"] != lane]
+    current = {h["step"]: h for h in drums["hits"] if h["lane"] == lane}
+    if mode == "remove":
+        lane_hits = [h for step, h in current.items() if step not in wanted]
+    else:
+        keep = current if mode == "add" else {s: h for s, h in current.items() if s in wanted}
+        lane_hits = list(keep.values()) + [
+            {"id": f"edit-{lane}-{step}", "step": step, "lane": lane, "velocity": round(min(1.0, max(0.05, velocity)), 3)}
+            for step in wanted if step not in keep]
+    hits = sorted(others + lane_hits, key=lambda h: (h["step"], h["lane"]))
+    if not _changed(drums, drums["notes"], hits):
+        raise ToolRefusal("the drums already look like that")
+    return [_edit(drums, drums["notes"], hits)]
+
+
+def apply_operations(session: Mapping[str, Any], operations: Sequence[Mapping[str, Any]]) -> dict:
+    """The session after the given edit-pattern / set-pitch-snap operations, so several tools in one
+    request build on each other instead of overwriting each other."""
+    result = copy.deepcopy(dict(session))
+    for operation in operations:
+        if operation["type"] == "edit-pattern":
+            track = _track(result, operation["trackId"])
+            track["notes"], track["hits"] = copy.deepcopy(operation["notes"]), copy.deepcopy(operation["hits"])
+        elif operation["type"] == "set-pitch-snap":
+            result["pitchSnap"] = copy.deepcopy(operation["settings"])
+    return result
+
+
+def merge_operations(operations: Sequence[dict]) -> list[dict]:
+    """Keep only the final edit-pattern per track (each carries the whole track), in first-seen order."""
+    last: dict[str, int] = {}
+    for index, operation in enumerate(operations):
+        if operation["type"] == "edit-pattern":
+            last[operation["trackId"]] = index
+    return [op for index, op in enumerate(operations)
+            if op["type"] != "edit-pattern" or last[op["trackId"]] == index]
+
+
+_NAMES = ("C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B")
+
+
+def pitch_name(midi: int) -> str:
+    return f"{_NAMES[midi % 12]}{midi // 12 - 1}"
+
+
+def song_summary(session: Mapping[str, Any]) -> dict:
+    """Compact view of the whole song for the language model: every drum hit and note, key and settings."""
+    if not session.get("tracks"):
+        return {"grid": "4 bars x 4 beats x 4 sixteenths = steps 0..63", "empty": True}
+    key = session.get("pitchSnap")
+    melody = {}
+    for track_id in MELODIC:
+        track = _track(session, track_id)
+        melody[track_id] = [{"step": n["step"], "len": n["duration"], "note": pitch_name(n["midi"]),
+                             **({"chord": [pitch_name(p) for p in n["chord"]]} if n.get("chord") else {})}
+                            for n in sorted(track["notes"], key=lambda n: n["step"])]
+    drums = _track(session, "drums")
+    return {
+        "grid": "4 bars x 4 beats x 4 sixteenths = steps 0..63; step = (bar-1)*16 + (beat-1)*4 + (sixteenth-1)",
+        "tempo": session.get("tempo"), "key": key_name(key["root"], key["scale"]) if key else None,
+        "rhythmSnap": session.get("rhythmSnap", "sixteenth"), "chordMode": session.get("chordMode", "off"),
+        "selected": session.get("selected"),
+        "tracks": [{"id": t["id"], "muted": t["muted"], "volume": t["volume"],
+                    "sound": {"engine": t["patch"]["engine"], "preset": t["patch"]["preset"]}} for t in session["tracks"]],
+        "drums": {lane: sorted(h["step"] for h in drums["hits"] if h["lane"] == lane) for lane in LANES},
+        "melody": melody,
+    }

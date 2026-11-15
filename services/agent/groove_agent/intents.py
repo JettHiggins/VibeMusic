@@ -53,8 +53,9 @@ BOUNDARY = {
 _LANE_PHRASES = (
     ("closed-hat", ("closed hi hats", "closed hi hat", "closed hats", "closed hat", "hi hats", "hi hat",
                     "high hats", "high hat", "hihats", "hihat", "hats", "hat")),
-    ("kick", ("kick drum", "bass drum", "kick")),
-    ("snare", ("snare drum", "snare")),
+    # Plurals too: "clear the snares" used to miss the lane and clear the selected track instead.
+    ("kick", ("kick drums", "kick drum", "bass drums", "bass drum", "kicks", "kick")),
+    ("snare", ("snare drums", "snare drum", "snares", "snare")),
 )
 _ORDINALS = {"1": 1, "one": 1, "won": 1, "first": 1, "2": 2, "two": 2, "too": 2, "to": 2, "second": 2,
              "3": 3, "three": 3, "third": 3}
@@ -74,6 +75,12 @@ class MusicTool:
     """A whole-song edit (groove_agent.music_tools.run_tool) computed from the session when applied."""
     name: str
     args: dict
+
+
+@dataclass(frozen=True)
+class Plan:
+    """Several actions from one request (language model), applied in order."""
+    steps: tuple
 
 
 @dataclass(frozen=True)
@@ -108,7 +115,7 @@ class CancelSearch:
     pass
 
 
-Interpretation = Union[Command, Ignored, NotUnderstood, SoundSearch, AcceptCandidate, AuditionCandidate, CancelSearch, InputAction, MusicTool]
+Interpretation = Union[Command, Ignored, NotUnderstood, SoundSearch, AcceptCandidate, AuditionCandidate, CancelSearch, InputAction, MusicTool, Plan]
 
 
 def tokenize(text: str) -> list[str]:

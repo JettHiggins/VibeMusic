@@ -201,3 +201,64 @@ def test_auto_load_happens_once_after_retrieval_and_once_at_completion_with_dist
                 conn.handle({"type": "session", "session": patched}, 1)
     assert [c["id"].rsplit(":", 2)[-2] for c in issued] == ["load-retrieval", "load-final"]
     assert issued[1]["operation"]["patch"] == listing[2]["patch"]
+
+
+class Pending:
+    def __init__(self):
+        self.jobs = []
+    def unavailable(self):
+        return None
+    def submit(self, job):
+        self.jobs.append(job)
+        return True
+
+
+def agent_connection(session=None):
+    conn = connection(session)
+    conn._language = Pending()
+    return conn
+
+
+def test_structured_requests_go_to_the_agent_with_the_quick_parse_as_fallback():
+    from groove_agent.intents import Command
+    conn = agent_connection()
+    assert say(conn, "Groove, delete every third snare", "u1") == []  # not 'clear the snares'
+    assert conn._language.jobs[0].text == "Groove, delete every third snare"
+    assert say(conn, "Groove, fill in every other hi-hat", "u2") == []
+    assert say(conn, "Groove, can I get a bright disco synth", "u3") == []  # the model rewords the sound
+    assert len(conn._language.jobs) == 3
+    # Model failure: the quick parse still acts (here the drum pattern).
+    out = conn.language_result(conn._language.jobs[1], None, "language request timed out; no change applied", 1)
+    assert out[0]["command"]["operation"]["type"] == "edit-pattern"
+    # Exact simple commands never wait for the model.
+    assert say(conn, "Groove, clear the snares", "u5")[0]["command"]["operation"] == {
+        "type": "clear", "target": {"trackId": "drums", "lane": "snare"}}  # plural lane, not the selected track
+
+
+def test_a_refused_or_failed_structured_request_without_fallback_reports_the_reason():
+    conn = agent_connection()
+    say(conn, "Groove, make the bass line bouncier", "u1")  # unknown: no quick parse
+    [error] = conn.language_result(conn._language.jobs[0], None, "language request timed out; no change applied", 1)
+    assert error["type"] == "error" and "timed out" in error["message"]
+
+
+def test_a_multi_action_plan_builds_one_merged_edit_per_track():
+    from groove_agent.intents import Plan
+    conn = agent_connection()
+    say(conn, "Groove, make a disco beat", "u1")
+    plan = Plan((MusicTool("drum_steps", {"lane": "kick", "steps": [0, 4, 8, 12], "mode": "replace"}),
+                 MusicTool("drum_pattern", {"lane": "closed-hat", "every": 4, "offset": 2}),
+                 MusicTool("drum_steps", {"lane": "snare", "steps": [4, 12], "mode": "add"})))
+    out = conn.language_result(conn._language.jobs[0], plan, None, 1)
+    [command] = [m for m in out if m["type"] == "command"]
+    hits = command["command"]["operation"]["hits"]
+    lane = lambda name: sorted(h["step"] for h in hits if h["lane"] == name)
+    assert lane("kick") == [0, 4, 8, 12] and lane("closed-hat")[:3] == [2, 6, 10] and lane("snare") == [4, 12]
+
+
+def test_counted_drum_edits_use_exact_steps():
+    session = song()
+    session["tracks"][3]["hits"] = [{"id": f"s{i}", "step": step, "lane": "snare", "velocity": 0.8}
+                                    for i, step in enumerate([4, 12, 20, 28, 36, 44, 52, 60])]
+    operations, _ = run_tool("drum_steps", {"lane": "snare", "steps": [20, 44], "mode": "remove"}, session)
+    assert sorted(h["step"] for h in operations[0]["hits"] if h["lane"] == "snare") == [4, 12, 28, 36, 52, 60]
