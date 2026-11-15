@@ -95,7 +95,7 @@ export function Groovebox({ engine, voice, session, transport, enabled, busy, me
  type EraseTarget = Extract<SessionCommand['operation'], { type: 'erase-event' }>['target'];
  const erase = (target: EraseTarget, step: number) => client.send({ type: 'erase-event', target, step }, 'immediate');
  const selectTrack = (id: TrackId) => send({ type: 'select', target: id === 'drums' ? { trackId: 'drums', lane } : { trackId: id } });
- const provisional = input.recorder.provisional.filter(p => p.event.target.trackId === trackId);
+ const provisional = [...input.recorder.provisional, ...(input.recorder.live ? [input.recorder.live] : [])].filter(p => p.event.target.trackId === trackId);
  const status = patterns.lastError ?? result?.text ?? engineMessage ?? '';
 
  return <div ref={root} className="vs" style={{ minHeight: '100vh', background: C.bg }}>

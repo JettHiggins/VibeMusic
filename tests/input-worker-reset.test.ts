@@ -79,3 +79,26 @@ test('unstable room measurements report calibration unavailable, not a dead micr
  assert.ok(!results.some(m=>m.type==='noise-floor'),'unstable audio must not create a new calibration');
  assert.ok(!results.some(m=>m.type==='error'),'capture is working; this is a measurement refusal');
 });
+
+test('analysis worker streams a growing estimate without final notes and clears it on gaps',async()=>{
+ const results:AnalysisResult[]=[];
+ const scope={postMessage:(m:AnalysisResult)=>results.push(m),onmessage:null as ((e:{data:AnalysisRequest})=>void)|null};
+ Object.assign(globalThis,{self:scope});
+ await import('../apps/web/src/input/analysis-worker.ts'+'?live-preview');
+ const port={onmessage:null as ((e:{data:{type:string;startFrame?:number;samples?:Float32Array}})=>void)|null};
+ scope.onmessage!({data:{type:'connect',sampleRate:44100,port:port as unknown as MessagePort}});
+ for(let frame=0;frame<44100;frame+=1024){
+  const samples=Float32Array.from({length:1024},(_,i)=>.04*Math.sin(2*Math.PI*220*(frame+i)/44100));
+  port.onmessage!({data:{type:'audio',startFrame:frame,samples}});
+ }
+ const streamed=results.filter((m):m is Extract<AnalysisResult,{type:'onsets'}>=>m.type==='onsets');
+ const live=streamed.filter(m=>m.liveNote);
+ assert.ok(live.length>30);assert.ok(live[0].processedThrough!<4410,'preview before 100 ms of audio');
+ assert.ok(live.at(-1)!.liveNote!.endFrame>live[0].liveNote!.endFrame);
+ assert.ok(streamed.every(m=>!m.notes.length),'held estimates never enter finalized output');
+ assert.ok(live.every(m=>m.analysedThrough<=m.liveNote!.startFrame),'view does not advance verification');
+ port.onmessage!({data:{type:'gap'}});
+ const gap=results.at(-1)!;assert.ok(gap.type==='onsets'&&gap.liveNote===null&&gap.notes.length===1);
+ scope.onmessage!({data:{type:'flush',frame:50000}});
+ const flush=results.at(-1)!;assert.ok(flush.type==='onsets'&&flush.liveNote===null&&flush.notes.length===0);
+});
